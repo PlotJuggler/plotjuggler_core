@@ -38,6 +38,7 @@ target_link_libraries(pj_engine PUBLIC
   absl::inlined_vector
   absl::span
   absl::time
+  absl::function_ref
 )
 
 enable_testing()
