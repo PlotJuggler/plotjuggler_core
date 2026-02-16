@@ -5,6 +5,9 @@
 #include "absl/status/status.h"
 #include "absl/strings/str_cat.h"
 
+#include "pj/engine/reader.hpp"
+#include "pj/engine/writer.hpp"
+
 namespace pj::engine {
 
 DataEngine::DataEngine() = default;
@@ -165,6 +168,18 @@ std::vector<TopicId> DataEngine::list_topics(DatasetId dataset_id) const {
     return {};
   }
   return it->second.topic_ids;
+}
+
+// ---------------------------------------------------------------------------
+// Writer/Reader factories
+// ---------------------------------------------------------------------------
+
+DataWriter DataEngine::create_writer() {
+  return DataWriter(*this);
+}
+
+DataReader DataEngine::create_reader() const {
+  return DataReader(*this);
 }
 
 }  // namespace pj::engine
