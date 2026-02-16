@@ -8,6 +8,7 @@ find_package(absl REQUIRED)
 find_package(GTest REQUIRED)
 
 add_library(pj_engine STATIC
+  src/type_tree.cpp
   src/type_registry.cpp
   src/buffer.cpp
   src/column_buffer.cpp
