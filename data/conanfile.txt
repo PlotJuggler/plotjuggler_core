@@ -1,6 +1,13 @@
 [requires]
 abseil/20240722.0
 gtest/1.15.0
+benchmark/1.8.3
+arrow/18.1.0
+
+[options]
+arrow/*:parquet=True
+arrow/*:with_snappy=True
+boost/*:without_test=True
 
 [generators]
 CMakeDeps

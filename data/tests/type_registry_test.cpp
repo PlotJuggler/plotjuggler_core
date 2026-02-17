@@ -8,8 +8,8 @@
 #include "absl/status/status.h"
 #include "absl/status/statusor.h"
 
-#include "pj/engine/type_tree.hpp"
-#include "pj/engine/types.hpp"
+#include "pj/base/type_tree.hpp"
+#include "pj/base/types.hpp"
 
 namespace pj::engine {
 namespace {

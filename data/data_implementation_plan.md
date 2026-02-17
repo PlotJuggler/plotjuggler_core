@@ -5,6 +5,11 @@ It incorporates the original PLAN.md goals, reference architecture research,
 design decisions confirmed with the author, and review feedback from both
 codex_plan.md and claude_review.md.
 
+> **Implementation status legend:**
+> - ✅ = Implemented and tested
+> - ⚠️ = Partially implemented or implemented with deviations
+> - ❌ = Not yet implemented
+
 ---
 
 ## 1. Goals
@@ -49,23 +54,37 @@ physically it is four float32 columns sharing a delta-encoded timestamp column.
 
 ### Module Boundaries
 
+> **Implementation note:** The planned five-module split was simplified into
+> two libraries: `plotjuggler_base` (types, type tree, dataset metadata --
+> zero dependencies) and `plotjuggler_engine` (everything else -- depends on
+> Abseil). This is a pragmatic consolidation; the logical separation between
+> layers is preserved within the code. The `engine-derived`, `engine-time`,
+> and `engine-bridge-legacy` modules are not yet implemented.
+
 Five concrete modules, each independently testable:
 
-1. **engine-core**: Owns datasets, topics, chunk metadata. Exposes
+1. ✅ **engine-core**: Owns datasets, topics, chunk metadata. Exposes
    `IDataWriter` and `IDataReader`. No UI dependencies.
-2. **engine-storage**: Owns typed column buffers and chunk lifecycle.
+   *Implemented as `DataEngine` + `DataWriter` + `DataReader` in the
+   `plotjuggler_engine` library.*
+2. ✅ **engine-storage**: Owns typed column buffers and chunk lifecycle.
    Arrow-compatible memory layout utilities.
-3. **engine-derived**: Owns transform DAG, scheduler, dirty propagation.
+   *Implemented as `RawBuffer`, `TypedColumnBuffer`, `TopicChunkBuilder`,
+   `TopicChunk`, `TopicStorage` in the `plotjuggler_engine` library.*
+3. ❌ **engine-derived**: Owns transform DAG, scheduler, dirty propagation.
    Depends on engine-core interfaces only.
-4. **engine-time**: Owns time-domain registry and mapping functions for
+4. ⚠️ **engine-time**: Owns time-domain registry and mapping functions for
    display.
-5. **engine-bridge-legacy**: Adapter from old PlotJuggler data interfaces
+   *Time domain creation and display offset are implemented in `DataEngine`.
+   Visual alignment controls and automatic t0 alignment are not yet
+   implemented.*
+5. ❌ **engine-bridge-legacy**: Adapter from old PlotJuggler data interfaces
    to new APIs. Enables incremental migration without breaking existing
    plugins.
 
 ---
 
-## 3. Data Hierarchy
+## 3. Data Hierarchy ✅
 
 Three levels, each with associated metadata:
 
@@ -86,23 +105,32 @@ Dataset
 
 This maps directly to MCAP's Schema -> Channel -> Message hierarchy.
 
+**Implementation:** `DatasetInfo`, `TopicDescriptor`, `TopicMetadata`, and
+`ColumnDescriptor` are implemented. `TopicMetadata` tracks: topic_id, name,
+current_schema, dataset_id, time_range_min/max, total_row_count,
+total_byte_size.
+
 ---
 
 ## 4. Type Tree and Schema Management
 
-### 4.1 Central Registry with Late Discovery
+### 4.1 Central Registry with Late Discovery ✅
 
 A hybrid approach:
 
-- **Central type registry**: schemas are registered with unique IDs. Multiple
+- ✅ **Central type registry**: schemas are registered with unique IDs. Multiple
   topics sharing the same type reference the same schema ID.
-- **Late discovery**: for schema-less formats (JSON, MessagePack, CBOR, XML),
+  *Implemented in `TypeRegistry` with `register_schema()`,
+  `register_or_get()`, `lookup()`, `find_by_name()`.*
+- ❌ **Late discovery**: for schema-less formats (JSON, MessagePack, CBOR, XML),
   the schema is inferred from the first message and registered automatically.
   Subsequent messages may add new fields (see Schema Evolution below).
+  *Not yet implemented -- requires plugin integration.*
 - **Schema-based formats** (Protobuf, ROS, FlatBuffers, DDS): the schema is
   provided upfront by the data source plugin and is fixed.
+  *The registration API is ready; plugin integration is Phase 5.*
 
-### 4.2 Type Tree Representation
+### 4.2 Type Tree Representation ✅
 
 The type tree preserves the full hierarchical structure. For the example:
 
@@ -135,6 +163,12 @@ This tree is stored in the registry as a recursive structure. Each node has:
   not by name. Tags are set by the data source plugin or inferred from the
   schema (e.g., Protobuf annotations, ROS message type names).
 
+**Implementation:** All of the above is implemented in `TypeTreeNode`
+(`pj/base/type_tree.hpp`) with factory functions `make_primitive()`,
+`make_struct()`, `make_array()`, `make_enum()`. Helper functions
+`flatten_field_paths()` and `count_leaf_fields()` are implemented for
+converting the tree to flat column lists.
+
 The type tree enables:
 - MIMO transforms that operate on semantically meaningful groups (e.g.,
   quaternion-to-RPY knows it needs 4 floats that form a Quaternion)
@@ -142,7 +176,7 @@ The type tree enables:
   see all 8 fields grouped by their parent types)
 - Automatic encoding selection (enums get RLE, strings get dictionary, etc.)
 
-### 4.3 Schema Evolution (Additive)
+### 4.3 Schema Evolution (Additive) ✅
 
 For schema-less formats, new fields may appear mid-stream:
 
@@ -151,11 +185,16 @@ For schema-less formats, new fields may appear mid-stream:
 - The registry tracks the "current" schema version per topic.
 - Fields **cannot** change type or be removed mid-stream.
 
+**Implementation:** `TypeRegistry::evolve_schema()` validates additive-only
+changes: old fields must exist with same types in the new tree; new fields
+are allowed; type changes and removals are rejected. Tested in
+`type_registry_test.cpp`.
+
 ---
 
 ## 5. Storage Layer
 
-### 5.1 Chunk-Based Columnar Storage
+### 5.1 Chunk-Based Columnar Storage ✅
 
 Data is stored in **chunks** -- columnar tables inspired by Prometheus TSDB,
 Rerun, and Arrow RecordBatches.
@@ -186,7 +225,13 @@ per topic, not once per field**.
 Chunk sizing: **fixed row-count** in v1 (simpler, predictable). Byte-based
 adaptive chunking is deferred.
 
-### 5.2 Chunk Lifecycle and Threading Model
+**Implementation:** `TopicChunk` (sealed, immutable) and `TopicChunkBuilder`
+(mutable, building) in `pj/engine/chunk.hpp`. The builder uses
+`TypedColumnBuffer` instances for accumulation, with a row-at-a-time API
+(`begin_row`, `set_*`, `finish_row`). Auto-sealing triggers when
+`max_chunk_rows` is reached.
+
+### 5.2 Chunk Lifecycle and Threading Model ⚠️
 
 PlotJuggler uses separate plugin threads for data ingestion with periodic
 batch transfer to the GUI (main) thread. The chunk-based design formalizes
@@ -214,13 +259,23 @@ this pattern:
 
 Chunk states:
 
-- **Building**: the mutable chunk being filled by the writer. Owned
+- ✅ **Building**: the mutable chunk being filled by the writer. Owned
   exclusively by the plugin thread. Never accessed by the main thread.
-- **Staged**: sealed and enqueued for transfer. Immutable. Waiting to be
+  *Implemented via `TopicChunkBuilder` in `DataWriter`.*
+- ⚠️ **Staged**: sealed and enqueued for transfer. Immutable. Waiting to be
   drained by the main thread.
-- **Committed**: appended to `TopicStorage.sealed_chunks` on the main thread.
+  *Sealing is implemented. Staging queues (`PluginStagingContext`,
+  `SPSCQueue`) are not yet implemented -- `DataWriter::flush()` returns
+  sealed chunks directly, and `DataEngine::commit_chunks()` appends them
+  synchronously. The multi-threaded staging model is deferred to Phase 5
+  (plugin integration).*
+- ✅ **Committed**: appended to `TopicStorage.sealed_chunks` on the main thread.
   Immutable. Readable by viewers and transforms.
-- **Evicted**: dropped when its time range falls outside the retention window.
+  *Implemented in `TopicStorage::append_sealed_chunk()` and
+  `DataEngine::commit_chunks()`.*
+- ✅ **Evicted**: dropped when its time range falls outside the retention window.
+  *Implemented in `TopicStorage::evict_before()` and
+  `DataEngine::enforce_retention()`.*
 
 #### Ordering contract (v1)
 
@@ -237,7 +292,12 @@ This guarantees deterministic execution order on the main thread with no
 locks on the read path. The only synchronization is the staging queue
 (lock-free SPSC queue per plugin, or a simple mutex-guarded push/drain).
 
-### 5.3 Time-Based Eviction
+> **Implementation note:** Steps 2 and 4 are implemented. Steps 1 and 3
+> require `PluginStagingContext` (not yet implemented) and the derived
+> engine (Phase 2), respectively. The current `commit_chunks()` API accepts
+> a vector of (topic_id, chunk) pairs and appends them synchronously.
+
+### 5.3 Time-Based Eviction ✅
 
 Each chunk tracks its time range [t_min, t_max]. Eviction is relative to
 the **newest ingested sample time** (not wall-clock time), which ensures
@@ -251,7 +311,11 @@ All chunks with `t_max < t_keep_min` are evicted. Eviction is O(1) per
 chunk (pop front of the chunk deque). Eviction never removes from the middle
 -- retained data is always a contiguous time range.
 
-### 5.4 Variable-Length Arrays
+**Implementation:** `TopicStorage::evict_before(t_keep_min)` pops chunks
+from the front of the deque. `DataEngine::enforce_retention()` iterates all
+topics and calls evict. Tested in `topic_storage_test.cpp`.
+
+### 5.4 Variable-Length Arrays ❌
 
 For types like `vector<Pose> poses`, the primary access pattern is
 "plot `poses[3].position.x` over time" (fixed index over time).
@@ -264,6 +328,10 @@ Strategy: expand array elements into indexed columns at ingest time:
 When a longer array is first seen, new columns are added dynamically.
 Validity bitmaps track which indices exist at each timestamp (sparse table).
 This reuses the additive schema evolution mechanism.
+
+> **Implementation note:** The type tree supports array nodes
+> (`make_array()`), but the writer does not yet handle dynamic array
+> expansion at ingest time. The validity bitmap infrastructure is in place.
 
 #### Column explosion guard
 
@@ -283,7 +351,7 @@ expansion limit, the engine must record this in per-topic metadata:
 This is a storage-level policy. The viewer may additionally choose to show
 only a subset of expanded columns.
 
-### 5.5 ScatterXY
+### 5.5 ScatterXY ❌
 
 Two modes:
 1. **Reference mode** (common): a view pairing two existing time-indexed
@@ -291,7 +359,7 @@ Two modes:
 2. **Value mode** (rare): actual stored XY pairs, generated by a data source.
    Stored as a simple two-column table without monotonic-time constraint.
 
-### 5.6 Per-Chunk Statistics
+### 5.6 Per-Chunk Statistics ✅
 
 Maintained incrementally during append at near-zero cost:
 
@@ -308,29 +376,61 @@ Maintained incrementally during append at near-zero cost:
 are maintained because they are essentially free (a few comparisons per
 append) and enable encoding selection heuristics at seal time.
 
+**Implementation:** All six statistics are implemented in `ColumnStats` and
+`ChunkStats` (`pj/engine/chunk.hpp`). They are tracked incrementally during
+`TopicChunkBuilder` append operations and finalized at seal time. Tested
+in `chunk_test.cpp`.
+
 ---
 
 ## 6. Encoding Layer
 
-### 6.1 Strategy: Moderate Compression
+### 6.1 Strategy: Moderate Compression ✅
 
 The goal is significant memory savings with negligible decode cost. Every
 read ultimately produces raw values for rendering, so per-value decode cost
 matters.
 
-### 6.2 Encoding Selection (per-column, at seal time)
+### 6.2 Encoding Selection (per-column, at seal time) ⚠️
 
 When a chunk is sealed, per-column statistics guide encoding selection:
 
-| Data type | Encoding | Condition |
-|---|---|---|
-| **Timestamps** | Delta encoding | Always (monotonic, near-zero decode cost). |
-| **float32 / float64** | Raw typed storage | Always. Preserve original width. |
-| **int8/16/32/64, uint*** | Raw typed storage | Always. Preserve original width. |
-| **bool** | Packed bitfield | Always. 1 bit per value. |
-| **Any column** | Run-Length Encoding | When `run_count` is low relative to `row_count`. |
-| **Strings** | Dictionary encoding | Always (default). See note below. |
-| **Sparse columns** | Validity bitmap | When `null_count > 0`. |
+| Data type | Encoding | Condition | Status |
+|---|---|---|---|
+| **Timestamps** | Delta encoding | Always (monotonic, near-zero decode cost). | ❌ **Not implemented.** Timestamps are stored as raw `int64_t` vectors. |
+| **float32 / float64** | Raw typed storage | Always. Preserve original width. | ✅ Implemented. |
+| **int8/16/32/64, uint*** | Raw typed storage | Always. Preserve original width. | ⚠️ Narrow integers (int8, int16, uint8-32) are **widened** to int64/uint64 at the `StorageKind` level. See deviation note below. |
+| **bool** | Packed bitfield | Always. 1 bit per value. | ✅ Implemented. Constant encoding used when all values are equal; packed bitfield otherwise. |
+| **Any column** | Run-Length Encoding | When `run_count` is low relative to `row_count`. | ❌ Not implemented (Phase 4). |
+| **Strings** | Dictionary encoding | Always (default). See note below. | ✅ Implemented with narrowed index width (1/2/4 bytes). |
+| **Sparse columns** | Validity bitmap | When `null_count > 0`. | ✅ Implemented with lazy initialization. |
+
+> **Deviation: integer width preservation.** The plan specifies "preserve
+> original width" for all integer types. The implementation defines 7
+> `StorageKind` values: `kFloat32`, `kFloat64`, `kInt32`, `kInt64`,
+> `kUint64`, `kBool`, `kString`. Narrow integers (int8, int16) are widened
+> to int64; unsigned integers (uint8, uint16, uint32) are widened to uint64.
+> This simplifies the encoding and decode paths at the cost of some memory
+> overhead for narrow integer columns. The plan's `int8/16` raw storage
+> target is not met.
+>
+> **Deviation: timestamps not delta-encoded.** The plan lists delta encoding
+> for timestamps as a Phase 1 baseline encoding. The implementation stores
+> timestamps as plain `std::vector<int64_t>` in `TopicChunk`. The delta
+> encoding infrastructure exists in `encoding.hpp` (used for Frame of
+> Reference encoding on integer columns), but is not applied to timestamps.
+>
+> **Addition: Frame of Reference encoding.** The implementation adds
+> Frame-of-Reference (FOR) encoding for signed integer columns: stores the
+> column minimum as a reference value, then encodes offsets using narrowed
+> width (1, 2, or 4 bytes). This was not explicitly in the plan but aligns
+> with the spirit of moderate compression. Applied automatically at seal
+> time when the value range fits in a narrower width than the original.
+>
+> **Addition: Constant encoding.** Single-value constant encoding is applied
+> to any column where `is_constant == true` at seal time (bools, integers,
+> floats). This was implicitly covered by the plan's `is_constant` stat but
+> not listed as a separate encoding.
 
 Encoding is selected per-column, per-chunk. Different chunks of the same
 column may use different encodings if data characteristics change.
@@ -366,6 +466,13 @@ compared to the current `std::deque<std::pair<double, double>>` approach:
 | Container overhead | ~16 B/elem x 8 = ~128 B | Columnar, amortized ~0 B |
 | **Total per sample** | **~256 B** | **~34 B** |
 
+> **Implementation reality check:** Because timestamps are not yet
+> delta-encoded (stored as raw int64 = 8 B per sample), the actual per-sample
+> cost for timestamps is ~8 B, not ~2 B. The current implementation achieves
+> approximately **~40 B per sample** for this data shape (8 B timestamp +
+> 28 B float32 values + ~4 B dictionary string). The delta encoding gap
+> accounts for ~6 B/sample of unrealized savings.
+
 **This is a hypothesis, not a guarantee.** Actual savings depend on data
 shape, string cardinality, and sparsity. These estimates must be validated
 with benchmark gates (see Section 10) on representative datasets before
@@ -386,7 +493,10 @@ Phase 1 alone is expected to achieve the majority of the savings.
 
 ---
 
-## 7. Derived Series and Transforms
+## 7. Derived Series and Transforms ❌
+
+> **Not yet implemented.** This is Phase 2. The interfaces and data
+> structures described below remain the design target.
 
 ### 7.1 Dependency Graph
 
@@ -502,7 +612,7 @@ of their previous output without reading the entire history.
 
 ---
 
-## 8. Time Domains
+## 8. Time Domains ⚠️
 
 ### 8.1 V1: Simple Offset
 
@@ -524,11 +634,17 @@ The offset can be:
 This is intentionally **visual-only**. It does not change stored source
 timestamps. No cross-domain algebra or join semantics.
 
+**Implementation:** `TimeDomain` struct and `DataEngine::create_time_domain()`,
+`get_time_domain()`, `set_display_offset()` are implemented. Automatic t0
+alignment and GUI visual alignment controls are not yet implemented.
+
 ### 8.2 Cross-Dataset Comparison
 
 When two Datasets are loaded with different time domains, their data is
 displayed on a shared axis with offsets applied. This enables side-by-side
 comparison of experiments recorded at different absolute times.
+
+> **Not yet implemented** -- requires UI integration (Phase 3).
 
 ### 8.3 Future Extensions (out of scope for v1)
 
@@ -540,14 +656,19 @@ comparison of experiments recorded at different absolute times.
 
 ## 9. Plugin API
 
-### 9.1 Design Principle: High-Level Typed API
+### 9.1 Design Principle: High-Level Typed API ✅
 
 Plugins never see raw columnar storage, encodings, or chunks. They interact
 through a typed API that hides all internal details. Arrow-compatible
 internal buffers are used, but Arrow objects are not exposed as public
 plugin API types.
 
-### 9.2 Core Interfaces
+**Implementation:** `DataWriter` and `DataReader` expose typed APIs. Writers
+use `begin_row()` / `set_*()` / `finish_row()` or `append_scalar()`.
+Readers use `range_query()` and `latest_at()`. Internal encoding and chunk
+details are fully hidden.
+
+### 9.2 Core Interfaces ⚠️
 
 ```cpp
 // Lightweight handle for hot-path writes: no per-message string lookup.
@@ -600,13 +721,42 @@ public:
 };
 ```
 
+> **Implementation status by interface:**
+>
+> **IDataWriter:** Implemented as concrete `DataWriter` class (not a virtual
+> interface). The API deviates from the plan:
+> - ✅ `register_schema()`, `register_topic()`, `bind_topic_writer()`,
+>   `resolve_field()` -- implemented as planned.
+> - ⚠️ `append()` / `append_fast()` / `append_batch()` /
+>   `append_batch_fast()` with `MessageView` -- **not implemented**. Instead,
+>   the writer uses a row-builder pattern: `begin_row(topic_id, timestamp)`,
+>   `set_float32()`, `set_string()`, etc., `finish_row()`. This is more
+>   explicit than the planned `MessageView`-based API but serves the same
+>   purpose.
+> - ✅ `register_scalar_series()`, `append_scalar()` -- implemented as
+>   planned.
+> - ✅ `flush()` / `flush_all()` -- additional methods for explicit chunk
+>   sealing (not in the plan's interface but needed for the commit cycle).
+>
+> **IDataReader:** Implemented as concrete `DataReader` class (not a virtual
+> interface).
+> - ✅ `list_datasets()`, `list_topics()`, `get_type_tree()`,
+>   `get_metadata()` -- implemented as planned.
+> - ✅ `range_query()`, `latest_at()` -- implemented as planned, returning
+>   `absl::StatusOr` for error handling.
+>
+> **IDerivedEngine:** ❌ Not yet implemented (Phase 2).
+
 Write-path ergonomics are intentionally split:
-- **Simple path**: `append()` / `append_batch()` with field-name based
+- ⚠️ **Simple path**: `append()` / `append_batch()` with field-name based
   `MessageView` construction. Best for prototypes and low-rate inputs.
-- **Fast path**: resolve/bind once (`bind_topic_writer`, `FieldId`) and use
+  *Not implemented. Replaced by row-builder API.*
+- ✅ **Fast path**: resolve/bind once (`bind_topic_writer`, `FieldId`) and use
   `append_fast()` / `append_batch_fast()`. No per-message field-name string
   comparisons in the hot loop.
-- **Scalar path**: `register_scalar_series()` + `append_scalar()` for the
+  *The `bind_topic_writer()` / `resolve_field()` pattern is implemented.
+  The row-builder uses field indices internally after binding.*
+- ✅ **Scalar path**: `register_scalar_series()` + `append_scalar()` for the
   current PlotJuggler-style time/value append workflow.
 
 Row construction may be performed field-by-field by the writer, but v1
@@ -614,13 +764,19 @@ commit semantics are still full-row: at row finalization, every field must
 have a defined state for that row (explicit value, explicit null, or writer
 error per policy). Missing fields never imply carry-forward from prior rows.
 
+**Implementation:** `TopicChunkBuilder::finish_row()` auto-fills any unset
+columns with null, enforcing full-row semantics.
+
 Two query modes (inspired by Rerun):
-- **RangeQuery**: returns a cursor/iterator over all samples in [t_min,
+- ✅ **RangeQuery**: returns a cursor/iterator over all samples in [t_min,
   t_max]. Binary search on chunk time bounds, scan only intersecting chunks.
   Primary path for time-series plotting.
-- **LatestAtQuery**: returns the most recent value at or before time t.
+  *Implemented as `RangeCursor` with per-row (`advance()`) and per-chunk
+  (`for_each_chunk()`) iteration paths.*
+- ✅ **LatestAtQuery**: returns the most recent value at or before time t.
   Binary search on chunk max times + per-chunk binary search. Useful for
   dashboard views and MIMO transforms needing aligned inputs.
+  *Implemented as `latest_at()` with reverse chunk/row scan.*
 
 Renderers should consume iterators/cursors, not materialize full vectors.
 
@@ -631,6 +787,11 @@ against the same PlotJuggler version. If binary compatibility across
 compiler versions becomes necessary in the future, a C ABI wrapper can
 be added.
 
+> **Implementation note:** The implementation uses concrete classes rather
+> than pure virtual interfaces. This is simpler for v1. Virtual interfaces
+> can be extracted later if needed for testing with mocks or for
+> dependency injection.
+
 ---
 
 ## 10. Performance and Correctness Targets
@@ -639,42 +800,46 @@ Define measurable acceptance criteria **before** implementation lock:
 
 ### Performance targets
 
-| Metric | Target (to be baselined) |
-|---|---|
-| bytes/sample by data type and topic shape | Benchmark vs. current engine |
-| Ingest throughput (rows/sec) in streaming | At least on par with current |
-| Max append latency per batch | Within frame budget |
-| Derived incremental update latency | Within frame budget |
-| Range query latency for plotting | At least on par with current |
+| Metric | Target (to be baselined) | Status |
+|---|---|---|
+| bytes/sample by data type and topic shape | Benchmark vs. current engine | ⚠️ Benchmark infrastructure exists (`read_benchmark.cpp`) but no comparison with current engine yet. |
+| Ingest throughput (rows/sec) in streaming | At least on par with current | ❌ Not yet benchmarked. |
+| Max append latency per batch | Within frame budget | ❌ Not yet benchmarked. |
+| Derived incremental update latency | Within frame budget | ❌ Derived engine not implemented. |
+| Range query latency for plotting | At least on par with current | ⚠️ Read benchmark exists. |
 
 ### Correctness criteria
 
-- Type tree fidelity: round-trip schema registration and retrieval.
-- Derived DAG correctness: incremental output matches batch output within
+- ✅ Type tree fidelity: round-trip schema registration and retrieval.
+  *Tested in `type_tree_test.cpp` and `type_registry_test.cpp`.*
+- ❌ Derived DAG correctness: incremental output matches batch output within
   numeric tolerance.
-- Retention correctness: no data outside retention window, no gaps in
+  *Derived engine not implemented.*
+- ✅ Retention correctness: no data outside retention window, no gaps in
   retained data.
-- Schema evolution: additive field changes handled without data corruption.
+  *Tested in `topic_storage_test.cpp`.*
+- ✅ Schema evolution: additive field changes handled without data corruption.
+  *Tested in `type_registry_test.cpp`.*
 
 ---
 
-## 11. Concrete Data Structures (v1)
+## 11. Concrete Data Structures (v1) ⚠️
 
 ```cpp
-using DatasetId    = uint32_t;
-using TopicId      = uint32_t;
-using FieldId      = uint32_t;   // Scoped per-topic (unique within a topic, not globally)
-using ChunkId      = uint64_t;
-using TimeDomainId = uint32_t;
-using SchemaId     = uint32_t;
-using PluginId     = uint32_t;
+using DatasetId    = uint32_t;    // ✅ Implemented in pj/base/types.hpp
+using TopicId      = uint32_t;    // ✅ Implemented
+using FieldId      = uint32_t;    // ✅ Implemented
+using ChunkId      = uint64_t;    // ✅ Implemented
+using TimeDomainId = uint32_t;    // ✅ Implemented
+using SchemaId     = uint32_t;    // ✅ Implemented
+using PluginId     = uint32_t;    // ✅ Implemented
 
 // All timestamps are stored as int64 nanoseconds. This is a locked v1
 // decision. int64_t nanoseconds covers ~292 years of range with nanosecond
 // precision, sufficient for all robotics and data logging use cases.
-using Timestamp = int64_t;  // nanoseconds since epoch
+using Timestamp = int64_t;  // nanoseconds since epoch  // ✅ Implemented
 
-struct ChunkStats {
+struct ChunkStats {          // ✅ Implemented in pj/engine/chunk.hpp
     Timestamp t_min;
     Timestamp t_max;
     uint32_t row_count;
@@ -694,7 +859,7 @@ struct ChunkStats {
 
 // For enum fields: maps integer wire values to human-readable names.
 // Stored in the type registry as part of the type tree node.
-struct EnumMapping {
+struct EnumMapping {          // ✅ Implemented in pj/base/type_tree.hpp
     std::unordered_map<int64_t, std::string> value_to_name;
     std::unordered_map<std::string, int64_t> name_to_value;
 };
@@ -702,70 +867,62 @@ struct EnumMapping {
 // Tracks schema evolution per topic. Each entry represents a version of
 // the schema, enabling correct interpretation of old chunks that may
 // lack columns added in later versions.
-struct SchemaVersionEntry {
-    SchemaId schema_id;
-    uint32_t version;                       // Monotonically increasing
-    std::shared_ptr<TypeTreeNode> type_tree; // Type tree snapshot at this version
-    std::vector<FieldId> field_ids;          // Ordered list of fields in this version
+struct SchemaVersionEntry {   // ❌ Not implemented as a standalone struct.
+    SchemaId schema_id;       //    Schema evolution is handled inside
+    uint32_t version;         //    TypeRegistry::evolve_schema() which
+    std::shared_ptr<TypeTreeNode> type_tree; // replaces the tree in-place.
+    std::vector<FieldId> field_ids;
 };
 
-struct SchemaVersionHistory {
-    TopicId topic_id;
-    std::vector<SchemaVersionEntry> versions;  // Ordered by version number
+struct SchemaVersionHistory { // ❌ Not implemented. No version history
+    TopicId topic_id;         //    tracking per topic. evolve_schema()
+    std::vector<SchemaVersionEntry> versions; // validates and replaces.
     // current() returns versions.back()
 };
 
 // Tail context provided to incremental transforms that need cross-chunk
 // history (e.g., derivative needs the last sample, moving average needs
 // the last N samples).
-struct ChunkTail {
-    uint32_t requested_rows;    // How many trailing rows the transform declared it needs
-    // Read-only view into the tail of the previous output chunk(s).
-    // Managed by the derived engine: stored alongside each derived node,
-    // updated after each incremental computation.
-    // The engine retains this data even if the source chunk has been evicted
-    // by retention -- ChunkTail is a copy, not a reference.
+struct ChunkTail {            // ❌ Not implemented (Phase 2: derived engine).
+    uint32_t requested_rows;
     span<const Timestamp> timestamps;
-    std::vector<span<const uint8_t>> column_values;  // One per output field
+    std::vector<span<const uint8_t>> column_values;
 };
 
-struct ColumnBuffer {
-    FieldId field_id;
-    ArrowType logical_type;     // Logical type from type tree
-    EncodingType encoding;      // Physical encoding (raw, delta, RLE, dict)
-    Buffer values;              // Arrow-style value buffer
-    Buffer validity;            // Validity bitmap (if null_count > 0)
-    Buffer offsets;             // For variable-length types
+struct ColumnBuffer {         // ✅ Implemented as TypedColumnBuffer
+    FieldId field_id;         //    in pj/engine/column_buffer.hpp.
+    ArrowType logical_type;   //    Uses PrimitiveType + StorageKind
+    EncodingType encoding;    //    instead of ArrowType.
+    Buffer values;
+    Buffer validity;
+    Buffer offsets;
 };
 
-struct TopicChunk {
-    ChunkId id;
-    TopicId topic_id;
-    SchemaId schema_version;    // For additive schema evolution
-    ChunkStats stats;
-    Buffer timestamp_values;    // Shared timestamp column (delta-encoded)
+struct TopicChunk {           // ✅ Implemented in pj/engine/chunk.hpp.
+    ChunkId id;               //    Deviates: timestamps stored as
+    TopicId topic_id;         //    std::vector<int64_t> (not encoded Buffer).
+    SchemaId schema_version;  //    Columns stored as encoded RawBuffers
+    ChunkStats stats;         //    with separate encoding_data variant.
+    Buffer timestamp_values;
     std::vector<ColumnBuffer> columns;
 };
 
-struct TopicStorage {
+struct TopicStorage {         // ✅ Implemented in pj/engine/topic_storage.hpp.
     TopicId topic_id;
     SchemaId current_schema;
     TimeDomainId time_domain_id;
     int64_t retention_window_ns;
-    std::deque<TopicChunk> sealed_chunks;   // Immutable, committed
+    std::deque<TopicChunk> sealed_chunks;
     // Note: there is no active_chunk here. The mutable building chunk
     // is owned by the plugin thread via PluginStagingContext (below).
 };
 
 // Owned by the plugin thread. One per plugin. Not accessed by the main thread
 // except to drain sealed_queue.
-struct PluginStagingContext {
-    PluginId plugin_id;
-    TopicChunk building_chunk;              // Mutable, exclusively owned by plugin thread
-    // Sealed chunks waiting for main-thread commit. SPSC queue (plugin pushes,
-    // main thread drains). This is the only synchronization point between
-    // plugin and main threads.
-    SPSCQueue<TopicChunk> sealed_queue;
+struct PluginStagingContext {  // ❌ Not implemented. Multi-threaded staging
+    PluginId plugin_id;       //    is deferred to Phase 5 (plugin integration).
+    TopicChunk building_chunk;//    The building chunk is currently managed
+    SPSCQueue<TopicChunk> sealed_queue; // by DataWriter directly.
 };
 ```
 
@@ -787,37 +944,43 @@ Notes:
 
 ## 12. v1 Locked Decisions
 
-1. **Arrow integration**: Arrow-compatible internal buffers. Do not expose
+1. ✅ **Arrow integration**: Arrow-compatible internal buffers. Do not expose
    Arrow objects directly as public plugin API types.
-2. **Chunk sizing**: Fixed row-count in v1. Byte-based adaptive chunking
+2. ✅ **Chunk sizing**: Fixed row-count in v1. Byte-based adaptive chunking
    deferred.
-3. **Derived scheduling**: Batched lazy on main thread (once per frame) as
+3. ❌ **Derived scheduling**: Batched lazy on main thread (once per frame) as
    default. Batch recompute available on demand as correctness oracle.
-4. **Variable-length arrays**: Expand to indexed columns at ingest, with
+   *Derived engine not implemented.*
+4. ❌ **Variable-length arrays**: Expand to indexed columns at ingest, with
    configurable max expansion limit. Viewer may additionally filter.
-5. **Update semantics**: Column-by-column write APIs are allowed, but row
+   *Type tree supports arrays; writer expansion not implemented.*
+5. ✅ **Update semantics**: Column-by-column write APIs are allowed, but row
    commit semantics are full-row in v1. No implicit field-level carry-forward
    from prior rows.
-6. **Timeline model**: One timestamp index per topic chunk in v1. Additional
+6. ✅ **Timeline model**: One timestamp index per topic chunk in v1. Additional
    timeline/index columns deferred.
-7. **Threading**: Plugin threads build chunks independently. Main thread
+7. ⚠️ **Threading**: Plugin threads build chunks independently. Main thread
    drains staging queues in deterministic order, runs derived scheduler,
    enforces retention, and renders. Single-threaded commit path.
-8. **Schema evolution**: Additive only. New fields allowed. Type changes
+   *Commit and retention are implemented. Staging queues and derived
+   scheduler are not.*
+8. ✅ **Schema evolution**: Additive only. New fields allowed. Type changes
    and field removal prohibited.
-9. **String encoding**: Dictionary encoding is the default for all string
+9. ✅ **String encoding**: Dictionary encoding is the default for all string
    columns.
-10. **Retention**: Time-window based, relative to newest ingested sample
+10. ✅ **Retention**: Time-window based, relative to newest ingested sample
     time (not wall-clock time).
-11. **Timestamp representation**: `int64_t` nanoseconds since epoch. This
+11. ✅ **Timestamp representation**: `int64_t` nanoseconds since epoch. This
     replaces the current `double` representation. Covers ~292 years of range
     with nanosecond precision.
-12. **Writer API tiers**: v1 exposes both a simple string-based append API
+12. ⚠️ **Writer API tiers**: v1 exposes both a simple string-based append API
     and a pre-bound handle fast path (`FieldId`-based) to avoid per-message
     string comparisons in high-rate streams.
-13. **Scalar convenience API**: v1 includes a first-class scalar
+    *Fast path is implemented. Simple path uses row-builder instead of
+    `MessageView`.*
+13. ✅ **Scalar convenience API**: v1 includes a first-class scalar
     `append_scalar(time, value)` path for single-value time-series ingestion.
-14. **Semantic tags**: Type tree nodes carry an optional set of string tags
+14. ✅ **Semantic tags**: Type tree nodes carry an optional set of string tags
     for semantic role discovery by transforms (e.g., `"quaternion"`), distinct
     from the struct name.
 
@@ -825,23 +988,29 @@ Notes:
 
 ## 13. Implementation Phases
 
-### Phase 1: Core model + typed chunk store (engine-core, engine-storage)
+### Phase 1: Core model + typed chunk store (engine-core, engine-storage) -- ⚠️ MOSTLY COMPLETE
 
-- Dataset / topic / field metadata
-- Type tree registry with hybrid discovery
-- Typed append / read paths
-- Shared timestamp column
-- Chunk lifecycle (build, seal, commit, evict)
-- Per-chunk statistics
-- Range and latest-at queries
+- ✅ Dataset / topic / field metadata
+- ✅ Type tree registry with hybrid discovery
+- ✅ Typed append / read paths
+- ✅ Shared timestamp column
+- ✅ Chunk lifecycle (build, seal, commit, evict)
+- ✅ Per-chunk statistics
+- ✅ Range and latest-at queries
 - **Baseline encodings** (locked v1 decisions, not deferred):
-  - Delta encoding for timestamp columns
-  - Dictionary encoding for string columns
-  - Packed bitfields for bool columns
-  - Validity bitmaps for nullable/sparse columns
-  - Raw typed storage for all numeric types (preserving original width)
+  - ❌ Delta encoding for timestamp columns
+  - ✅ Dictionary encoding for string columns
+  - ✅ Packed bitfields for bool columns
+  - ✅ Validity bitmaps for nullable/sparse columns
+  - ⚠️ Raw typed storage for all numeric types (preserving original width)
+    *Narrow integers widened to int64/uint64.*
 
-### Phase 2: Derived DAG engine (engine-derived)
+**Remaining Phase 1 work:**
+1. Delta encoding for timestamps
+2. Optionally: preserve narrow integer widths (int8, int16, uint8-32) instead
+   of widening
+
+### Phase 2: Derived DAG engine (engine-derived) -- ❌ NOT STARTED
 
 - Node / edge model with topological sort
 - Cycle detection on registration
@@ -849,23 +1018,29 @@ Notes:
 - Batch recompute path
 - Correctness parity tests (incremental vs. batch)
 
-### Phase 3: Time domains + UI integration (engine-time)
+### Phase 3: Time domains + UI integration (engine-time) -- ⚠️ PARTIALLY STARTED
 
-- Domain IDs and offset mapping
-- Visual alignment controls
-- Per-dataset automatic t0 alignment
+- ✅ Domain IDs and offset mapping
+- ❌ Visual alignment controls
+- ❌ Per-dataset automatic t0 alignment
 
-### Phase 4: Advanced memory optimizations
+### Phase 4: Advanced memory optimizations -- ⚠️ PARTIALLY DONE (AHEAD OF SCHEDULE)
 
-- Run-Length Encoding (RLE) for low-cardinality / constant-run columns
-- Encoding selection heuristics at seal time (using per-chunk statistics
+- ❌ Run-Length Encoding (RLE) for low-cardinality / constant-run columns
+- ⚠️ Encoding selection heuristics at seal time (using per-chunk statistics
   to choose between raw, RLE, etc.)
-- Benchmark-driven evaluation of further compression on representative
+  *Implemented for constant, FOR, dictionary, packed bool. RLE not yet
+  implemented.*
+- ❌ Benchmark-driven evaluation of further compression on representative
   datasets
 - Note: delta (timestamps), dictionary (strings), packed bitfields (bools),
   and validity bitmaps are Phase 1 baseline encodings, not deferred here.
 
-### Phase 5: Migration and parity (engine-bridge-legacy)
+**Bonus (not in plan):**
+- ✅ Frame of Reference (FOR) encoding for integer columns
+- ✅ Constant encoding for any column type
+
+### Phase 5: Migration and parity (engine-bridge-legacy) -- ❌ NOT STARTED
 
 - Adapter from legacy PlotJuggler interfaces
 - Side-by-side validation on representative data
@@ -939,3 +1114,62 @@ Explicitly deferred items that should not block v1:
 - **Cascaded encodings**: delta -> zigzag -> bitpack pipelines.
 - **Multi-threaded derived workers**: async transform execution.
 - **ALP float compression**: evaluate after benchmarks show memory pressure.
+
+---
+
+## Appendix A: Implementation File Map
+
+> Added post-implementation to track where plan concepts map to code.
+
+### Libraries
+
+| Library | Path | Dependencies |
+|---|---|---|
+| `plotjuggler_base` | `data/base/` | None (zero deps) |
+| `plotjuggler_engine` | `data/engine/` | Abseil (absl::status, absl::flat_hash_map) |
+
+### Headers
+
+| File | Plan Concept |
+|---|---|
+| `base/include/pj/base/types.hpp` | Section 11: ID types, Timestamp, NumericType/NumericValue |
+| `base/include/pj/base/type_tree.hpp` | Section 4.2: TypeTreeNode, PrimitiveType, EnumMapping |
+| `base/include/pj/base/dataset.hpp` | Section 3/8: DatasetDescriptor, DatasetInfo, TimeDomain |
+| `engine/include/pj/engine/buffer.hpp` | Section 11: RawBuffer, validity bitmaps |
+| `engine/include/pj/engine/column_buffer.hpp` | Section 11: TypedColumnBuffer (ColumnBuffer in plan) |
+| `engine/include/pj/engine/encoding.hpp` | Section 6: Dictionary, PackedBools, Constant, FOR encodings |
+| `engine/include/pj/engine/chunk.hpp` | Section 5.1/5.6: TopicChunk, TopicChunkBuilder, ChunkStats |
+| `engine/include/pj/engine/topic_storage.hpp` | Section 5/11: TopicStorage, TopicDescriptor, TopicMetadata |
+| `engine/include/pj/engine/type_registry.hpp` | Section 4.1/4.3: TypeRegistry |
+| `engine/include/pj/engine/query.hpp` | Section 9.2: RangeCursor, LatestAtResult, QueryRange, QueryPoint |
+| `engine/include/pj/engine/reader.hpp` | Section 9.2: DataReader (IDataReader in plan) |
+| `engine/include/pj/engine/writer.hpp` | Section 9.2: DataWriter (IDataWriter in plan) |
+| `engine/include/pj/engine/engine.hpp` | Section 2: DataEngine (coordinator) |
+
+### Tests
+
+| File | Coverage |
+|---|---|
+| `tests/types_test.cpp` | NumericType sizes, variant indexing, conversion |
+| `tests/type_tree_test.cpp` | Factory functions, flattening, semantic tags |
+| `tests/buffer_test.cpp` | RawBuffer, validity bitmap operations |
+| `tests/column_buffer_test.cpp` | All 7 storage types, nulls, read_as_double |
+| `tests/encoding_test.cpp` | Dictionary encoding, packed bools |
+| `tests/chunk_test.cpp` | Builder API, sealing, stats, encoding selection |
+| `tests/topic_storage_test.cpp` | Chunk append, eviction, metadata |
+| `tests/type_registry_test.cpp` | Register, lookup, duplicate detection, schema evolution |
+| `tests/query_test.cpp` | Range queries, latest_at, multi-chunk, boundaries |
+| `tests/engine_integration_test.cpp` | End-to-end: scalar + structured write/read |
+
+### Benchmarks
+
+| File | What it measures |
+|---|---|
+| `benchmarks/read_benchmark.cpp` | Per-row and per-column read throughput across encodings |
+
+### Build Configuration
+
+| File | Notes |
+|---|---|
+| `data/CMakeLists.txt` | C++20, two library targets, tests, benchmarks |
+| `data/conanfile.txt` | abseil/20240722.0, gtest/1.15.0, benchmark/1.8.3 |

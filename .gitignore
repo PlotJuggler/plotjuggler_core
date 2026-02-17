@@ -1,0 +1,6 @@
+data/.cache/*
+data/build/*
+data/CMakeUserPresets.json
+data/test_data/
+data/benchmark_reports/
+.vscode/

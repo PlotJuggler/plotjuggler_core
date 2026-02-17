@@ -6,7 +6,7 @@
 
 #include "pj/engine/chunk.hpp"
 #include "pj/engine/query.hpp"
-#include "pj/engine/types.hpp"
+#include "pj/base/types.hpp"
 
 namespace pj::engine {
 namespace {
@@ -172,6 +172,59 @@ TEST(QueryTest, EmptyDequeLatestAt) {
   std::deque<TopicChunk> empty;
   auto result = latest_at(empty, 50);
   EXPECT_FALSE(result.found);
+}
+
+// =========================================================================
+// for_each_chunk tests
+// =========================================================================
+
+TEST(QueryTest, ForEachChunkMatchesForEach) {
+  auto chunks = make_standard_chunks();
+
+  // Collect per-row results via for_each
+  auto cursor1 = range_query(chunks, 150, 350);
+  std::vector<Timestamp> per_row_ts;
+  cursor1.for_each([&](const SampleRow& row) {
+    per_row_ts.push_back(row.timestamp);
+  });
+
+  // Collect per-chunk results via for_each_chunk
+  auto cursor2 = range_query(chunks, 150, 350);
+  std::vector<Timestamp> chunk_ts;
+  cursor2.for_each_chunk([&](const ChunkRowRange& range) {
+    for (std::size_t r = range.row_start; r < range.row_end; ++r) {
+      chunk_ts.push_back(range.chunk->read_timestamp(r));
+    }
+  });
+
+  ASSERT_EQ(per_row_ts.size(), chunk_ts.size());
+  for (std::size_t i = 0; i < per_row_ts.size(); ++i) {
+    EXPECT_EQ(per_row_ts[i], chunk_ts[i]) << "mismatch at index " << i;
+  }
+}
+
+TEST(QueryTest, ForEachChunkAllData) {
+  auto chunks = make_standard_chunks();
+  auto cursor = range_query(chunks, 0, 490);
+
+  std::size_t total_rows = 0;
+  std::size_t chunk_count = 0;
+  cursor.for_each_chunk([&](const ChunkRowRange& range) {
+    ++chunk_count;
+    total_rows += range.row_end - range.row_start;
+  });
+
+  EXPECT_EQ(total_rows, 50u);
+  EXPECT_EQ(chunk_count, 5u);
+}
+
+TEST(QueryTest, ForEachChunkNoResults) {
+  auto chunks = make_standard_chunks();
+  auto cursor = range_query(chunks, 500, 600);
+
+  std::size_t count = 0;
+  cursor.for_each_chunk([&](const ChunkRowRange& /*range*/) { ++count; });
+  EXPECT_EQ(count, 0u);
 }
 
 }  // namespace
