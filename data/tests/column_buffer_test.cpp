@@ -1,20 +1,17 @@
+#include "pj/engine/column_buffer.hpp"
+
 #include <gtest/gtest.h>
 
 #include <cmath>
 #include <cstdint>
 #include <string_view>
 
-#include "pj/engine/column_buffer.hpp"
-
 namespace pj::engine {
 namespace {
 
 // Helper: create a ColumnDescriptor for a given PrimitiveType.
-ColumnDescriptor make_descriptor(PrimitiveType type,
-                                 std::string path = "test_field") {
-  return ColumnDescriptor{.field_id = 0,
-                          .logical_type = type,
-                          .field_path = std::move(path)};
+ColumnDescriptor make_descriptor(PrimitiveType type, std::string path = "test_field") {
+  return ColumnDescriptor{.field_id = 0, .logical_type = type, .field_path = std::move(path)};
 }
 
 // -----------------------------------------------------------------------
@@ -302,7 +299,7 @@ TEST(TypedColumnBufferTest, OffsetsBufferForStrings) {
 TEST(TypedColumnBufferTest, BulkFloat32AppendRead) {
   TypedColumnBuffer buf(make_descriptor(PrimitiveType::kFloat32));
   const float data[] = {1.0f, 2.0f, 3.0f, 4.0f, 5.0f};
-  buf.append_float32_bulk(data, 5);
+  buf.append_float32_bulk(Span<const float>(data, 5));
 
   EXPECT_EQ(buf.row_count(), 5u);
   for (std::size_t i = 0; i < 5; ++i) {
@@ -316,7 +313,7 @@ TEST(TypedColumnBufferTest, BulkFloat32AppendRead) {
 TEST(TypedColumnBufferTest, BulkFloat64AppendRead) {
   TypedColumnBuffer buf(make_descriptor(PrimitiveType::kFloat64));
   const double data[] = {1.1, 2.2, 3.3};
-  buf.append_float64_bulk(data, 3);
+  buf.append_float64_bulk(Span<const double>(data, 3));
 
   EXPECT_EQ(buf.row_count(), 3u);
   for (std::size_t i = 0; i < 3; ++i) {
@@ -330,7 +327,7 @@ TEST(TypedColumnBufferTest, BulkFloat64AppendRead) {
 TEST(TypedColumnBufferTest, BulkInt32AppendRead) {
   TypedColumnBuffer buf(make_descriptor(PrimitiveType::kInt32));
   const int32_t data[] = {-100, 0, 42, 999};
-  buf.append_int32_bulk(data, 4);
+  buf.append_int32_bulk(Span<const int32_t>(data, 4));
 
   EXPECT_EQ(buf.row_count(), 4u);
   for (std::size_t i = 0; i < 4; ++i) {
@@ -344,7 +341,7 @@ TEST(TypedColumnBufferTest, BulkInt32AppendRead) {
 TEST(TypedColumnBufferTest, BulkInt64AppendRead) {
   TypedColumnBuffer buf(make_descriptor(PrimitiveType::kInt64));
   const int64_t data[] = {INT64_MIN, 0, INT64_MAX};
-  buf.append_int64_bulk(data, 3);
+  buf.append_int64_bulk(Span<const int64_t>(data, 3));
 
   EXPECT_EQ(buf.row_count(), 3u);
   for (std::size_t i = 0; i < 3; ++i) {
@@ -358,7 +355,7 @@ TEST(TypedColumnBufferTest, BulkInt64AppendRead) {
 TEST(TypedColumnBufferTest, BulkUint64AppendRead) {
   TypedColumnBuffer buf(make_descriptor(PrimitiveType::kUint64));
   const uint64_t data[] = {0, 255, 18000000000000000000ULL};
-  buf.append_uint64_bulk(data, 3);
+  buf.append_uint64_bulk(Span<const uint64_t>(data, 3));
 
   EXPECT_EQ(buf.row_count(), 3u);
   for (std::size_t i = 0; i < 3; ++i) {
@@ -372,7 +369,7 @@ TEST(TypedColumnBufferTest, BulkUint64AppendRead) {
 TEST(TypedColumnBufferTest, BulkBoolAppendRead) {
   TypedColumnBuffer buf(make_descriptor(PrimitiveType::kBool));
   const uint8_t data[] = {1, 0, 1, 1, 0};
-  buf.append_bool_bulk(data, 5);
+  buf.append_bool_bulk(Span<const uint8_t>(data, 5));
 
   EXPECT_EQ(buf.row_count(), 5u);
   EXPECT_TRUE(buf.read_bool(0));
@@ -390,7 +387,7 @@ TEST(TypedColumnBufferTest, BulkStringAppendRead) {
   // "hello" "world" "!"
   const char string_data[] = "helloworld!";
   const uint32_t offsets[] = {0, 5, 10, 11};
-  buf.append_strings_bulk(offsets, string_data, 3);
+  buf.append_strings_bulk(Span<const uint32_t>(offsets, 4), Span<const char>(string_data, 11));
 
   EXPECT_EQ(buf.row_count(), 3u);
   EXPECT_EQ(buf.read_string(0), "hello");
@@ -404,11 +401,11 @@ TEST(TypedColumnBufferTest, BulkStringAppendRead) {
 TEST(TypedColumnBufferTest, BulkValidityBitmap) {
   TypedColumnBuffer buf(make_descriptor(PrimitiveType::kFloat32));
   const float data[] = {1.0f, 0.0f, 3.0f, 0.0f};
-  buf.append_float32_bulk(data, 4);
+  buf.append_float32_bulk(Span<const float>(data, 4));
 
   // Validity bitmap: bits [1,0,1,0] = 0b0101 = 0x05
   const uint8_t bitmap[] = {0x05};
-  buf.append_validity_bulk(bitmap, 0, 4);
+  buf.append_validity_bulk(BitSpan{Span<const uint8_t>(bitmap, 1), 0, 4});
 
   EXPECT_FALSE(buf.is_null(0));
   EXPECT_TRUE(buf.is_null(1));
@@ -426,7 +423,7 @@ TEST(TypedColumnBufferTest, BulkAfterSingleAppend) {
   buf.append_float32(2.0f);
 
   const float bulk[] = {3.0f, 4.0f, 5.0f};
-  buf.append_float32_bulk(bulk, 3);
+  buf.append_float32_bulk(Span<const float>(bulk, 3));
 
   EXPECT_EQ(buf.row_count(), 5u);
   EXPECT_FLOAT_EQ(buf.read_float32(0), 1.0f);
@@ -441,7 +438,7 @@ TEST(TypedColumnBufferTest, BulkAfterSingleAppend) {
 // -----------------------------------------------------------------------
 TEST(TypedColumnBufferTest, BulkZeroCount) {
   TypedColumnBuffer buf(make_descriptor(PrimitiveType::kFloat32));
-  buf.append_float32_bulk(nullptr, 0);
+  buf.append_float32_bulk(Span<const float>());
   EXPECT_EQ(buf.row_count(), 0u);
 }
 
@@ -453,7 +450,7 @@ TEST(TypedColumnBufferTest, BulkStringsNonZeroBaseOffset) {
   // Simulates Arrow-style offsets that don't start at 0
   const char string_data[] = "XXXXXhelloworld";
   const uint32_t offsets[] = {5, 10, 15};  // 2 strings: "hello", "world"
-  buf.append_strings_bulk(offsets, string_data, 2);
+  buf.append_strings_bulk(Span<const uint32_t>(offsets, 3), Span<const char>(string_data, 15));
 
   EXPECT_EQ(buf.row_count(), 2u);
   EXPECT_EQ(buf.read_string(0), "hello");
@@ -466,7 +463,7 @@ TEST(TypedColumnBufferTest, BulkStringsNonZeroBaseOffset) {
 TEST(TypedColumnBufferTest, BulkValidityWithBitOffset) {
   TypedColumnBuffer buf(make_descriptor(PrimitiveType::kInt32));
   const int32_t data[] = {10, 20, 30};
-  buf.append_int32_bulk(data, 3);
+  buf.append_int32_bulk(Span<const int32_t>(data, 3));
 
   // bitmap = 0b01010000, bit_offset = 4, so bits 4,5,6 = 1,0,1
   // In Arrow's LSB-first layout: byte 0x50 = 0b01010000
@@ -474,7 +471,7 @@ TEST(TypedColumnBufferTest, BulkValidityWithBitOffset) {
   //   bit 5 = (0x50 >> 5) & 1 = 0 (null)
   //   bit 6 = (0x50 >> 6) & 1 = 1 (valid)
   const uint8_t bitmap[] = {0x50};
-  buf.append_validity_bulk(bitmap, 4, 3);
+  buf.append_validity_bulk(BitSpan{Span<const uint8_t>(bitmap, 1), 4, 3});
 
   EXPECT_FALSE(buf.is_null(0));  // bit 4 = 1 -> valid
   EXPECT_TRUE(buf.is_null(1));   // bit 5 = 0 -> null

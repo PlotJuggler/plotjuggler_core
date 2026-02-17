@@ -1,19 +1,19 @@
+#include "pj/engine/query.hpp"
+
 #include <gtest/gtest.h>
 
 #include <cstdint>
 #include <deque>
 #include <vector>
 
-#include "pj/engine/chunk.hpp"
-#include "pj/engine/query.hpp"
 #include "pj/base/types.hpp"
+#include "pj/engine/chunk.hpp"
 
 namespace pj::engine {
 namespace {
 
 // Helper: build a test chunk with sequential timestamps.
-TopicChunk make_test_chunk(Timestamp t_start, uint32_t num_rows,
-                           Timestamp step) {
+TopicChunk make_test_chunk(Timestamp t_start, uint32_t num_rows, Timestamp step) {
   std::vector<ColumnDescriptor> cols = {{0, PrimitiveType::kFloat32, "value"}};
   TopicChunkBuilder builder(1, 1, cols, num_rows);
   for (uint32_t i = 0; i < num_rows; ++i) {
@@ -34,8 +34,7 @@ TopicChunk make_test_chunk(Timestamp t_start, uint32_t num_rows,
 std::deque<TopicChunk> make_standard_chunks() {
   std::deque<TopicChunk> chunks;
   for (int i = 0; i < 5; ++i) {
-    chunks.push_back(
-        make_test_chunk(static_cast<Timestamp>(i) * 100, 10, 10));
+    chunks.push_back(make_test_chunk(static_cast<Timestamp>(i) * 100, 10, 10));
   }
   return chunks;
 }
@@ -184,9 +183,7 @@ TEST(QueryTest, ForEachChunkMatchesForEach) {
   // Collect per-row results via for_each
   auto cursor1 = range_query(chunks, 150, 350);
   std::vector<Timestamp> per_row_ts;
-  cursor1.for_each([&](const SampleRow& row) {
-    per_row_ts.push_back(row.timestamp);
-  });
+  cursor1.for_each([&](const SampleRow& row) { per_row_ts.push_back(row.timestamp); });
 
   // Collect per-chunk results via for_each_chunk
   auto cursor2 = range_query(chunks, 150, 350);

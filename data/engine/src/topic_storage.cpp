@@ -12,19 +12,16 @@ TopicStorage::TopicStorage(TopicId topic_id, TopicDescriptor descriptor)
     : topic_id_(topic_id), descriptor_(std::move(descriptor)) {}
 
 absl::Status TopicStorage::append_sealed_chunk(TopicChunk chunk) {
-  if (!sealed_chunks_.empty() &&
-      chunk.stats.t_min < sealed_chunks_.back().stats.t_min) {
+  if (!sealed_chunks_.empty() && chunk.stats.t_min < sealed_chunks_.back().stats.t_min) {
     return absl::FailedPreconditionError(absl::StrCat(
-        "Out-of-order chunk: new t_min=", chunk.stats.t_min,
-        " < last t_min=", sealed_chunks_.back().stats.t_min));
+        "Out-of-order chunk: new t_min=", chunk.stats.t_min, " < last t_min=", sealed_chunks_.back().stats.t_min));
   }
   sealed_chunks_.push_back(std::move(chunk));
   return absl::OkStatus();
 }
 
 void TopicStorage::evict_before(Timestamp t_keep_min) {
-  while (!sealed_chunks_.empty() &&
-         sealed_chunks_.front().stats.t_max < t_keep_min) {
+  while (!sealed_chunks_.empty() && sealed_chunks_.front().stats.t_max < t_keep_min) {
     sealed_chunks_.pop_front();
   }
 }
@@ -59,22 +56,24 @@ TopicMetadata TopicStorage::metadata() const {
       meta.total_byte_size += validity_buf.size();
     }
     for (const auto& enc : chunk.encoding_data) {
-      std::visit([&](const auto& v) {
-        using T = std::decay_t<decltype(v)>;
-        if constexpr (std::is_same_v<T, encoding::DictionaryEncoded>) {
-          meta.total_byte_size += v.indices.size();
-          for (const auto& s : v.dictionary) {
-            meta.total_byte_size += s.size();
-          }
-        } else if constexpr (std::is_same_v<T, encoding::PackedBools>) {
-          meta.total_byte_size += v.bits.size();
-        } else if constexpr (std::is_same_v<T, encoding::ConstantEncoded>) {
-          meta.total_byte_size += v.value_size;
-        } else if constexpr (std::is_same_v<T, encoding::FrameOfReferenceEncoded>) {
-          meta.total_byte_size += v.offsets.size();
-        }
-        // std::monostate (kRaw): already counted via encoded_columns
-      }, enc);
+      std::visit(
+          [&](const auto& v) {
+            using T = std::decay_t<decltype(v)>;
+            if constexpr (std::is_same_v<T, encoding::DictionaryEncoded>) {
+              meta.total_byte_size += v.indices.size();
+              for (const auto& s : v.dictionary) {
+                meta.total_byte_size += s.size();
+              }
+            } else if constexpr (std::is_same_v<T, encoding::PackedBools>) {
+              meta.total_byte_size += v.bits.size();
+            } else if constexpr (std::is_same_v<T, encoding::ConstantEncoded>) {
+              meta.total_byte_size += v.value_size;
+            } else if constexpr (std::is_same_v<T, encoding::FrameOfReferenceEncoded>) {
+              meta.total_byte_size += v.offsets.size();
+            }
+            // std::monostate (kRaw): already counted via encoded_columns
+          },
+          enc);
     }
   }
 

@@ -1,3 +1,5 @@
+#include "pj/engine/encoding.hpp"
+
 #include <gtest/gtest.h>
 
 #include <cstdint>
@@ -6,11 +8,12 @@
 #include <string_view>
 #include <vector>
 
-#include "pj/engine/encoding.hpp"
 #include "pj/base/type_tree.hpp"  // PrimitiveType
 
 namespace pj::engine::encoding {
 namespace {
+
+using pj::Span;
 
 // ==========================================================================
 // Helper: build offsets + values buffers from a vector of strings, mimicking
@@ -31,8 +34,7 @@ StringColumnData make_string_column(const std::vector<std::string>& strings) {
     std::memcpy(col.offsets.data() + i * sizeof(uint32_t), &running, sizeof(uint32_t));
     running += static_cast<uint32_t>(strings[i].size());
   }
-  std::memcpy(col.offsets.data() + strings.size() * sizeof(uint32_t), &running,
-               sizeof(uint32_t));
+  std::memcpy(col.offsets.data() + strings.size() * sizeof(uint32_t), &running, sizeof(uint32_t));
 
   // values: concatenated string bytes
   col.values.reserve(running);
@@ -50,9 +52,7 @@ StringColumnData make_string_column(const std::vector<std::string>& strings) {
 TEST(DictionaryEncoding, RepeatedStrings) {
   auto col = make_string_column({"base", "world", "base", "base"});
 
-  auto encoded = dictionary_encode_strings(
-      col.offsets.data(), col.offsets.size(),
-      col.values.data(), col.values.size(), 4);
+  auto encoded = dictionary_encode_strings(Span<const uint8_t>(col.offsets), Span<const uint8_t>(col.values), 4);
 
   EXPECT_EQ(encoded.count, 4u);
   EXPECT_EQ(encoded.dictionary.size(), 2u);
@@ -68,9 +68,7 @@ TEST(DictionaryEncoding, RepeatedStrings) {
 TEST(DictionaryEncoding, AllUniqueStrings) {
   auto col = make_string_column({"alpha", "beta", "gamma", "delta"});
 
-  auto encoded = dictionary_encode_strings(
-      col.offsets.data(), col.offsets.size(),
-      col.values.data(), col.values.size(), 4);
+  auto encoded = dictionary_encode_strings(Span<const uint8_t>(col.offsets), Span<const uint8_t>(col.values), 4);
 
   EXPECT_EQ(encoded.count, 4u);
   EXPECT_EQ(encoded.dictionary.size(), 4u);
@@ -80,15 +78,12 @@ TEST(DictionaryEncoding, LookupCorrectness) {
   std::vector<std::string> strings = {"foo", "bar", "baz", "foo", "qux"};
   auto col = make_string_column(strings);
 
-  auto encoded = dictionary_encode_strings(
-      col.offsets.data(), col.offsets.size(),
-      col.values.data(), col.values.size(), 5);
+  auto encoded = dictionary_encode_strings(Span<const uint8_t>(col.offsets), Span<const uint8_t>(col.values), 5);
 
   EXPECT_EQ(encoded.count, 5u);
 
   for (std::size_t i = 0; i < strings.size(); ++i) {
-    EXPECT_EQ(dictionary_lookup(encoded, i), strings[i])
-        << "mismatch at row " << i;
+    EXPECT_EQ(dictionary_lookup(encoded, i), strings[i]) << "mismatch at row " << i;
   }
 }
 
@@ -100,14 +95,13 @@ TEST(PackedBools, SixteenValues) {
   //                    0  1  2  3  4  5  6  7   8  9  10 11 12 13 14 15
   std::array<uint8_t, 16> values = {1, 0, 1, 1, 0, 0, 1, 0, 1, 1, 0, 0, 1, 1, 0, 1};
 
-  auto packed = pack_bools(values.data(), values.size());
+  auto packed = pack_bools(values);
 
   EXPECT_EQ(packed.count, 16u);
   EXPECT_EQ(packed.bits.size(), 2u);  // 16 bits = 2 bytes
 
   for (std::size_t i = 0; i < values.size(); ++i) {
-    EXPECT_EQ(unpack_bool(packed, i), values[i] != 0)
-        << "mismatch at index " << i;
+    EXPECT_EQ(unpack_bool(packed, i), values[i] != 0) << "mismatch at index " << i;
   }
 }
 
@@ -115,14 +109,13 @@ TEST(PackedBools, ExactByteBoundary) {
   // Exactly 8 values
   std::array<uint8_t, 8> values = {1, 1, 0, 1, 0, 1, 1, 0};
 
-  auto packed = pack_bools(values.data(), values.size());
+  auto packed = pack_bools(values);
 
   EXPECT_EQ(packed.count, 8u);
   EXPECT_EQ(packed.bits.size(), 1u);  // 8 bits = 1 byte
 
   for (std::size_t i = 0; i < values.size(); ++i) {
-    EXPECT_EQ(unpack_bool(packed, i), values[i] != 0)
-        << "mismatch at index " << i;
+    EXPECT_EQ(unpack_bool(packed, i), values[i] != 0) << "mismatch at index " << i;
   }
 }
 
@@ -130,19 +123,18 @@ TEST(PackedBools, NineValues) {
   // One past a byte boundary
   std::array<uint8_t, 9> values = {1, 0, 1, 1, 0, 0, 1, 0, 1};
 
-  auto packed = pack_bools(values.data(), values.size());
+  auto packed = pack_bools(values);
 
   EXPECT_EQ(packed.count, 9u);
   EXPECT_EQ(packed.bits.size(), 2u);  // ceil(9/8) = 2 bytes
 
   for (std::size_t i = 0; i < values.size(); ++i) {
-    EXPECT_EQ(unpack_bool(packed, i), values[i] != 0)
-        << "mismatch at index " << i;
+    EXPECT_EQ(unpack_bool(packed, i), values[i] != 0) << "mismatch at index " << i;
   }
 }
 
 TEST(PackedBools, Empty) {
-  auto packed = pack_bools(nullptr, 0);
+  auto packed = pack_bools(Span<const uint8_t>());
 
   EXPECT_EQ(packed.count, 0u);
   EXPECT_TRUE(packed.bits.empty());
@@ -160,7 +152,7 @@ TEST(ConstantEncoding, Float64) {
     std::memcpy(buf.data() + i * sizeof(double), &val, sizeof(double));
   }
 
-  auto enc = constant_encode(buf.data(), StorageKind::kFloat64, count);
+  auto enc = constant_encode(buf, StorageKind::kFloat64, count);
   EXPECT_EQ(enc.count, count);
   EXPECT_EQ(enc.value_kind, StorageKind::kFloat64);
   EXPECT_EQ(enc.value_size, sizeof(double));
@@ -176,7 +168,7 @@ TEST(ConstantEncoding, Int32) {
     std::memcpy(buf.data() + i * sizeof(int32_t), &val, sizeof(int32_t));
   }
 
-  auto enc = constant_encode(buf.data(), StorageKind::kInt32, count);
+  auto enc = constant_encode(buf, StorageKind::kInt32, count);
   EXPECT_EQ(enc.count, count);
   EXPECT_EQ(enc.value_kind, StorageKind::kInt32);
 
@@ -196,7 +188,7 @@ TEST(FOREncoding, NarrowRange_Int32) {
     std::memcpy(buf.data() + i * sizeof(int32_t), &val, sizeof(int32_t));
   }
 
-  auto enc = for_encode(buf.data(), StorageKind::kInt32, count, 1000, 1100);
+  auto enc = for_encode(buf, StorageKind::kInt32, count, 1000, 1100);
   EXPECT_EQ(enc.offset_bytes, 1);
   EXPECT_EQ(enc.reference, 1000);
   EXPECT_EQ(enc.count, count);
@@ -204,8 +196,7 @@ TEST(FOREncoding, NarrowRange_Int32) {
 
   // Verify round-trip all values
   for (std::size_t i = 0; i < count; ++i) {
-    EXPECT_DOUBLE_EQ(for_decode_one_as_double(enc, i),
-                     1000.0 + static_cast<double>(i)) << "row " << i;
+    EXPECT_DOUBLE_EQ(for_decode_one_as_double(enc, i), 1000.0 + static_cast<double>(i)) << "row " << i;
   }
 }
 
@@ -218,13 +209,12 @@ TEST(FOREncoding, MediumRange_Int32) {
     std::memcpy(buf.data() + i * sizeof(int32_t), &val, sizeof(int32_t));
   }
 
-  auto enc = for_encode(buf.data(), StorageKind::kInt32, count, 0, 50000);
+  auto enc = for_encode(buf, StorageKind::kInt32, count, 0, 50000);
   EXPECT_EQ(enc.offset_bytes, 2);
   EXPECT_EQ(enc.reference, 0);
 
   for (std::size_t i = 0; i < count; ++i) {
-    EXPECT_DOUBLE_EQ(for_decode_one_as_double(enc, i),
-                     static_cast<double>(i * 100)) << "row " << i;
+    EXPECT_DOUBLE_EQ(for_decode_one_as_double(enc, i), static_cast<double>(i * 100)) << "row " << i;
   }
 }
 
@@ -237,13 +227,12 @@ TEST(FOREncoding, NegativeRange_Int64) {
     std::memcpy(buf.data() + i * sizeof(int64_t), &val, sizeof(int64_t));
   }
 
-  auto enc = for_encode(buf.data(), StorageKind::kInt64, count, -100, 100);
+  auto enc = for_encode(buf, StorageKind::kInt64, count, -100, 100);
   EXPECT_EQ(enc.offset_bytes, 1);
   EXPECT_EQ(enc.reference, -100);
 
   for (std::size_t i = 0; i < count; ++i) {
-    EXPECT_DOUBLE_EQ(for_decode_one_as_double(enc, i),
-                     -100.0 + static_cast<double>(i)) << "row " << i;
+    EXPECT_DOUBLE_EQ(for_decode_one_as_double(enc, i), -100.0 + static_cast<double>(i)) << "row " << i;
   }
 }
 
@@ -255,10 +244,10 @@ TEST(FOREncoding, BulkDecode) {
     std::memcpy(buf.data() + i * sizeof(int32_t), &val, sizeof(int32_t));
   }
 
-  auto enc = for_encode(buf.data(), StorageKind::kInt32, count, 500, 549);
+  auto enc = for_encode(buf, StorageKind::kInt32, count, 500, 549);
 
   std::vector<double> out(count);
-  for_decode_range_as_doubles(enc, out.data(), 0, count);
+  for_decode_range_as_doubles(enc, out, 0);
 
   for (std::size_t i = 0; i < count; ++i) {
     EXPECT_DOUBLE_EQ(out[i], 500.0 + static_cast<double>(i)) << "row " << i;
@@ -266,7 +255,7 @@ TEST(FOREncoding, BulkDecode) {
 
   // Decode a sub-range
   std::vector<double> sub(10);
-  for_decode_range_as_doubles(enc, sub.data(), 20, 10);
+  for_decode_range_as_doubles(enc, sub, 20);
   for (std::size_t i = 0; i < 10; ++i) {
     EXPECT_DOUBLE_EQ(sub[i], 520.0 + static_cast<double>(i)) << "sub " << i;
   }
@@ -282,17 +271,23 @@ TEST(DictionaryEncoding, NarrowIndices) {
   data.reserve(1000);
   for (int i = 0; i < 1000; ++i) {
     switch (i % 4) {
-      case 0: data.push_back("alpha"); break;
-      case 1: data.push_back("beta"); break;
-      case 2: data.push_back("gamma"); break;
-      case 3: data.push_back("delta"); break;
+      case 0:
+        data.push_back("alpha");
+        break;
+      case 1:
+        data.push_back("beta");
+        break;
+      case 2:
+        data.push_back("gamma");
+        break;
+      case 3:
+        data.push_back("delta");
+        break;
     }
   }
   auto col = make_string_column(data);
 
-  auto encoded = dictionary_encode_strings(
-      col.offsets.data(), col.offsets.size(),
-      col.values.data(), col.values.size(), 1000);
+  auto encoded = dictionary_encode_strings(Span<const uint8_t>(col.offsets), Span<const uint8_t>(col.values), 1000);
 
   EXPECT_EQ(encoded.dictionary.size(), 4u);
   EXPECT_EQ(encoded.index_bytes, 1);
@@ -321,9 +316,7 @@ TEST(DictionaryEncoding, MediumIndices) {
   }
   auto col = make_string_column(data);
 
-  auto encoded = dictionary_encode_strings(
-      col.offsets.data(), col.offsets.size(),
-      col.values.data(), col.values.size(), 600);
+  auto encoded = dictionary_encode_strings(Span<const uint8_t>(col.offsets), Span<const uint8_t>(col.values), 600);
 
   EXPECT_EQ(encoded.dictionary.size(), 300u);
   EXPECT_EQ(encoded.index_bytes, 2);

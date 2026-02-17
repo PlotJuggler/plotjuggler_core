@@ -1,3 +1,5 @@
+#include "pj/engine/topic_storage.hpp"
+
 #include <gtest/gtest.h>
 
 #include <cstdint>
@@ -5,9 +7,7 @@
 #include <vector>
 
 #include "absl/status/status.h"
-
 #include "pj/engine/chunk.hpp"
-#include "pj/engine/topic_storage.hpp"
 
 namespace pj::engine {
 namespace {
@@ -16,14 +16,10 @@ namespace {
 // Helper: build and seal a test chunk with given time range
 // ---------------------------------------------------------------------------
 
-TopicChunk make_test_chunk(TopicId topic_id, Timestamp t_start, Timestamp t_end,
-                           uint32_t num_rows) {
-  std::vector<ColumnDescriptor> cols = {
-      {0, PrimitiveType::kFloat32, "value"}};
+TopicChunk make_test_chunk(TopicId topic_id, Timestamp t_start, Timestamp t_end, uint32_t num_rows) {
+  std::vector<ColumnDescriptor> cols = {{0, PrimitiveType::kFloat32, "value"}};
   TopicChunkBuilder builder(topic_id, /*schema_id=*/1, cols, num_rows);
-  Timestamp step =
-      (num_rows > 1) ? (t_end - t_start) / static_cast<Timestamp>(num_rows - 1)
-                     : 0;
+  Timestamp step = (num_rows > 1) ? (t_end - t_start) / static_cast<Timestamp>(num_rows - 1) : 0;
   for (uint32_t i = 0; i < num_rows; ++i) {
     builder.begin_row(t_start + static_cast<Timestamp>(i) * step);
     builder.set_float32(0, static_cast<float>(i));

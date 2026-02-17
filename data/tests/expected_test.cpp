@@ -1,8 +1,8 @@
+#include "pj/base/expected.hpp"
+
 #include <gtest/gtest.h>
 
 #include <string>
-
-#include "pj/base/expected.hpp"
 
 namespace pj {
 namespace {

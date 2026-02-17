@@ -7,16 +7,16 @@
 #include <variant>
 #include <vector>
 
+#include "pj/base/dataset.hpp"
+#include "pj/base/type_tree.hpp"
+#include "pj/base/types.hpp"
 #include "pj/engine/chunk.hpp"
 #include "pj/engine/column_buffer.hpp"
-#include "pj/base/dataset.hpp"
 #include "pj/engine/engine.hpp"
 #include "pj/engine/query.hpp"
 #include "pj/engine/reader.hpp"
 #include "pj/engine/topic_storage.hpp"
 #include "pj/engine/type_registry.hpp"
-#include "pj/base/type_tree.hpp"
-#include "pj/base/types.hpp"
 #include "pj/engine/writer.hpp"
 
 namespace pj::engine {
@@ -35,15 +35,13 @@ TEST(EngineIntegrationTest, EndToEndScalarWriteRead) {
   DataEngine engine;
 
   // Create dataset with default time domain id=0
-  auto dataset_id_or = engine.create_dataset(
-      DatasetDescriptor{.source_name = "test_source", .time_domain_id = 0});
+  auto dataset_id_or = engine.create_dataset(DatasetDescriptor{.source_name = "test_source", .time_domain_id = 0});
   ASSERT_TRUE(dataset_id_or.ok()) << dataset_id_or.status();
   DatasetId dataset_id = *dataset_id_or;
 
   // Create writer, register scalar series (float64)
   DataWriter writer = engine.create_writer();
-  auto handle_or = writer.register_scalar_series(
-      dataset_id, "temperature", NumericType::kFloat64);
+  auto handle_or = writer.register_scalar_series(dataset_id, "temperature", NumericType::kFloat64);
   ASSERT_TRUE(handle_or.ok()) << handle_or.status();
   ScalarSeriesHandle handle = *handle_or;
 
@@ -66,9 +64,7 @@ TEST(EngineIntegrationTest, EndToEndScalarWriteRead) {
 
   std::size_t count = 0;
   auto cursor_or = reader.range_query(
-      QueryRange{.topic_id = handle.topic_id,
-                 .t_min = 0,
-                 .t_max = static_cast<Timestamp>(kRowCount - 1) * 1000});
+      QueryRange{.topic_id = handle.topic_id, .t_min = 0, .t_max = static_cast<Timestamp>(kRowCount - 1) * 1000});
   ASSERT_TRUE(cursor_or.ok()) << cursor_or.status();
   cursor_or->for_each([&count](const SampleRow& row) {
     (void)row;
@@ -84,15 +80,13 @@ TEST(EngineIntegrationTest, EndToEndScalarWriteRead) {
   // latest_at at midpoint: t = 2500 * 1000 = 2500000
   // Expected value at i=2500: 2500 * 0.5 = 1250.0
   Timestamp midpoint_ts = static_cast<Timestamp>(2500) * 1000;
-  auto latest_or = reader.latest_at(
-      QueryPoint{.topic_id = handle.topic_id, .t = midpoint_ts});
+  auto latest_or = reader.latest_at(QueryPoint{.topic_id = handle.topic_id, .t = midpoint_ts});
   ASSERT_TRUE(latest_or.ok()) << latest_or.status();
   auto& latest = *latest_or;
   ASSERT_TRUE(latest.found);
   EXPECT_EQ(latest.timestamp, midpoint_ts);
   ASSERT_NE(latest.chunk, nullptr);
-  double midpoint_value =
-      latest.chunk->read_numeric_as_double(0, latest.row_index);
+  double midpoint_value = latest.chunk->read_numeric_as_double(0, latest.row_index);
   EXPECT_DOUBLE_EQ(midpoint_value, 1250.0);
 
   // Also verify metadata
@@ -100,8 +94,7 @@ TEST(EngineIntegrationTest, EndToEndScalarWriteRead) {
   ASSERT_TRUE(metadata_opt.has_value());
   EXPECT_EQ(metadata_opt->total_row_count, kRowCount);
   EXPECT_EQ(metadata_opt->time_range_min, 0);
-  EXPECT_EQ(metadata_opt->time_range_max,
-            static_cast<Timestamp>(kRowCount - 1) * 1000);
+  EXPECT_EQ(metadata_opt->time_range_max, static_cast<Timestamp>(kRowCount - 1) * 1000);
 }
 
 // ===========================================================================
@@ -124,8 +117,7 @@ TEST(EngineIntegrationTest, EndToEndStructuredWriteRead) {
   auto robot_pose = make_struct("robot_pose", {x, y, z, frame});
 
   // Create dataset
-  auto dataset_id_or = engine.create_dataset(
-      DatasetDescriptor{.source_name = "robot", .time_domain_id = 0});
+  auto dataset_id_or = engine.create_dataset(DatasetDescriptor{.source_name = "robot", .time_domain_id = 0});
   ASSERT_TRUE(dataset_id_or.ok()) << dataset_id_or.status();
   DatasetId dataset_id = *dataset_id_or;
 
@@ -173,9 +165,7 @@ TEST(EngineIntegrationTest, EndToEndStructuredWriteRead) {
   // Range query: verify total count
   std::size_t count = 0;
   auto cursor_or = reader.range_query(
-      QueryRange{.topic_id = topic_id,
-                 .t_min = 0,
-                 .t_max = static_cast<Timestamp>(kRows - 1) * 1000000});
+      QueryRange{.topic_id = topic_id, .t_min = 0, .t_max = static_cast<Timestamp>(kRows - 1) * 1000000});
   ASSERT_TRUE(cursor_or.ok()) << cursor_or.status();
   // Collect first and last rows for verification
   SampleRow first_row{};
@@ -191,35 +181,16 @@ TEST(EngineIntegrationTest, EndToEndStructuredWriteRead) {
 
   // Verify first row (i=0): x=0, y=0, z=0, frame_name="base_link"
   ASSERT_NE(first_row.chunk, nullptr);
-  EXPECT_FLOAT_EQ(
-      static_cast<float>(
-          first_row.chunk->read_numeric_as_double(0, first_row.row_index)),
-      0.0F);
-  EXPECT_FLOAT_EQ(
-      static_cast<float>(
-          first_row.chunk->read_numeric_as_double(1, first_row.row_index)),
-      0.0F);
-  EXPECT_FLOAT_EQ(
-      static_cast<float>(
-          first_row.chunk->read_numeric_as_double(2, first_row.row_index)),
-      0.0F);
-  EXPECT_EQ(first_row.chunk->read_string(3, first_row.row_index),
-            "base_link");
+  EXPECT_FLOAT_EQ(static_cast<float>(first_row.chunk->read_numeric_as_double(0, first_row.row_index)), 0.0F);
+  EXPECT_FLOAT_EQ(static_cast<float>(first_row.chunk->read_numeric_as_double(1, first_row.row_index)), 0.0F);
+  EXPECT_FLOAT_EQ(static_cast<float>(first_row.chunk->read_numeric_as_double(2, first_row.row_index)), 0.0F);
+  EXPECT_EQ(first_row.chunk->read_string(3, first_row.row_index), "base_link");
 
   // Verify last row (i=199): x=199, y=398, z=597, frame_name="odom"
   ASSERT_NE(last_row.chunk, nullptr);
-  EXPECT_FLOAT_EQ(
-      static_cast<float>(
-          last_row.chunk->read_numeric_as_double(0, last_row.row_index)),
-      199.0F);
-  EXPECT_FLOAT_EQ(
-      static_cast<float>(
-          last_row.chunk->read_numeric_as_double(1, last_row.row_index)),
-      398.0F);
-  EXPECT_FLOAT_EQ(
-      static_cast<float>(
-          last_row.chunk->read_numeric_as_double(2, last_row.row_index)),
-      597.0F);
+  EXPECT_FLOAT_EQ(static_cast<float>(last_row.chunk->read_numeric_as_double(0, last_row.row_index)), 199.0F);
+  EXPECT_FLOAT_EQ(static_cast<float>(last_row.chunk->read_numeric_as_double(1, last_row.row_index)), 398.0F);
+  EXPECT_FLOAT_EQ(static_cast<float>(last_row.chunk->read_numeric_as_double(2, last_row.row_index)), 597.0F);
   EXPECT_EQ(last_row.chunk->read_string(3, last_row.row_index), "odom");
 
   // Verify dictionary encoding on the string column (col 3) in sealed chunks
@@ -227,10 +198,8 @@ TEST(EngineIntegrationTest, EndToEndStructuredWriteRead) {
   ASSERT_NE(storage, nullptr);
   for (const auto& chunk : storage->sealed_chunks()) {
     ASSERT_GT(chunk.column_encodings.size(), 3U);
-    EXPECT_EQ(chunk.column_encodings[3], EncodingType::kDictionary)
-        << "String column should use dictionary encoding";
-    const auto& dict = std::get<encoding::DictionaryEncoded>(
-        chunk.encoding_data[3]);
+    EXPECT_EQ(chunk.column_encodings[3], EncodingType::kDictionary) << "String column should use dictionary encoding";
+    const auto& dict = std::get<encoding::DictionaryEncoded>(chunk.encoding_data[3]);
     // At most 2 unique values: "base_link" and "odom"
     EXPECT_LE(dict.dictionary.size(), 2U);
   }
@@ -254,8 +223,7 @@ TEST(EngineIntegrationTest, EndToEndStructuredWriteRead) {
 TEST(EngineIntegrationTest, RetentionEviction) {
   DataEngine engine;
 
-  auto dataset_id_or = engine.create_dataset(
-      DatasetDescriptor{.source_name = "retention_test", .time_domain_id = 0});
+  auto dataset_id_or = engine.create_dataset(DatasetDescriptor{.source_name = "retention_test", .time_domain_id = 0});
   ASSERT_TRUE(dataset_id_or.ok()) << dataset_id_or.status();
   DatasetId dataset_id = *dataset_id_or;
 
@@ -296,8 +264,7 @@ TEST(EngineIntegrationTest, RetentionEviction) {
   DataReader reader = engine.create_reader();
   {
     std::size_t count = 0;
-    auto cursor_or = reader.range_query(
-        QueryRange{.topic_id = topic_id, .t_min = 0, .t_max = 2999});
+    auto cursor_or = reader.range_query(QueryRange{.topic_id = topic_id, .t_min = 0, .t_max = 2999});
     ASSERT_TRUE(cursor_or.ok()) << cursor_or.status();
     cursor_or->for_each([&count](const SampleRow&) { ++count; });
     EXPECT_EQ(count, kRowCount);
@@ -314,14 +281,12 @@ TEST(EngineIntegrationTest, RetentionEviction) {
   engine.enforce_retention(1500);
 
   std::size_t chunks_after = storage->sealed_chunks().size();
-  EXPECT_LT(chunks_after, chunks_before)
-      << "Some chunks should have been evicted";
+  EXPECT_LT(chunks_after, chunks_before) << "Some chunks should have been evicted";
 
   // Query old range [0, 999]: should return fewer or zero rows
   {
     std::size_t count = 0;
-    auto cursor_or = reader.range_query(
-        QueryRange{.topic_id = topic_id, .t_min = 0, .t_max = 999});
+    auto cursor_or = reader.range_query(QueryRange{.topic_id = topic_id, .t_min = 0, .t_max = 999});
     ASSERT_TRUE(cursor_or.ok()) << cursor_or.status();
     cursor_or->for_each([&count](const SampleRow&) { ++count; });
     // Old chunks (t_max < 1499) are fully evicted.
@@ -334,8 +299,7 @@ TEST(EngineIntegrationTest, RetentionEviction) {
   // Query recent range [1500, 2999]: should return all data in that range
   {
     std::size_t count = 0;
-    auto cursor_or = reader.range_query(
-        QueryRange{.topic_id = topic_id, .t_min = 1500, .t_max = 2999});
+    auto cursor_or = reader.range_query(QueryRange{.topic_id = topic_id, .t_min = 1500, .t_max = 2999});
     ASSERT_TRUE(cursor_or.ok()) << cursor_or.status();
     cursor_or->for_each([&count](const SampleRow&) { ++count; });
     EXPECT_EQ(count, 1500U) << "Recent data should be intact";
@@ -354,8 +318,7 @@ TEST(EngineIntegrationTest, RetentionEviction) {
 TEST(EngineIntegrationTest, SchemaEvolution) {
   DataEngine engine;
 
-  auto dataset_id_or = engine.create_dataset(
-      DatasetDescriptor{.source_name = "evolution", .time_domain_id = 0});
+  auto dataset_id_or = engine.create_dataset(DatasetDescriptor{.source_name = "evolution", .time_domain_id = 0});
   ASSERT_TRUE(dataset_id_or.ok()) << dataset_id_or.status();
   DatasetId dataset_id = *dataset_id_or;
 
@@ -430,8 +393,7 @@ TEST(EngineIntegrationTest, SchemaEvolution) {
   // Query old rows [0, 99000]: should return 100 rows with 3 columns
   {
     std::size_t count = 0;
-    auto cursor_or = reader.range_query(
-        QueryRange{.topic_id = topic_id, .t_min = 0, .t_max = 99000});
+    auto cursor_or = reader.range_query(QueryRange{.topic_id = topic_id, .t_min = 0, .t_max = 99000});
     ASSERT_TRUE(cursor_or.ok()) << cursor_or.status();
     cursor_or->for_each([&count](const SampleRow& row) {
       ASSERT_NE(row.chunk, nullptr);
@@ -439,18 +401,9 @@ TEST(EngineIntegrationTest, SchemaEvolution) {
       EXPECT_EQ(row.chunk->column_descriptors.size(), 3U);
       if (count == 0) {
         // Verify first old row: x=0, y=0, z=0
-        EXPECT_FLOAT_EQ(
-            static_cast<float>(
-                row.chunk->read_numeric_as_double(0, row.row_index)),
-            0.0F);
-        EXPECT_FLOAT_EQ(
-            static_cast<float>(
-                row.chunk->read_numeric_as_double(1, row.row_index)),
-            0.0F);
-        EXPECT_FLOAT_EQ(
-            static_cast<float>(
-                row.chunk->read_numeric_as_double(2, row.row_index)),
-            0.0F);
+        EXPECT_FLOAT_EQ(static_cast<float>(row.chunk->read_numeric_as_double(0, row.row_index)), 0.0F);
+        EXPECT_FLOAT_EQ(static_cast<float>(row.chunk->read_numeric_as_double(1, row.row_index)), 0.0F);
+        EXPECT_FLOAT_EQ(static_cast<float>(row.chunk->read_numeric_as_double(2, row.row_index)), 0.0F);
       }
       ++count;
     });
@@ -460,8 +413,7 @@ TEST(EngineIntegrationTest, SchemaEvolution) {
   // Query new rows [100000, 199000]: should return 100 rows with 4 columns
   {
     std::size_t count = 0;
-    auto cursor_or = reader.range_query(
-        QueryRange{.topic_id = topic_id, .t_min = 100000, .t_max = 199000});
+    auto cursor_or = reader.range_query(QueryRange{.topic_id = topic_id, .t_min = 100000, .t_max = 199000});
     ASSERT_TRUE(cursor_or.ok()) << cursor_or.status();
     cursor_or->for_each([&count](const SampleRow& row) {
       ASSERT_NE(row.chunk, nullptr);
@@ -469,22 +421,10 @@ TEST(EngineIntegrationTest, SchemaEvolution) {
       EXPECT_EQ(row.chunk->column_descriptors.size(), 4U);
       if (count == 0) {
         // Verify first new row (i=100): x=100, y=200, z=300, w=400
-        EXPECT_FLOAT_EQ(
-            static_cast<float>(
-                row.chunk->read_numeric_as_double(0, row.row_index)),
-            100.0F);
-        EXPECT_FLOAT_EQ(
-            static_cast<float>(
-                row.chunk->read_numeric_as_double(1, row.row_index)),
-            200.0F);
-        EXPECT_FLOAT_EQ(
-            static_cast<float>(
-                row.chunk->read_numeric_as_double(2, row.row_index)),
-            300.0F);
-        EXPECT_FLOAT_EQ(
-            static_cast<float>(
-                row.chunk->read_numeric_as_double(3, row.row_index)),
-            400.0F);
+        EXPECT_FLOAT_EQ(static_cast<float>(row.chunk->read_numeric_as_double(0, row.row_index)), 100.0F);
+        EXPECT_FLOAT_EQ(static_cast<float>(row.chunk->read_numeric_as_double(1, row.row_index)), 200.0F);
+        EXPECT_FLOAT_EQ(static_cast<float>(row.chunk->read_numeric_as_double(2, row.row_index)), 300.0F);
+        EXPECT_FLOAT_EQ(static_cast<float>(row.chunk->read_numeric_as_double(3, row.row_index)), 400.0F);
       }
       ++count;
     });
@@ -494,8 +434,7 @@ TEST(EngineIntegrationTest, SchemaEvolution) {
   // Verify full range returns all 200 rows
   {
     std::size_t count = 0;
-    auto cursor_or = reader.range_query(
-        QueryRange{.topic_id = topic_id, .t_min = 0, .t_max = 199000});
+    auto cursor_or = reader.range_query(QueryRange{.topic_id = topic_id, .t_min = 0, .t_max = 199000});
     ASSERT_TRUE(cursor_or.ok()) << cursor_or.status();
     cursor_or->for_each([&count](const SampleRow&) { ++count; });
     EXPECT_EQ(count, 200U);
@@ -544,13 +483,11 @@ TEST(EngineIntegrationTest, TimeDomainOffset) {
   EXPECT_EQ(td2->display_offset, kOffset2);
 
   // Create datasets bound to each time domain
-  auto ds1_or = engine.create_dataset(
-      DatasetDescriptor{.source_name = "robot1", .time_domain_id = td1_id});
+  auto ds1_or = engine.create_dataset(DatasetDescriptor{.source_name = "robot1", .time_domain_id = td1_id});
   ASSERT_TRUE(ds1_or.ok()) << ds1_or.status();
   DatasetId ds1_id = *ds1_or;
 
-  auto ds2_or = engine.create_dataset(
-      DatasetDescriptor{.source_name = "simulator", .time_domain_id = td2_id});
+  auto ds2_or = engine.create_dataset(DatasetDescriptor{.source_name = "simulator", .time_domain_id = td2_id});
   ASSERT_TRUE(ds2_or.ok()) << ds2_or.status();
   DatasetId ds2_id = *ds2_or;
 
@@ -572,8 +509,8 @@ TEST(EngineIntegrationTest, TimeDomainOffset) {
   Timestamp display_time_1 = kRawTime - td1->display_offset;
   Timestamp display_time_2 = kRawTime - td2->display_offset;
 
-  EXPECT_EQ(display_time_1, 9000000000);   // 10s - 1s = 9s
-  EXPECT_EQ(display_time_2, 5000000000);   // 10s - 5s = 5s
+  EXPECT_EQ(display_time_1, 9000000000);  // 10s - 1s = 9s
+  EXPECT_EQ(display_time_2, 5000000000);  // 10s - 5s = 5s
 
   // Verify that updating offset is reflected immediately
   constexpr Timestamp kNewOffset1 = 2000000000;  // 2 seconds
@@ -594,8 +531,7 @@ TEST(EngineIntegrationTest, TimeDomainOffset) {
   EXPECT_EQ(engine.get_time_domain(999), nullptr);
 
   // Verify creating dataset with non-existent time domain fails
-  auto bad_ds = engine.create_dataset(
-      DatasetDescriptor{.source_name = "bad", .time_domain_id = 999});
+  auto bad_ds = engine.create_dataset(DatasetDescriptor{.source_name = "bad", .time_domain_id = 999});
   EXPECT_FALSE(bad_ds.ok());
 }
 
@@ -609,8 +545,7 @@ TEST(EngineIntegrationTest, TimeDomainOffset) {
 TEST(EngineIntegrationTest, CreateTopicRejectsInvalidSchemaId) {
   DataEngine engine;
 
-  auto dataset_id_or = engine.create_dataset(
-      DatasetDescriptor{.source_name = "test", .time_domain_id = 0});
+  auto dataset_id_or = engine.create_dataset(DatasetDescriptor{.source_name = "test", .time_domain_id = 0});
   ASSERT_TRUE(dataset_id_or.ok()) << dataset_id_or.status();
   DatasetId dataset_id = *dataset_id_or;
 
@@ -640,8 +575,7 @@ TEST(EngineIntegrationTest, CreateTopicRejectsInvalidSchemaId) {
 TEST(EngineIntegrationTest, BeginRowRejectsInvalidTopicId) {
   DataEngine engine;
 
-  auto dataset_id_or = engine.create_dataset(
-      DatasetDescriptor{.source_name = "test", .time_domain_id = 0});
+  auto dataset_id_or = engine.create_dataset(DatasetDescriptor{.source_name = "test", .time_domain_id = 0});
   ASSERT_TRUE(dataset_id_or.ok()) << dataset_id_or.status();
 
   DataWriter writer = engine.create_writer();
@@ -660,8 +594,7 @@ TEST(EngineIntegrationTest, BeginRowRejectsInvalidTopicId) {
 TEST(EngineIntegrationTest, PartialRowAutoFillsNulls) {
   DataEngine engine;
 
-  auto dataset_id_or = engine.create_dataset(
-      DatasetDescriptor{.source_name = "test", .time_domain_id = 0});
+  auto dataset_id_or = engine.create_dataset(DatasetDescriptor{.source_name = "test", .time_domain_id = 0});
   ASSERT_TRUE(dataset_id_or.ok()) << dataset_id_or.status();
   DatasetId dataset_id = *dataset_id_or;
 
@@ -703,8 +636,7 @@ TEST(EngineIntegrationTest, PartialRowAutoFillsNulls) {
 
   // Read back and verify
   DataReader reader = engine.create_reader();
-  auto cursor_or = reader.range_query(
-      QueryRange{.topic_id = topic_id, .t_min = 0, .t_max = 3000});
+  auto cursor_or = reader.range_query(QueryRange{.topic_id = topic_id, .t_min = 0, .t_max = 3000});
   ASSERT_TRUE(cursor_or.ok()) << cursor_or.status();
 
   std::size_t count = 0;
@@ -712,26 +644,14 @@ TEST(EngineIntegrationTest, PartialRowAutoFillsNulls) {
     ASSERT_NE(row.chunk, nullptr);
     if (count == 0) {
       // Row 1: x=1.0, y=null, z=null
-      EXPECT_FLOAT_EQ(
-          static_cast<float>(
-              row.chunk->read_numeric_as_double(0, row.row_index)),
-          1.0F);
+      EXPECT_FLOAT_EQ(static_cast<float>(row.chunk->read_numeric_as_double(0, row.row_index)), 1.0F);
       EXPECT_TRUE(row.chunk->is_null(1, row.row_index));
       EXPECT_TRUE(row.chunk->is_null(2, row.row_index));
     } else if (count == 1) {
       // Row 2: x=2.0, y=3.0, z=4.0 (no nulls)
-      EXPECT_FLOAT_EQ(
-          static_cast<float>(
-              row.chunk->read_numeric_as_double(0, row.row_index)),
-          2.0F);
-      EXPECT_FLOAT_EQ(
-          static_cast<float>(
-              row.chunk->read_numeric_as_double(1, row.row_index)),
-          3.0F);
-      EXPECT_FLOAT_EQ(
-          static_cast<float>(
-              row.chunk->read_numeric_as_double(2, row.row_index)),
-          4.0F);
+      EXPECT_FLOAT_EQ(static_cast<float>(row.chunk->read_numeric_as_double(0, row.row_index)), 2.0F);
+      EXPECT_FLOAT_EQ(static_cast<float>(row.chunk->read_numeric_as_double(1, row.row_index)), 3.0F);
+      EXPECT_FLOAT_EQ(static_cast<float>(row.chunk->read_numeric_as_double(2, row.row_index)), 4.0F);
       EXPECT_FALSE(row.chunk->is_null(0, row.row_index));
       EXPECT_FALSE(row.chunk->is_null(1, row.row_index));
       EXPECT_FALSE(row.chunk->is_null(2, row.row_index));
@@ -751,14 +671,12 @@ TEST(EngineIntegrationTest, PartialRowAutoFillsNulls) {
 TEST(EngineIntegrationTest, RetentionWorksWithNegativeTimestamps) {
   DataEngine engine;
 
-  auto dataset_id_or = engine.create_dataset(
-      DatasetDescriptor{.source_name = "test", .time_domain_id = 0});
+  auto dataset_id_or = engine.create_dataset(DatasetDescriptor{.source_name = "test", .time_domain_id = 0});
   ASSERT_TRUE(dataset_id_or.ok()) << dataset_id_or.status();
   DatasetId dataset_id = *dataset_id_or;
 
   DataWriter writer = engine.create_writer();
-  auto handle_or = writer.register_scalar_series(
-      dataset_id, "negative_ts", NumericType::kFloat64);
+  auto handle_or = writer.register_scalar_series(dataset_id, "negative_ts", NumericType::kFloat64);
   ASSERT_TRUE(handle_or.ok()) << handle_or.status();
   ScalarSeriesHandle handle = *handle_or;
 
@@ -767,8 +685,7 @@ TEST(EngineIntegrationTest, RetentionWorksWithNegativeTimestamps) {
   // Actually, scalar API uses default chunk size 1024, which means all 11
   // values fit in one chunk. That's fine for testing retention logic.
   for (int i = -1000; i <= 0; i += 100) {
-    writer.append_scalar(handle, static_cast<Timestamp>(i),
-                         static_cast<double>(i));
+    writer.append_scalar(handle, static_cast<Timestamp>(i), static_cast<double>(i));
   }
 
   auto flushed = writer.flush_all();
@@ -789,8 +706,7 @@ TEST(EngineIntegrationTest, RetentionWorksWithNegativeTimestamps) {
   EXPECT_FALSE(storage->empty());
 
   DataReader reader = engine.create_reader();
-  auto cursor_or = reader.range_query(
-      QueryRange{.topic_id = handle.topic_id, .t_min = -1000, .t_max = 0});
+  auto cursor_or = reader.range_query(QueryRange{.topic_id = handle.topic_id, .t_min = -1000, .t_max = 0});
   ASSERT_TRUE(cursor_or.ok()) << cursor_or.status();
   std::size_t count = 0;
   cursor_or->for_each([&count](const SampleRow&) { ++count; });
@@ -810,14 +726,12 @@ TEST(EngineIntegrationTest, QueryReturnsErrorForMissingTopic) {
   DataReader reader = engine.create_reader();
 
   // range_query with non-existent topic
-  auto cursor_or = reader.range_query(
-      QueryRange{.topic_id = 999, .t_min = 0, .t_max = 1000});
+  auto cursor_or = reader.range_query(QueryRange{.topic_id = 999, .t_min = 0, .t_max = 1000});
   EXPECT_FALSE(cursor_or.ok());
   EXPECT_TRUE(absl::IsNotFound(cursor_or.status()));
 
   // latest_at with non-existent topic
-  auto latest_or = reader.latest_at(
-      QueryPoint{.topic_id = 999, .t = 500});
+  auto latest_or = reader.latest_at(QueryPoint{.topic_id = 999, .t = 500});
   EXPECT_FALSE(latest_or.ok());
   EXPECT_TRUE(absl::IsNotFound(latest_or.status()));
 }
@@ -829,14 +743,12 @@ TEST(EngineIntegrationTest, QueryReturnsErrorForMissingTopic) {
 TEST(EngineIntegrationTest, BeginRowRejectsOutOfOrderTimestamp) {
   DataEngine engine;
 
-  auto dataset_id_or = engine.create_dataset(
-      DatasetDescriptor{.source_name = "test", .time_domain_id = 0});
+  auto dataset_id_or = engine.create_dataset(DatasetDescriptor{.source_name = "test", .time_domain_id = 0});
   ASSERT_TRUE(dataset_id_or.ok()) << dataset_id_or.status();
   DatasetId dataset_id = *dataset_id_or;
 
   DataWriter writer = engine.create_writer();
-  auto handle_or = writer.register_scalar_series(
-      dataset_id, "ordered", NumericType::kFloat64);
+  auto handle_or = writer.register_scalar_series(dataset_id, "ordered", NumericType::kFloat64);
   ASSERT_TRUE(handle_or.ok()) << handle_or.status();
   TopicId topic_id = handle_or->topic_id;
 
@@ -858,14 +770,12 @@ TEST(EngineIntegrationTest, BeginRowRejectsOutOfOrderTimestamp) {
 TEST(EngineIntegrationTest, EqualTimestampsAllowed) {
   DataEngine engine;
 
-  auto dataset_id_or = engine.create_dataset(
-      DatasetDescriptor{.source_name = "test", .time_domain_id = 0});
+  auto dataset_id_or = engine.create_dataset(DatasetDescriptor{.source_name = "test", .time_domain_id = 0});
   ASSERT_TRUE(dataset_id_or.ok()) << dataset_id_or.status();
   DatasetId dataset_id = *dataset_id_or;
 
   DataWriter writer = engine.create_writer();
-  auto handle_or = writer.register_scalar_series(
-      dataset_id, "equal_ts", NumericType::kFloat64);
+  auto handle_or = writer.register_scalar_series(dataset_id, "equal_ts", NumericType::kFloat64);
   ASSERT_TRUE(handle_or.ok()) << handle_or.status();
   TopicId topic_id = handle_or->topic_id;
 
@@ -888,8 +798,7 @@ TEST(EngineIntegrationTest, EqualTimestampsAllowed) {
 
   DataReader reader = engine.create_reader();
   std::size_t count = 0;
-  auto cursor_or = reader.range_query(
-      QueryRange{.topic_id = topic_id, .t_min = 0, .t_max = 300});
+  auto cursor_or = reader.range_query(QueryRange{.topic_id = topic_id, .t_min = 0, .t_max = 300});
   ASSERT_TRUE(cursor_or.ok()) << cursor_or.status();
   cursor_or->for_each([&count](const SampleRow&) { ++count; });
   EXPECT_EQ(count, 3U);
@@ -902,8 +811,7 @@ TEST(EngineIntegrationTest, EqualTimestampsAllowed) {
 TEST(EngineIntegrationTest, BulkAppendColumnsMultiChunk) {
   DataEngine engine;
 
-  auto dataset_id_or = engine.create_dataset(
-      DatasetDescriptor{.source_name = "bulk_test", .time_domain_id = 0});
+  auto dataset_id_or = engine.create_dataset(DatasetDescriptor{.source_name = "bulk_test", .time_domain_id = 0});
   ASSERT_TRUE(dataset_id_or.ok()) << dataset_id_or.status();
   DatasetId dataset_id = *dataset_id_or;
 
@@ -936,11 +844,12 @@ TEST(EngineIntegrationTest, BulkAppendColumnsMultiChunk) {
     z_vals[i] = static_cast<float>(i) * 0.3F;
   }
 
-  auto status = writer.append_columns(topic_id, timestamps, {
-      ColumnData::Float32(0, x_vals.data(), N),
-      ColumnData::Float32(1, y_vals.data(), N),
-      ColumnData::Float32(2, z_vals.data(), N),
-  });
+  std::vector<ColumnData> columns = {
+      ColumnData::Float32(0, x_vals),
+      ColumnData::Float32(1, y_vals),
+      ColumnData::Float32(2, z_vals),
+  };
+  auto status = writer.append_columns(topic_id, timestamps, columns);
   ASSERT_TRUE(status.ok()) << status;
 
   auto flushed = writer.flush_all();
@@ -955,10 +864,8 @@ TEST(EngineIntegrationTest, BulkAppendColumnsMultiChunk) {
   // Verify round-trip via range_query
   DataReader reader = engine.create_reader();
   std::size_t count = 0;
-  auto cursor_or = reader.range_query(
-      QueryRange{.topic_id = topic_id,
-                 .t_min = 0,
-                 .t_max = static_cast<Timestamp>(N - 1) * 1000});
+  auto cursor_or =
+      reader.range_query(QueryRange{.topic_id = topic_id, .t_min = 0, .t_max = static_cast<Timestamp>(N - 1) * 1000});
   ASSERT_TRUE(cursor_or.ok()) << cursor_or.status();
   cursor_or->for_each([&count](const SampleRow& row) {
     ASSERT_NE(row.chunk, nullptr);
@@ -967,19 +874,12 @@ TEST(EngineIntegrationTest, BulkAppendColumnsMultiChunk) {
   EXPECT_EQ(count, N);
 
   // Spot-check specific values via latest_at
-  auto latest_or = reader.latest_at(
-      QueryPoint{.topic_id = topic_id, .t = 500 * 1000});
+  auto latest_or = reader.latest_at(QueryPoint{.topic_id = topic_id, .t = 500 * 1000});
   ASSERT_TRUE(latest_or.ok()) << latest_or.status();
   ASSERT_TRUE(latest_or->found);
   EXPECT_EQ(latest_or->timestamp, 500 * 1000);
-  EXPECT_FLOAT_EQ(
-      static_cast<float>(
-          latest_or->chunk->read_numeric_as_double(0, latest_or->row_index)),
-      500.0F * 0.1F);
-  EXPECT_FLOAT_EQ(
-      static_cast<float>(
-          latest_or->chunk->read_numeric_as_double(1, latest_or->row_index)),
-      500.0F * 0.2F);
+  EXPECT_FLOAT_EQ(static_cast<float>(latest_or->chunk->read_numeric_as_double(0, latest_or->row_index)), 500.0F * 0.1F);
+  EXPECT_FLOAT_EQ(static_cast<float>(latest_or->chunk->read_numeric_as_double(1, latest_or->row_index)), 500.0F * 0.2F);
 }
 
 // ===========================================================================
@@ -989,8 +889,7 @@ TEST(EngineIntegrationTest, BulkAppendColumnsMultiChunk) {
 TEST(EngineIntegrationTest, BulkAppendErrorHandling) {
   DataEngine engine;
 
-  auto dataset_id_or = engine.create_dataset(
-      DatasetDescriptor{.source_name = "err_test", .time_domain_id = 0});
+  auto dataset_id_or = engine.create_dataset(DatasetDescriptor{.source_name = "err_test", .time_domain_id = 0});
   ASSERT_TRUE(dataset_id_or.ok());
   DatasetId dataset_id = *dataset_id_or;
 
@@ -1000,8 +899,10 @@ TEST(EngineIntegrationTest, BulkAppendErrorHandling) {
   {
     const Timestamp ts[] = {1};
     const float vals[] = {1.0F};
-    auto status = writer.append_columns(999, ts,
-        {ColumnData::Float32(0, vals, 1)});
+    std::vector<ColumnData> cols = {
+        ColumnData::Float32(0, Span<const float>(vals, 1)),
+    };
+    auto status = writer.append_columns(999, Span<const Timestamp>(ts, 1), cols);
     EXPECT_FALSE(status.ok());
     EXPECT_TRUE(absl::IsNotFound(status));
   }
@@ -1017,8 +918,10 @@ TEST(EngineIntegrationTest, BulkAppendErrorHandling) {
 
     const Timestamp ts[] = {1, 2, 3};
     const float vals[] = {1.0F, 2.0F};  // 2 values, 3 timestamps
-    auto status = writer.append_columns(tid, ts,
-        {ColumnData::Float32(0, vals, 2)});
+    std::vector<ColumnData> cols = {
+        ColumnData::Float32(0, Span<const float>(vals, 2)),
+    };
+    auto status = writer.append_columns(tid, Span<const Timestamp>(ts, 3), cols);
     EXPECT_FALSE(status.ok());
     EXPECT_TRUE(absl::IsInvalidArgument(status));
   }
@@ -1031,8 +934,7 @@ TEST(EngineIntegrationTest, BulkAppendErrorHandling) {
 TEST(EngineIntegrationTest, BulkAppendEmpty) {
   DataEngine engine;
 
-  auto dataset_id_or = engine.create_dataset(
-      DatasetDescriptor{.source_name = "empty_test", .time_domain_id = 0});
+  auto dataset_id_or = engine.create_dataset(DatasetDescriptor{.source_name = "empty_test", .time_domain_id = 0});
   ASSERT_TRUE(dataset_id_or.ok());
   DatasetId dataset_id = *dataset_id_or;
 
@@ -1045,7 +947,7 @@ TEST(EngineIntegrationTest, BulkAppendEmpty) {
   auto tid = *writer.register_topic(dataset_id, desc);
 
   // Empty append should succeed and produce no data
-  auto status = writer.append_columns(tid, {}, {});
+  auto status = writer.append_columns(tid, Span<const Timestamp>(), Span<const ColumnData>());
   EXPECT_TRUE(status.ok()) << status;
 
   auto flushed = writer.flush_all();

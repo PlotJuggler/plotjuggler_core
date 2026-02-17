@@ -1,7 +1,5 @@
 #include "pj/engine/writer.hpp"
 
-#include "pj/base/assert.hpp"
-
 #include <cstddef>
 #include <cstdint>
 #include <string>
@@ -13,43 +11,83 @@
 #include "absl/status/status.h"
 #include "absl/status/statusor.h"
 #include "absl/strings/str_cat.h"
-
+#include "pj/base/assert.hpp"
+#include "pj/base/type_tree.hpp"
+#include "pj/base/types.hpp"
 #include "pj/engine/chunk.hpp"
 #include "pj/engine/column_buffer.hpp"
 #include "pj/engine/engine.hpp"
 #include "pj/engine/topic_storage.hpp"
 #include "pj/engine/type_registry.hpp"
-#include "pj/base/type_tree.hpp"
-#include "pj/base/types.hpp"
 
 namespace pj::engine {
+
+// ---------------------------------------------------------------------------
+// ColumnData methods
+// ---------------------------------------------------------------------------
+
+namespace {
+
+template <class... Ts>
+struct overloaded : Ts... {
+  using Ts::operator()...;
+};
+template <class... Ts>
+overloaded(Ts...) -> overloaded<Ts...>;
+
+}  // namespace
+
+std::size_t ColumnData::row_count() const {
+  return std::visit(
+      overloaded{
+          [](const StringData& s) -> std::size_t { return s.offsets.empty() ? 0 : s.offsets.size() - 1; },
+          [](const auto& span) -> std::size_t { return span.size(); },
+      },
+      data);
+}
+
+StorageKind ColumnData::kind() const {
+  static constexpr StorageKind kinds[] = {
+      StorageKind::kFloat32, StorageKind::kFloat64, StorageKind::kInt32,  StorageKind::kInt64,
+      StorageKind::kUint64,  StorageKind::kBool,    StorageKind::kString,
+  };
+  return kinds[data.index()];
+}
 
 namespace {
 
 /// Map NumericType to PrimitiveType (same enum values, different enum types).
 constexpr PrimitiveType numeric_to_primitive(NumericType nt) noexcept {
   switch (nt) {
-    case NumericType::kFloat32: return PrimitiveType::kFloat32;
-    case NumericType::kFloat64: return PrimitiveType::kFloat64;
-    case NumericType::kInt8:    return PrimitiveType::kInt8;
-    case NumericType::kInt16:   return PrimitiveType::kInt16;
-    case NumericType::kInt32:   return PrimitiveType::kInt32;
-    case NumericType::kInt64:   return PrimitiveType::kInt64;
-    case NumericType::kUint8:   return PrimitiveType::kUint8;
-    case NumericType::kUint16:  return PrimitiveType::kUint16;
-    case NumericType::kUint32:  return PrimitiveType::kUint32;
-    case NumericType::kUint64:  return PrimitiveType::kUint64;
+    case NumericType::kFloat32:
+      return PrimitiveType::kFloat32;
+    case NumericType::kFloat64:
+      return PrimitiveType::kFloat64;
+    case NumericType::kInt8:
+      return PrimitiveType::kInt8;
+    case NumericType::kInt16:
+      return PrimitiveType::kInt16;
+    case NumericType::kInt32:
+      return PrimitiveType::kInt32;
+    case NumericType::kInt64:
+      return PrimitiveType::kInt64;
+    case NumericType::kUint8:
+      return PrimitiveType::kUint8;
+    case NumericType::kUint16:
+      return PrimitiveType::kUint16;
+    case NumericType::kUint32:
+      return PrimitiveType::kUint32;
+    case NumericType::kUint64:
+      return PrimitiveType::kUint64;
   }
   return PrimitiveType::kFloat64;  // unreachable
 }
 
 /// Recursively flatten a type tree into ColumnDescriptors, collecting both
 /// field paths and PrimitiveTypes for each leaf node.
-void flatten_columns_impl(const TypeTreeNode& node, std::string_view prefix,
-                          FieldId& next_field_id,
-                          std::vector<ColumnDescriptor>& out) {
-  std::string current_path =
-      prefix.empty() ? node.name : absl::StrCat(prefix, ".", node.name);
+void flatten_columns_impl(
+    const TypeTreeNode& node, std::string_view prefix, FieldId& next_field_id, std::vector<ColumnDescriptor>& out) {
+  std::string current_path = prefix.empty() ? node.name : absl::StrCat(prefix, ".", node.name);
 
   if (node.kind == TypeKind::kStruct) {
     for (const auto& child : node.children) {
@@ -85,18 +123,15 @@ DataWriter::DataWriter(DataEngine& engine) : engine_(engine) {}
 // Schema registration
 // ---------------------------------------------------------------------------
 
-absl::StatusOr<SchemaId> DataWriter::register_schema(
-    std::string schema_name, std::shared_ptr<TypeTreeNode> type_tree) {
-  return engine_.type_registry().register_schema(std::move(schema_name),
-                                                 std::move(type_tree));
+absl::StatusOr<SchemaId> DataWriter::register_schema(std::string schema_name, std::shared_ptr<TypeTreeNode> type_tree) {
+  return engine_.type_registry().register_schema(std::move(schema_name), std::move(type_tree));
 }
 
 // ---------------------------------------------------------------------------
 // Topic registration
 // ---------------------------------------------------------------------------
 
-absl::StatusOr<TopicId> DataWriter::register_topic(
-    DatasetId dataset_id, TopicDescriptor descriptor) {
+absl::StatusOr<TopicId> DataWriter::register_topic(DatasetId dataset_id, TopicDescriptor descriptor) {
   return engine_.create_topic(dataset_id, std::move(descriptor));
 }
 
@@ -104,12 +139,10 @@ absl::StatusOr<TopicId> DataWriter::register_topic(
 // Bind for fast-path access
 // ---------------------------------------------------------------------------
 
-absl::StatusOr<TopicWriteHandle> DataWriter::bind_topic_writer(
-    TopicId topic_id) {
+absl::StatusOr<TopicWriteHandle> DataWriter::bind_topic_writer(TopicId topic_id) {
   const auto* storage = engine_.get_topic_storage(topic_id);
   if (storage == nullptr) {
-    return absl::NotFoundError(
-        absl::StrCat("Topic ", topic_id, " not found"));
+    return absl::NotFoundError(absl::StrCat("Topic ", topic_id, " not found"));
   }
 
   // Ensure column descriptors are cached
@@ -130,16 +163,14 @@ absl::StatusOr<TopicWriteHandle> DataWriter::bind_topic_writer(
 // Field resolution
 // ---------------------------------------------------------------------------
 
-absl::StatusOr<FieldId> DataWriter::resolve_field(
-    TopicId topic_id, std::string_view field_path) {
+absl::StatusOr<FieldId> DataWriter::resolve_field(TopicId topic_id, std::string_view field_path) {
   // Ensure columns are cached by getting or creating the builder
   auto& builder = get_or_create_builder(topic_id);
   (void)builder;
 
   auto col_it = topic_columns_.find(topic_id);
   if (col_it == topic_columns_.end()) {
-    return absl::NotFoundError(
-        absl::StrCat("Topic ", topic_id, " not found"));
+    return absl::NotFoundError(absl::StrCat("Topic ", topic_id, " not found"));
   }
 
   for (const auto& col : col_it->second) {
@@ -147,9 +178,7 @@ absl::StatusOr<FieldId> DataWriter::resolve_field(
       return col.field_id;
     }
   }
-  return absl::NotFoundError(
-      absl::StrCat("Field '", field_path, "' not found in topic ",
-                    topic_id));
+  return absl::NotFoundError(absl::StrCat("Field '", field_path, "' not found in topic ", topic_id));
 }
 
 // ---------------------------------------------------------------------------
@@ -159,14 +188,12 @@ absl::StatusOr<FieldId> DataWriter::resolve_field(
 absl::Status DataWriter::begin_row(TopicId topic_id, Timestamp t) {
   auto* storage = engine_.get_topic_storage(topic_id);
   if (storage == nullptr) {
-    return absl::NotFoundError(
-        absl::StrCat("Topic ", topic_id, " not found"));
+    return absl::NotFoundError(absl::StrCat("Topic ", topic_id, " not found"));
   }
   auto& builder = get_or_create_builder(topic_id);
   if (builder.row_count() > 0 && t < builder.last_timestamp()) {
-    return absl::InvalidArgumentError(absl::StrCat(
-        "Out-of-order timestamp: t=", t,
-        " < last_timestamp=", builder.last_timestamp()));
+    return absl::InvalidArgumentError(
+        absl::StrCat("Out-of-order timestamp: t=", t, " < last_timestamp=", builder.last_timestamp()));
   }
   builder.begin_row(t);
   return absl::OkStatus();
@@ -189,8 +216,7 @@ void DataWriter::finish_row(TopicId topic_id) {
 // Set values (6 storage types)
 // ---------------------------------------------------------------------------
 
-void DataWriter::set_float32(TopicId topic_id, std::size_t col_index,
-                             float value) {
+void DataWriter::set_float32(TopicId topic_id, std::size_t col_index, float value) {
   auto it = builders_.find(topic_id);
   PJ_ASSERT(it != builders_.end(), "set_float32: no builder for topic");
   if (it != builders_.end()) {
@@ -198,8 +224,7 @@ void DataWriter::set_float32(TopicId topic_id, std::size_t col_index,
   }
 }
 
-void DataWriter::set_float64(TopicId topic_id, std::size_t col_index,
-                             double value) {
+void DataWriter::set_float64(TopicId topic_id, std::size_t col_index, double value) {
   auto it = builders_.find(topic_id);
   PJ_ASSERT(it != builders_.end(), "set_float64: no builder for topic");
   if (it != builders_.end()) {
@@ -207,8 +232,7 @@ void DataWriter::set_float64(TopicId topic_id, std::size_t col_index,
   }
 }
 
-void DataWriter::set_int32(TopicId topic_id, std::size_t col_index,
-                           int32_t value) {
+void DataWriter::set_int32(TopicId topic_id, std::size_t col_index, int32_t value) {
   auto it = builders_.find(topic_id);
   PJ_ASSERT(it != builders_.end(), "set_int32: no builder for topic");
   if (it != builders_.end()) {
@@ -216,8 +240,7 @@ void DataWriter::set_int32(TopicId topic_id, std::size_t col_index,
   }
 }
 
-void DataWriter::set_int64(TopicId topic_id, std::size_t col_index,
-                           int64_t value) {
+void DataWriter::set_int64(TopicId topic_id, std::size_t col_index, int64_t value) {
   auto it = builders_.find(topic_id);
   PJ_ASSERT(it != builders_.end(), "set_int64: no builder for topic");
   if (it != builders_.end()) {
@@ -225,8 +248,7 @@ void DataWriter::set_int64(TopicId topic_id, std::size_t col_index,
   }
 }
 
-void DataWriter::set_uint64(TopicId topic_id, std::size_t col_index,
-                            uint64_t value) {
+void DataWriter::set_uint64(TopicId topic_id, std::size_t col_index, uint64_t value) {
   auto it = builders_.find(topic_id);
   PJ_ASSERT(it != builders_.end(), "set_uint64: no builder for topic");
   if (it != builders_.end()) {
@@ -234,8 +256,7 @@ void DataWriter::set_uint64(TopicId topic_id, std::size_t col_index,
   }
 }
 
-void DataWriter::set_string(TopicId topic_id, std::size_t col_index,
-                            std::string_view value) {
+void DataWriter::set_string(TopicId topic_id, std::size_t col_index, std::string_view value) {
   auto it = builders_.find(topic_id);
   PJ_ASSERT(it != builders_.end(), "set_string: no builder for topic");
   if (it != builders_.end()) {
@@ -243,8 +264,7 @@ void DataWriter::set_string(TopicId topic_id, std::size_t col_index,
   }
 }
 
-void DataWriter::set_bool(TopicId topic_id, std::size_t col_index,
-                           bool value) {
+void DataWriter::set_bool(TopicId topic_id, std::size_t col_index, bool value) {
   auto it = builders_.find(topic_id);
   PJ_ASSERT(it != builders_.end(), "set_bool: no builder for topic");
   if (it != builders_.end()) {
@@ -266,75 +286,53 @@ void DataWriter::set_null(TopicId topic_id, std::size_t col_index) {
 
 namespace {
 
-void append_single_column_to_builder(TopicChunkBuilder& builder,
-                                     const ColumnData& col,
-                                     std::size_t offset,
-                                     std::size_t batch_size) {
-  switch (col.kind) {
-    case StorageKind::kFloat32:
-      builder.append_column_float32(
-          col.col_index,
-          static_cast<const float*>(col.data) + offset, batch_size);
-      break;
-    case StorageKind::kFloat64:
-      builder.append_column_float64(
-          col.col_index,
-          static_cast<const double*>(col.data) + offset, batch_size);
-      break;
-    case StorageKind::kInt32:
-      builder.append_column_int32(
-          col.col_index,
-          static_cast<const int32_t*>(col.data) + offset, batch_size);
-      break;
-    case StorageKind::kInt64:
-      builder.append_column_int64(
-          col.col_index,
-          static_cast<const int64_t*>(col.data) + offset, batch_size);
-      break;
-    case StorageKind::kUint64:
-      builder.append_column_uint64(
-          col.col_index,
-          static_cast<const uint64_t*>(col.data) + offset, batch_size);
-      break;
-    case StorageKind::kBool:
-      builder.append_column_bool(
-          col.col_index,
-          static_cast<const uint8_t*>(col.data) + offset, batch_size);
-      break;
-    case StorageKind::kString: {
-      // Offset into the offsets array; string_data is referenced by offsets
-      builder.append_column_strings(
-          col.col_index,
-          col.string_offsets + offset, col.string_data, batch_size);
-      break;
-    }
-  }
+void append_single_column_to_builder(
+    TopicChunkBuilder& builder, const ColumnData& col, std::size_t offset, std::size_t batch_size) {
+  std::visit(
+      overloaded{
+          [&](Span<const float> d) { builder.append_column_float32(col.col_index, d.subspan(offset, batch_size)); },
+          [&](Span<const double> d) { builder.append_column_float64(col.col_index, d.subspan(offset, batch_size)); },
+          [&](Span<const int32_t> d) { builder.append_column_int32(col.col_index, d.subspan(offset, batch_size)); },
+          [&](Span<const int64_t> d) { builder.append_column_int64(col.col_index, d.subspan(offset, batch_size)); },
+          [&](Span<const uint64_t> d) { builder.append_column_uint64(col.col_index, d.subspan(offset, batch_size)); },
+          [&](Span<const uint8_t> d) { builder.append_column_bool(col.col_index, d.subspan(offset, batch_size)); },
+          [&](const ColumnData::StringData& s) {
+            builder.append_column_strings(col.col_index, s.offsets.subspan(offset, batch_size + 1), s.values);
+          },
+      },
+      col.data);
 
   // Apply validity bitmap if present
-  if (col.validity_bitmap != nullptr) {
-    builder.append_column_validity(
-        col.col_index, col.validity_bitmap,
-        col.validity_bit_offset + offset, batch_size);
+  if (!col.validity.empty()) {
+    builder.append_column_validity(col.col_index, col.validity.subspan(offset, batch_size));
   }
 }
 
 }  // namespace
 
 absl::Status DataWriter::append_columns(
-    TopicId topic_id, absl::Span<const Timestamp> timestamps,
-    absl::Span<const ColumnData> columns) {
+    TopicId topic_id, Span<const Timestamp> timestamps, Span<const ColumnData> columns) {
   auto* storage = engine_.get_topic_storage(topic_id);
   if (storage == nullptr) {
-    return absl::NotFoundError(
-        absl::StrCat("Topic ", topic_id, " not found"));
+    return absl::NotFoundError(absl::StrCat("Topic ", topic_id, " not found"));
   }
 
-  // Validate all column counts match timestamp count
+  // Validate all column row counts match timestamp count
   for (const auto& col : columns) {
-    if (col.count != timestamps.size()) {
-      return absl::InvalidArgumentError(absl::StrCat(
-          "Column ", col.col_index, " has ", col.count,
-          " rows but ", timestamps.size(), " timestamps provided"));
+    const std::size_t n = col.row_count();
+    if (n != timestamps.size()) {
+      return absl::InvalidArgumentError(
+          absl::StrCat("Column ", col.col_index, " has ", n, " rows but ", timestamps.size(), " timestamps provided"));
+    }
+
+    if (!col.validity.empty()) {
+      if (col.validity.bit_length != n) {
+        return absl::InvalidArgumentError(absl::StrCat("Column ", col.col_index, " validity bit_length mismatch"));
+      }
+      const std::size_t available_bits = col.validity.bytes.size() * 8;
+      if (col.validity.bit_offset + col.validity.bit_length > available_bits) {
+        return absl::InvalidArgumentError(absl::StrCat("Column ", col.col_index, " validity range out of bounds"));
+      }
     }
   }
 
@@ -345,9 +343,8 @@ absl::Status DataWriter::append_columns(
   // Validate timestamp ordering
   auto& builder = get_or_create_builder(topic_id);
   if (builder.row_count() > 0 && timestamps[0] < builder.last_timestamp()) {
-    return absl::InvalidArgumentError(absl::StrCat(
-        "Out-of-order timestamp: t=", timestamps[0],
-        " < last_timestamp=", builder.last_timestamp()));
+    return absl::InvalidArgumentError(
+        absl::StrCat("Out-of-order timestamp: t=", timestamps[0], " < last_timestamp=", builder.last_timestamp()));
   }
 
   std::size_t offset = 0;
@@ -355,11 +352,9 @@ absl::Status DataWriter::append_columns(
 
   while (offset < total) {
     auto& b = get_or_create_builder(topic_id);
-    const std::size_t batch_size =
-        std::min(total - offset,
-                 static_cast<std::size_t>(b.remaining_capacity()));
+    const std::size_t batch_size = std::min(total - offset, static_cast<std::size_t>(b.remaining_capacity()));
 
-    b.append_timestamps(timestamps.data() + offset, batch_size);
+    b.append_timestamps(timestamps.subspan(offset, batch_size));
     for (const auto& col : columns) {
       append_single_column_to_builder(b, col, offset, batch_size);
     }
@@ -380,8 +375,7 @@ absl::Status DataWriter::append_columns(
 // ---------------------------------------------------------------------------
 
 absl::StatusOr<ScalarSeriesHandle> DataWriter::register_scalar_series(
-    DatasetId dataset_id, std::string_view topic_name,
-    NumericType value_type) {
+    DatasetId dataset_id, std::string_view topic_name, NumericType value_type) {
   // Create a topic descriptor for a scalar series (schema_id = 0)
   TopicDescriptor desc;
   desc.name = std::string(topic_name);
@@ -407,11 +401,9 @@ absl::StatusOr<ScalarSeriesHandle> DataWriter::register_scalar_series(
   return handle;
 }
 
-void DataWriter::append_scalar(const ScalarSeriesHandle& handle,
-                               Timestamp t, NumericValue value) {
+void DataWriter::append_scalar(const ScalarSeriesHandle& handle, Timestamp t, NumericValue value) {
   auto& builder = get_or_create_builder(handle.topic_id);
-  PJ_ASSERT(builder.row_count() == 0 || t >= builder.last_timestamp(),
-            "append_scalar: out-of-order timestamp");
+  PJ_ASSERT(builder.row_count() == 0 || t >= builder.last_timestamp(), "append_scalar: out-of-order timestamp");
   builder.begin_row(t);
 
   const auto col = static_cast<std::size_t>(handle.value_field);
@@ -424,14 +416,11 @@ void DataWriter::append_scalar(const ScalarSeriesHandle& handle,
           builder.set_float64(col, v);
         } else if constexpr (std::is_same_v<T, int32_t>) {
           builder.set_int32(col, v);
-        } else if constexpr (std::is_same_v<T, int8_t> ||
-                             std::is_same_v<T, int16_t> ||
-                             std::is_same_v<T, int64_t>) {
+        } else if constexpr (std::is_same_v<T, int8_t> || std::is_same_v<T, int16_t> || std::is_same_v<T, int64_t>) {
           builder.set_int64(col, static_cast<int64_t>(v));
-        } else if constexpr (std::is_same_v<T, uint8_t> ||
-                             std::is_same_v<T, uint16_t> ||
-                             std::is_same_v<T, uint32_t> ||
-                             std::is_same_v<T, uint64_t>) {
+        } else if constexpr (
+            std::is_same_v<T, uint8_t> || std::is_same_v<T, uint16_t> || std::is_same_v<T, uint32_t> ||
+            std::is_same_v<T, uint64_t>) {
           builder.set_uint64(col, static_cast<uint64_t>(v));
         }
       },
@@ -529,15 +518,13 @@ TopicChunkBuilder& DataWriter::get_or_create_builder(TopicId topic_id) {
   }
 
   auto [insert_it, inserted] = builders_.emplace(
-      std::piecewise_construct,
-      std::forward_as_tuple(topic_id),
+      std::piecewise_construct, std::forward_as_tuple(topic_id),
       std::forward_as_tuple(topic_id, schema_id, col_it->second, max_rows));
 
   return insert_it->second;
 }
 
-std::vector<ColumnDescriptor> DataWriter::build_column_descriptors(
-    const TypeTreeNode& root) {
+std::vector<ColumnDescriptor> DataWriter::build_column_descriptors(const TypeTreeNode& root) {
   std::vector<ColumnDescriptor> result;
   FieldId next_id = 0;
 
@@ -545,8 +532,7 @@ std::vector<ColumnDescriptor> DataWriter::build_column_descriptors(
     ColumnDescriptor desc;
     desc.field_id = next_id++;
     desc.field_path = root.name;
-    desc.logical_type =
-        root.primitive_type.value_or(PrimitiveType::kFloat64);
+    desc.logical_type = root.primitive_type.value_or(PrimitiveType::kFloat64);
     result.push_back(std::move(desc));
     return result;
   }

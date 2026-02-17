@@ -8,10 +8,8 @@
 namespace pj {
 namespace {
 
-void flatten_impl(const TypeTreeNode& node, std::string_view prefix,
-                  std::vector<std::string>& out) {
-  std::string current_path =
-      prefix.empty() ? node.name : std::string(prefix) + "." + node.name;
+void flatten_impl(const TypeTreeNode& node, std::string_view prefix, std::vector<std::string>& out) {
+  std::string current_path = prefix.empty() ? node.name : std::string(prefix) + "." + node.name;
 
   if (node.kind != TypeKind::kStruct) {
     out.push_back(std::move(current_path));
@@ -35,8 +33,7 @@ std::size_t count_leaf_fields_impl(const TypeTreeNode& node) {
 
 }  // namespace
 
-std::shared_ptr<TypeTreeNode> make_primitive(std::string name,
-                                             PrimitiveType type) {
+std::shared_ptr<TypeTreeNode> make_primitive(std::string name, PrimitiveType type) {
   auto node = std::make_shared<TypeTreeNode>();
   node->name = std::move(name);
   node->kind = TypeKind::kPrimitive;
@@ -44,8 +41,7 @@ std::shared_ptr<TypeTreeNode> make_primitive(std::string name,
   return node;
 }
 
-std::shared_ptr<TypeTreeNode> make_struct(
-    std::string name, std::vector<std::shared_ptr<TypeTreeNode>> children) {
+std::shared_ptr<TypeTreeNode> make_struct(std::string name, std::vector<std::shared_ptr<TypeTreeNode>> children) {
   auto node = std::make_shared<TypeTreeNode>();
   node->name = std::move(name);
   node->kind = TypeKind::kStruct;
@@ -54,8 +50,7 @@ std::shared_ptr<TypeTreeNode> make_struct(
 }
 
 std::shared_ptr<TypeTreeNode> make_array(
-    std::string name, std::shared_ptr<TypeTreeNode> element_type,
-    std::optional<uint32_t> fixed_size) {
+    std::string name, std::shared_ptr<TypeTreeNode> element_type, std::optional<uint32_t> fixed_size) {
   auto node = std::make_shared<TypeTreeNode>();
   node->name = std::move(name);
   node->kind = TypeKind::kArray;
@@ -64,9 +59,7 @@ std::shared_ptr<TypeTreeNode> make_array(
   return node;
 }
 
-std::shared_ptr<TypeTreeNode> make_enum(std::string name,
-                                        PrimitiveType underlying_type,
-                                        EnumMapping mapping) {
+std::shared_ptr<TypeTreeNode> make_enum(std::string name, PrimitiveType underlying_type, EnumMapping mapping) {
   auto node = std::make_shared<TypeTreeNode>();
   node->name = std::move(name);
   node->kind = TypeKind::kEnum;

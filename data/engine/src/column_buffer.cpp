@@ -12,8 +12,7 @@ namespace pj::engine {
 // Construction
 // ---------------------------------------------------------------------------
 
-TypedColumnBuffer::TypedColumnBuffer(ColumnDescriptor descriptor)
-    : descriptor_(std::move(descriptor)) {}
+TypedColumnBuffer::TypedColumnBuffer(ColumnDescriptor descriptor) : descriptor_(std::move(descriptor)) {}
 
 // ---------------------------------------------------------------------------
 // Accessors
@@ -32,7 +31,9 @@ bool TypedColumnBuffer::has_nulls() const noexcept {
 }
 
 bool TypedColumnBuffer::is_valid(std::size_t row) const noexcept {
-  if (!validity_initialized_) return true;
+  if (!validity_initialized_) {
+    return true;
+  }
   return validity_bitmap::is_valid(validity_, row);
 }
 
@@ -74,8 +75,7 @@ void TypedColumnBuffer::append_fixed(T value) {
   values_.append(&value, sizeof(T));
   if (validity_initialized_) {
     // Ensure bitmap has room for this row, then mark valid.
-    const std::size_t needed =
-        validity_bitmap::bytes_for_bits(row_count_ + 1);
+    const std::size_t needed = validity_bitmap::bytes_for_bits(row_count_ + 1);
     if (validity_.size() < needed) {
       validity_.resize(needed);
     }
@@ -143,8 +143,7 @@ void TypedColumnBuffer::append_string(std::string_view value) {
 
   // Update validity if initialized.
   if (validity_initialized_) {
-    const std::size_t needed =
-        validity_bitmap::bytes_for_bits(row_count_ + 1);
+    const std::size_t needed = validity_bitmap::bytes_for_bits(row_count_ + 1);
     if (validity_.size() < needed) {
       validity_.resize(needed);
     }
@@ -191,10 +190,13 @@ void TypedColumnBuffer::append_null() {
 // ---------------------------------------------------------------------------
 
 template <typename T>
-void TypedColumnBuffer::append_fixed_bulk(const T* data, std::size_t count) {
-  if (count == 0) return;
+void TypedColumnBuffer::append_fixed_bulk(Span<const T> data) {
+  const std::size_t count = data.size();
+  if (count == 0) {
+    return;
+  }
   values_.reserve(values_.size() + count * sizeof(T));
-  values_.append(data, count * sizeof(T));
+  values_.append(data.data(), count * sizeof(T));
   if (validity_initialized_) {
     const std::size_t new_total = row_count_ + count;
     const std::size_t needed = validity_bitmap::bytes_for_bits(new_total);
@@ -212,48 +214,46 @@ void TypedColumnBuffer::append_fixed_bulk(const T* data, std::size_t count) {
 // Typed bulk append functions (7 storage types)
 // ---------------------------------------------------------------------------
 
-void TypedColumnBuffer::append_float32_bulk(const float* data,
-                                            std::size_t count) {
+void TypedColumnBuffer::append_float32_bulk(Span<const float> data) {
   assert(storage_kind_of(descriptor_.logical_type) == StorageKind::kFloat32);
-  append_fixed_bulk(data, count);
+  append_fixed_bulk(data);
 }
 
-void TypedColumnBuffer::append_float64_bulk(const double* data,
-                                            std::size_t count) {
+void TypedColumnBuffer::append_float64_bulk(Span<const double> data) {
   assert(storage_kind_of(descriptor_.logical_type) == StorageKind::kFloat64);
-  append_fixed_bulk(data, count);
+  append_fixed_bulk(data);
 }
 
-void TypedColumnBuffer::append_int32_bulk(const int32_t* data,
-                                          std::size_t count) {
+void TypedColumnBuffer::append_int32_bulk(Span<const int32_t> data) {
   assert(storage_kind_of(descriptor_.logical_type) == StorageKind::kInt32);
-  append_fixed_bulk(data, count);
+  append_fixed_bulk(data);
 }
 
-void TypedColumnBuffer::append_int64_bulk(const int64_t* data,
-                                          std::size_t count) {
+void TypedColumnBuffer::append_int64_bulk(Span<const int64_t> data) {
   assert(storage_kind_of(descriptor_.logical_type) == StorageKind::kInt64);
-  append_fixed_bulk(data, count);
+  append_fixed_bulk(data);
 }
 
-void TypedColumnBuffer::append_uint64_bulk(const uint64_t* data,
-                                           std::size_t count) {
+void TypedColumnBuffer::append_uint64_bulk(Span<const uint64_t> data) {
   assert(storage_kind_of(descriptor_.logical_type) == StorageKind::kUint64);
-  append_fixed_bulk(data, count);
+  append_fixed_bulk(data);
 }
 
-void TypedColumnBuffer::append_bool_bulk(const uint8_t* data,
-                                         std::size_t count) {
+void TypedColumnBuffer::append_bool_bulk(Span<const uint8_t> data) {
   assert(storage_kind_of(descriptor_.logical_type) == StorageKind::kBool);
   // Bool stored as uint8_t per element (1 byte per bool, not packed)
-  append_fixed_bulk(data, count);
+  append_fixed_bulk(data);
 }
 
-void TypedColumnBuffer::append_strings_bulk(const uint32_t* offsets,
-                                            const char* data,
-                                            std::size_t count) {
+void TypedColumnBuffer::append_strings_bulk(Span<const uint32_t> offsets, Span<const char> data) {
   assert(storage_kind_of(descriptor_.logical_type) == StorageKind::kString);
-  if (count == 0) return;
+  if (offsets.empty()) {
+    return;
+  }
+  const std::size_t count = offsets.size() - 1;
+  if (count == 0) {
+    return;
+  }
 
   // Write the initial offset (0) on first row if buffer is empty
   const uint32_t base_data_offset = static_cast<uint32_t>(values_.size());
@@ -264,8 +264,10 @@ void TypedColumnBuffer::append_strings_bulk(const uint32_t* offsets,
 
   // Append all string data at once
   const uint32_t total_string_bytes = offsets[count] - offsets[0];
+  assert(offsets[0] <= static_cast<uint32_t>(data.size()));
+  assert(offsets[count] <= static_cast<uint32_t>(data.size()));
   values_.reserve(values_.size() + total_string_bytes);
-  values_.append(data + offsets[0], total_string_bytes);
+  values_.append(data.data() + offsets[0], total_string_bytes);
 
   // Append adjusted offsets (rebase to our value buffer position)
   const uint32_t src_base = offsets[0];
@@ -289,10 +291,11 @@ void TypedColumnBuffer::append_strings_bulk(const uint32_t* offsets,
   row_count_ += count;
 }
 
-void TypedColumnBuffer::append_validity_bulk(const uint8_t* bitmap,
-                                             std::size_t bit_offset,
-                                             std::size_t count) {
-  if (count == 0) return;
+void TypedColumnBuffer::append_validity_bulk(BitSpan validity) {
+  const std::size_t count = validity.bit_length;
+  if (count == 0) {
+    return;
+  }
   ensure_validity_initialized();
 
   // The validity bitmap covers the last `count` rows that were just appended.
@@ -305,9 +308,7 @@ void TypedColumnBuffer::append_validity_bulk(const uint8_t* bitmap,
   }
 
   for (std::size_t i = 0; i < count; ++i) {
-    const std::size_t src_bit = bit_offset + i;
-    const bool valid =
-        (bitmap[src_bit / 8] & (1u << (src_bit % 8))) != 0;
+    const bool valid = validity.test(i);
     if (valid) {
       validity_bitmap::set_valid(validity_, start_row + i);
     } else {
@@ -348,12 +349,9 @@ bool TypedColumnBuffer::read_bool(std::size_t row) const {
 std::string_view TypedColumnBuffer::read_string(std::size_t row) const {
   uint32_t start_offset = 0;
   uint32_t end_offset = 0;
-  std::memcpy(&start_offset, offsets_.data() + row * sizeof(uint32_t),
-              sizeof(uint32_t));
-  std::memcpy(&end_offset, offsets_.data() + (row + 1) * sizeof(uint32_t),
-              sizeof(uint32_t));
-  return {reinterpret_cast<const char*>(values_.data()) + start_offset,
-          end_offset - start_offset};
+  std::memcpy(&start_offset, offsets_.data() + row * sizeof(uint32_t), sizeof(uint32_t));
+  std::memcpy(&end_offset, offsets_.data() + (row + 1) * sizeof(uint32_t), sizeof(uint32_t));
+  return {reinterpret_cast<const char*>(values_.data()) + start_offset, end_offset - start_offset};
 }
 
 bool TypedColumnBuffer::is_null(std::size_t row) const {

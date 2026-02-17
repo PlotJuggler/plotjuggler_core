@@ -6,6 +6,8 @@
 
 namespace pj::engine::encoding {
 
+using pj::Span;
+
 namespace {
 
 // Write an index in the given byte width
@@ -29,8 +31,7 @@ void write_index(RawBuffer& buf, uint32_t index, uint8_t bytes) {
 }
 
 // Read an index at the given byte width
-[[nodiscard]] uint32_t read_index(const uint8_t* data, std::size_t row,
-                                   uint8_t bytes) {
+[[nodiscard]] uint32_t read_index(const uint8_t* data, std::size_t row, uint8_t bytes) {
   switch (bytes) {
     case 1: {
       uint8_t v = 0;
@@ -56,8 +57,7 @@ void write_index(RawBuffer& buf, uint32_t index, uint8_t bytes) {
 // Constant encoding
 // ---------------------------------------------------------------------------
 
-ConstantEncoded constant_encode(const uint8_t* data, StorageKind kind,
-                                std::size_t count) {
+ConstantEncoded constant_encode(Span<const uint8_t> data, StorageKind kind, std::size_t count) {
   ConstantEncoded result;
   result.value_kind = kind;
   result.count = count;
@@ -65,7 +65,7 @@ ConstantEncoded constant_encode(const uint8_t* data, StorageKind kind,
   const std::size_t esize = storage_kind_size(kind);
   result.value_size = static_cast<uint8_t>(esize);
   if (esize > 0 && count > 0) {
-    std::memcpy(result.value_bytes.data(), data, esize);
+    std::memcpy(result.value_bytes.data(), data.data(), esize);
   }
   return result;
 }
@@ -80,11 +80,16 @@ double constant_decode_as_double(const ConstantEncoded& enc) {
   };
 
   switch (enc.value_kind) {
-    case StorageKind::kFloat32: return load(static_cast<const float*>(nullptr));
-    case StorageKind::kFloat64: return load(static_cast<const double*>(nullptr));
-    case StorageKind::kInt32:   return load(static_cast<const int32_t*>(nullptr));
-    case StorageKind::kInt64:   return load(static_cast<const int64_t*>(nullptr));
-    case StorageKind::kUint64:  return load(static_cast<const uint64_t*>(nullptr));
+    case StorageKind::kFloat32:
+      return load(static_cast<const float*>(nullptr));
+    case StorageKind::kFloat64:
+      return load(static_cast<const double*>(nullptr));
+    case StorageKind::kInt32:
+      return load(static_cast<const int32_t*>(nullptr));
+    case StorageKind::kInt64:
+      return load(static_cast<const int64_t*>(nullptr));
+    case StorageKind::kUint64:
+      return load(static_cast<const uint64_t*>(nullptr));
     case StorageKind::kBool:
     case StorageKind::kString:
       break;
@@ -97,9 +102,8 @@ double constant_decode_as_double(const ConstantEncoded& enc) {
 // Data must be int64_t values.
 // ---------------------------------------------------------------------------
 
-FrameOfReferenceEncoded for_encode(const uint8_t* data, StorageKind kind,
-                                   std::size_t count,
-                                   int64_t min_val, int64_t max_val) {
+FrameOfReferenceEncoded for_encode(
+    Span<const uint8_t> data, StorageKind kind, std::size_t count, int64_t min_val, int64_t max_val) {
   FrameOfReferenceEncoded result;
   result.reference = min_val;
   result.count = count;
@@ -114,10 +118,10 @@ FrameOfReferenceEncoded for_encode(const uint8_t* data, StorageKind kind,
     int64_t val{};
     if (kind == StorageKind::kInt32) {
       int32_t tmp{};
-      std::memcpy(&tmp, data + i * esize, sizeof(tmp));
+      std::memcpy(&tmp, data.data() + i * esize, sizeof(tmp));
       val = tmp;  // sign-extend
     } else {
-      std::memcpy(&val, data + i * esize, sizeof(val));
+      std::memcpy(&val, data.data() + i * esize, sizeof(val));
     }
     const auto offset = static_cast<uint64_t>(val - min_val);
 
@@ -143,8 +147,7 @@ FrameOfReferenceEncoded for_encode(const uint8_t* data, StorageKind kind,
   return result;
 }
 
-double for_decode_one_as_double(const FrameOfReferenceEncoded& enc,
-                                std::size_t row) {
+double for_decode_one_as_double(const FrameOfReferenceEncoded& enc, std::size_t row) {
   const uint8_t* data = enc.offsets.data();
   uint64_t offset = 0;
 
@@ -172,31 +175,27 @@ double for_decode_one_as_double(const FrameOfReferenceEncoded& enc,
   return static_cast<double>(enc.reference) + static_cast<double>(offset);
 }
 
-void for_decode_range_as_doubles(const FrameOfReferenceEncoded& enc,
-                                 double* out, std::size_t row_start,
-                                 std::size_t count) {
+void for_decode_range_as_doubles(const FrameOfReferenceEncoded& enc, Span<double> out, std::size_t row_start) {
+  const std::size_t count = out.size();
   const double ref = static_cast<double>(enc.reference);
 
   switch (enc.offset_bytes) {
     case 1: {
-      const auto* src = reinterpret_cast<const uint8_t*>(
-          enc.offsets.data()) + row_start;
+      const auto* src = reinterpret_cast<const uint8_t*>(enc.offsets.data()) + row_start;
       for (std::size_t i = 0; i < count; ++i) {
         out[i] = ref + static_cast<double>(src[i]);
       }
       break;
     }
     case 2: {
-      const auto* src = reinterpret_cast<const uint16_t*>(
-          enc.offsets.data()) + row_start;
+      const auto* src = reinterpret_cast<const uint16_t*>(enc.offsets.data()) + row_start;
       for (std::size_t i = 0; i < count; ++i) {
         out[i] = ref + static_cast<double>(src[i]);
       }
       break;
     }
     default: {
-      const auto* src = reinterpret_cast<const uint32_t*>(
-          enc.offsets.data()) + row_start;
+      const auto* src = reinterpret_cast<const uint32_t*>(enc.offsets.data()) + row_start;
       for (std::size_t i = 0; i < count; ++i) {
         out[i] = ref + static_cast<double>(src[i]);
       }
@@ -210,9 +209,7 @@ void for_decode_range_as_doubles(const FrameOfReferenceEncoded& enc,
 // ---------------------------------------------------------------------------
 
 DictionaryEncoded dictionary_encode_strings(
-    const uint8_t* offsets_data, [[maybe_unused]] std::size_t offsets_size,
-    const uint8_t* values_data, [[maybe_unused]] std::size_t values_size,
-    std::size_t row_count) {
+    Span<const uint8_t> offsets_data, Span<const uint8_t> values_data, std::size_t row_count) {
   DictionaryEncoded result;
   result.count = row_count;
 
@@ -229,12 +226,11 @@ DictionaryEncoded dictionary_encode_strings(
   for (std::size_t row = 0; row < row_count; ++row) {
     uint32_t start_offset = 0;
     uint32_t end_offset = 0;
-    std::memcpy(&start_offset, offsets_data + row * sizeof(uint32_t), sizeof(uint32_t));
-    std::memcpy(&end_offset, offsets_data + (row + 1) * sizeof(uint32_t), sizeof(uint32_t));
+    std::memcpy(&start_offset, offsets_data.data() + row * sizeof(uint32_t), sizeof(uint32_t));
+    std::memcpy(&end_offset, offsets_data.data() + (row + 1) * sizeof(uint32_t), sizeof(uint32_t));
 
     std::string_view str_view(
-        reinterpret_cast<const char*>(values_data + start_offset),
-        end_offset - start_offset);
+        reinterpret_cast<const char*>(values_data.data() + start_offset), end_offset - start_offset);
 
     auto it = lookup.find(str_view);
     uint32_t index = 0;
@@ -260,8 +256,7 @@ DictionaryEncoded dictionary_encode_strings(
   return result;
 }
 
-std::string_view dictionary_lookup(
-    const DictionaryEncoded& encoded, std::size_t row) {
+std::string_view dictionary_lookup(const DictionaryEncoded& encoded, std::size_t row) {
   uint32_t index = read_index(encoded.indices.data(), row, encoded.index_bytes);
   if (index >= encoded.dictionary.size()) {
     return {};
@@ -273,7 +268,8 @@ std::string_view dictionary_lookup(
 // Packed bools
 // ---------------------------------------------------------------------------
 
-PackedBools pack_bools(const uint8_t* values, std::size_t count) {
+PackedBools pack_bools(Span<const uint8_t> values) {
+  const std::size_t count = values.size();
   PackedBools result;
   result.count = count;
 

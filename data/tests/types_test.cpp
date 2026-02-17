@@ -1,6 +1,6 @@
-#include <gtest/gtest.h>
-
 #include "pj/base/types.hpp"
+
+#include <gtest/gtest.h>
 
 namespace pj {
 namespace {

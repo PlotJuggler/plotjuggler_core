@@ -8,8 +8,7 @@ namespace pj::engine {
 // RangeCursor
 // ===========================================================================
 
-RangeCursor::RangeCursor(const std::deque<TopicChunk>& chunks,
-                         Timestamp t_min, Timestamp t_max)
+RangeCursor::RangeCursor(const std::deque<TopicChunk>& chunks, Timestamp t_min, Timestamp t_max)
     : chunks_(&chunks), t_min_(t_min), t_max_(t_max) {
   find_first_valid();
 }
@@ -35,16 +34,14 @@ void RangeCursor::advance() {
   skip_to_valid();
 }
 
-void RangeCursor::for_each(
-    absl::FunctionRef<void(const SampleRow&)> callback) {
+void RangeCursor::for_each(absl::FunctionRef<void(const SampleRow&)> callback) {
   while (valid()) {
     callback(current());
     advance();
   }
 }
 
-void RangeCursor::for_each_chunk(
-    absl::FunctionRef<void(const ChunkRowRange&)> callback) {
+void RangeCursor::for_each_chunk(absl::FunctionRef<void(const ChunkRowRange&)> callback) {
   while (chunk_index_ < chunks_->size()) {
     const auto& chunk = (*chunks_)[chunk_index_];
 
@@ -60,15 +57,13 @@ void RangeCursor::for_each_chunk(
 
     // Find first valid row in this chunk (>= t_min_)
     std::size_t first = row_index_;
-    while (first < chunk.stats.row_count &&
-           chunk.read_timestamp(first) < t_min_) {
+    while (first < chunk.stats.row_count && chunk.read_timestamp(first) < t_min_) {
       ++first;
     }
 
     // Find one-past-last valid row in this chunk (<= t_max_)
     std::size_t end = first;
-    while (end < chunk.stats.row_count &&
-           chunk.read_timestamp(end) <= t_max_) {
+    while (end < chunk.stats.row_count && chunk.read_timestamp(end) <= t_max_) {
       ++end;
     }
 
@@ -160,8 +155,7 @@ LatestAtResult latest_at(const std::deque<TopicChunk>& chunks, Timestamp t) {
 // range_query
 // ===========================================================================
 
-RangeCursor range_query(const std::deque<TopicChunk>& chunks,
-                        Timestamp t_min, Timestamp t_max) {
+RangeCursor range_query(const std::deque<TopicChunk>& chunks, Timestamp t_min, Timestamp t_max) {
   return RangeCursor(chunks, t_min, t_max);
 }
 

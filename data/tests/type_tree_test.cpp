@@ -1,10 +1,10 @@
 #include "pj/base/type_tree.hpp"
 
+#include <gtest/gtest.h>
+
 #include <cstdint>
 #include <string>
 #include <vector>
-
-#include <gtest/gtest.h>
 
 namespace pj {
 namespace {
@@ -17,25 +17,28 @@ namespace {
 //   rotation: struct {w: float32, x: float32, y: float32, z: float32}
 //             semantic_tags = {"quaternion"}
 std::shared_ptr<TypeTreeNode> make_robot_pose() {
-  auto position = make_struct("position", {
-      make_primitive("x", PrimitiveType::kFloat32),
-      make_primitive("y", PrimitiveType::kFloat32),
-      make_primitive("z", PrimitiveType::kFloat32),
-  });
+  auto position = make_struct(
+      "position", {
+                      make_primitive("x", PrimitiveType::kFloat32),
+                      make_primitive("y", PrimitiveType::kFloat32),
+                      make_primitive("z", PrimitiveType::kFloat32),
+                  });
 
-  auto rotation = make_struct("rotation", {
-      make_primitive("w", PrimitiveType::kFloat32),
-      make_primitive("x", PrimitiveType::kFloat32),
-      make_primitive("y", PrimitiveType::kFloat32),
-      make_primitive("z", PrimitiveType::kFloat32),
-  });
+  auto rotation = make_struct(
+      "rotation", {
+                      make_primitive("w", PrimitiveType::kFloat32),
+                      make_primitive("x", PrimitiveType::kFloat32),
+                      make_primitive("y", PrimitiveType::kFloat32),
+                      make_primitive("z", PrimitiveType::kFloat32),
+                  });
   rotation->semantic_tags.insert("quaternion");
 
-  return make_struct("Pose", {
-      make_primitive("frame_name", PrimitiveType::kString),
-      position,
-      rotation,
-  });
+  return make_struct(
+      "Pose", {
+                  make_primitive("frame_name", PrimitiveType::kString),
+                  position,
+                  rotation,
+              });
 }
 
 // ---------- Test 1: flatten_field_paths on robot_pose ----------
@@ -45,14 +48,7 @@ TEST(TypeTreeTest, FlattenFieldPathsRobotPose) {
   auto paths = flatten_field_paths(*pose);
 
   const std::vector<std::string> expected = {
-      "frame_name",
-      "position.x",
-      "position.y",
-      "position.z",
-      "rotation.w",
-      "rotation.x",
-      "rotation.y",
-      "rotation.z",
+      "frame_name", "position.x", "position.y", "position.z", "rotation.w", "rotation.x", "rotation.y", "rotation.z",
   };
 
   ASSERT_EQ(paths.size(), expected.size());
@@ -208,9 +204,10 @@ TEST(TypeTreeTest, CountLeafFieldsEmptyStruct) {
 // ---------- Test 11: deeply nested struct ----------
 
 TEST(TypeTreeTest, DeeplyNestedStruct) {
-  auto inner = make_struct("inner", {
-      make_primitive("val", PrimitiveType::kInt32),
-  });
+  auto inner = make_struct(
+      "inner", {
+                   make_primitive("val", PrimitiveType::kInt32),
+               });
   auto middle = make_struct("middle", {inner});
   auto outer = make_struct("outer", {middle});
 

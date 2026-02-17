@@ -1,12 +1,10 @@
 #include "pj/engine/engine.hpp"
 
-#include "pj/base/assert.hpp"
-
 #include <utility>
 
 #include "absl/status/status.h"
 #include "absl/strings/str_cat.h"
-
+#include "pj/base/assert.hpp"
 #include "pj/engine/reader.hpp"
 #include "pj/engine/writer.hpp"
 
@@ -18,17 +16,14 @@ DataEngine::DataEngine() = default;
 // Dataset management
 // ---------------------------------------------------------------------------
 
-absl::StatusOr<DatasetId> DataEngine::create_dataset(
-    DatasetDescriptor descriptor) {
+absl::StatusOr<DatasetId> DataEngine::create_dataset(DatasetDescriptor descriptor) {
   DatasetId id = next_dataset_id_++;
 
   // Verify time domain exists if specified
   if (descriptor.time_domain_id != 0) {
     auto it = time_domains_.find(descriptor.time_domain_id);
     if (it == time_domains_.end()) {
-      return absl::NotFoundError(
-          absl::StrCat("Time domain ", descriptor.time_domain_id,
-                       " not found"));
+      return absl::NotFoundError(absl::StrCat("Time domain ", descriptor.time_domain_id, " not found"));
     }
   }
 
@@ -54,28 +49,23 @@ const DatasetInfo* DataEngine::get_dataset(DatasetId id) const {
 // Topic management
 // ---------------------------------------------------------------------------
 
-absl::StatusOr<TopicId> DataEngine::create_topic(
-    DatasetId dataset_id, TopicDescriptor descriptor) {
+absl::StatusOr<TopicId> DataEngine::create_topic(DatasetId dataset_id, TopicDescriptor descriptor) {
   auto it = datasets_.find(dataset_id);
   if (it == datasets_.end()) {
-    return absl::NotFoundError(
-        absl::StrCat("Dataset ", dataset_id, " not found"));
+    return absl::NotFoundError(absl::StrCat("Dataset ", dataset_id, " not found"));
   }
 
   // Validate schema_id if non-zero (zero means inline columns, e.g. scalar series)
   if (descriptor.schema_id != 0) {
     if (type_registry_.lookup(descriptor.schema_id) == nullptr) {
-      return absl::NotFoundError(
-          absl::StrCat("Schema ", descriptor.schema_id, " not found"));
+      return absl::NotFoundError(absl::StrCat("Schema ", descriptor.schema_id, " not found"));
     }
   }
 
   TopicId id = next_topic_id_++;
   descriptor.dataset_id = dataset_id;
   topics_.emplace(
-      std::piecewise_construct,
-      std::forward_as_tuple(id),
-      std::forward_as_tuple(id, std::move(descriptor)));
+      std::piecewise_construct, std::forward_as_tuple(id), std::forward_as_tuple(id, std::move(descriptor)));
   it->second.topic_ids.push_back(id);
   return id;
 }

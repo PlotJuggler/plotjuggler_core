@@ -1,10 +1,10 @@
+#include "pj/base/span.hpp"
+
 #include <gtest/gtest.h>
 
 #include <array>
 #include <cstdint>
 #include <vector>
-
-#include "pj/base/span.hpp"
 
 namespace pj {
 namespace {

@@ -6,7 +6,6 @@
 
 #include "absl/status/statusor.h"
 #include "absl/strings/str_cat.h"
-
 #include "pj/engine/chunk.hpp"
 #include "pj/engine/engine.hpp"
 #include "pj/engine/query.hpp"
@@ -34,8 +33,7 @@ const TypeTreeNode* DataReader::get_type_tree(TopicId topic_id) const {
   return engine_.type_registry().lookup(schema_id);
 }
 
-std::optional<TopicMetadata> DataReader::get_metadata(
-    TopicId topic_id) const {
+std::optional<TopicMetadata> DataReader::get_metadata(TopicId topic_id) const {
   const TopicStorage* storage = engine_.get_topic_storage(topic_id);
   if (storage == nullptr) {
     return std::nullopt;
@@ -46,18 +44,15 @@ std::optional<TopicMetadata> DataReader::get_metadata(
 absl::StatusOr<RangeCursor> DataReader::range_query(const QueryRange& range) const {
   const TopicStorage* storage = engine_.get_topic_storage(range.topic_id);
   if (storage == nullptr) {
-    return absl::NotFoundError(
-        absl::StrCat("Topic ", range.topic_id, " not found"));
+    return absl::NotFoundError(absl::StrCat("Topic ", range.topic_id, " not found"));
   }
-  return pj::engine::range_query(
-      storage->sealed_chunks(), range.t_min, range.t_max);
+  return pj::engine::range_query(storage->sealed_chunks(), range.t_min, range.t_max);
 }
 
 absl::StatusOr<LatestAtResult> DataReader::latest_at(const QueryPoint& point) const {
   const TopicStorage* storage = engine_.get_topic_storage(point.topic_id);
   if (storage == nullptr) {
-    return absl::NotFoundError(
-        absl::StrCat("Topic ", point.topic_id, " not found"));
+    return absl::NotFoundError(absl::StrCat("Topic ", point.topic_id, " not found"));
   }
   return pj::engine::latest_at(storage->sealed_chunks(), point.t);
 }

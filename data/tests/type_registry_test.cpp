@@ -1,13 +1,12 @@
 #include "pj/engine/type_registry.hpp"
 
+#include <gtest/gtest.h>
+
 #include <memory>
 #include <string>
 
-#include <gtest/gtest.h>
-
 #include "absl/status/status.h"
 #include "absl/status/statusor.h"
-
 #include "pj/base/type_tree.hpp"
 #include "pj/base/types.hpp"
 
@@ -16,19 +15,21 @@ namespace {
 
 // Helper: build a simple struct with two float64 fields (x, y)
 std::shared_ptr<TypeTreeNode> make_point_schema() {
-  return make_struct("Point", {
-    make_primitive("x", PrimitiveType::kFloat64),
-    make_primitive("y", PrimitiveType::kFloat64),
-  });
+  return make_struct(
+      "Point", {
+                   make_primitive("x", PrimitiveType::kFloat64),
+                   make_primitive("y", PrimitiveType::kFloat64),
+               });
 }
 
 // Helper: build a struct with three float64 fields (x, y, z)
 std::shared_ptr<TypeTreeNode> make_point3d_schema() {
-  return make_struct("Point3D", {
-    make_primitive("x", PrimitiveType::kFloat64),
-    make_primitive("y", PrimitiveType::kFloat64),
-    make_primitive("z", PrimitiveType::kFloat64),
-  });
+  return make_struct(
+      "Point3D", {
+                     make_primitive("x", PrimitiveType::kFloat64),
+                     make_primitive("y", PrimitiveType::kFloat64),
+                     make_primitive("z", PrimitiveType::kFloat64),
+                 });
 }
 
 // 1. Register a schema, lookup by ID: returns correct tree
@@ -168,11 +169,12 @@ TEST(TypeRegistryTest, EvolveSchemaTypeChangeFails) {
   ASSERT_TRUE(result.ok()) << result.status();
 
   // Try to evolve: change x from float64 to int32
-  auto changed = make_struct("Point", {
-    make_primitive("x", PrimitiveType::kInt32),   // type changed!
-    make_primitive("y", PrimitiveType::kFloat64),
-    make_primitive("z", PrimitiveType::kFloat64),
-  });
+  auto changed = make_struct(
+      "Point", {
+                   make_primitive("x", PrimitiveType::kInt32),  // type changed!
+                   make_primitive("y", PrimitiveType::kFloat64),
+                   make_primitive("z", PrimitiveType::kFloat64),
+               });
   absl::Status status = registry.evolve_schema(*result, changed);
   ASSERT_FALSE(status.ok());
   EXPECT_EQ(status.code(), absl::StatusCode::kInvalidArgument);
@@ -193,14 +195,17 @@ TEST(TypeRegistryTest, MultipleSchemas) {
 
   auto tree_a = make_primitive("temp", PrimitiveType::kFloat32);
   auto tree_b = make_point_schema();
-  auto tree_c = make_struct("Pose", {
-    make_primitive("frame", PrimitiveType::kString),
-    make_struct("position", {
-      make_primitive("x", PrimitiveType::kFloat64),
-      make_primitive("y", PrimitiveType::kFloat64),
-      make_primitive("z", PrimitiveType::kFloat64),
-    }),
-  });
+  auto tree_c = make_struct(
+      "Pose", {
+                  make_primitive("frame", PrimitiveType::kString),
+                  make_struct(
+                      "position",
+                      {
+                          make_primitive("x", PrimitiveType::kFloat64),
+                          make_primitive("y", PrimitiveType::kFloat64),
+                          make_primitive("z", PrimitiveType::kFloat64),
+                      }),
+              });
 
   auto* raw_a = tree_a.get();
   auto* raw_b = tree_b.get();

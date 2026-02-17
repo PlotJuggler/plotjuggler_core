@@ -1,9 +1,9 @@
+#include "pj/engine/buffer.hpp"
+
 #include <gtest/gtest.h>
 
 #include <array>
 #include <cstdint>
-
-#include "pj/engine/buffer.hpp"
 
 namespace pj::engine {
 namespace {
@@ -98,8 +98,7 @@ TEST(ValidityBitmapTest, InitAllValid) {
 
   EXPECT_EQ(buf.size(), 2u);
   for (std::size_t i = 0; i < 16; ++i) {
-    EXPECT_TRUE(validity_bitmap::is_valid(buf, i))
-        << "bit " << i << " should be valid after init";
+    EXPECT_TRUE(validity_bitmap::is_valid(buf, i)) << "bit " << i << " should be valid after init";
   }
 }
 
@@ -112,9 +111,10 @@ TEST(ValidityBitmapTest, SetNull) {
 
   // All other bits should remain valid.
   for (std::size_t i = 0; i < 16; ++i) {
-    if (i == 5) continue;
-    EXPECT_TRUE(validity_bitmap::is_valid(buf, i))
-        << "bit " << i << " should still be valid";
+    if (i == 5) {
+      continue;
+    }
+    EXPECT_TRUE(validity_bitmap::is_valid(buf, i)) << "bit " << i << " should still be valid";
   }
 }
 
