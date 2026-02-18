@@ -34,14 +34,14 @@ void RangeCursor::advance() {
   skip_to_valid();
 }
 
-void RangeCursor::for_each(absl::FunctionRef<void(const SampleRow&)> callback) {
+void RangeCursor::for_each(std::function<void(const SampleRow&)> callback) {
   while (valid()) {
     callback(current());
     advance();
   }
 }
 
-void RangeCursor::for_each_chunk(absl::FunctionRef<void(const ChunkRowRange&)> callback) {
+void RangeCursor::for_each_chunk(std::function<void(const ChunkRowRange&)> callback) {
   while (chunk_index_ < chunks_->size()) {
     const auto& chunk = (*chunks_)[chunk_index_];
 
@@ -124,9 +124,9 @@ void RangeCursor::skip_to_valid() {
 // latest_at
 // ===========================================================================
 
-LatestAtResult latest_at(const std::deque<TopicChunk>& chunks, Timestamp t) {
+std::optional<SampleRow> latest_at(const std::deque<TopicChunk>& chunks, Timestamp t) {
   if (chunks.empty()) {
-    return {};
+    return std::nullopt;
   }
 
   // Reverse iterate chunks. For each chunk, if t_min <= t, search within it.
@@ -140,7 +140,7 @@ LatestAtResult latest_at(const std::deque<TopicChunk>& chunks, Timestamp t) {
     for (std::size_t ri = chunk.stats.row_count; ri > 0; --ri) {
       Timestamp ts = chunk.read_timestamp(ri - 1);
       if (ts <= t) {
-        return LatestAtResult{true, ts, &chunk, ri - 1};
+        return SampleRow{ts, &chunk, ri - 1};
       }
     }
     // All rows in this chunk are after t, but t_min <= t was true.
@@ -148,7 +148,7 @@ LatestAtResult latest_at(const std::deque<TopicChunk>& chunks, Timestamp t) {
     // by continuing to the previous chunk.
   }
 
-  return {};
+  return std::nullopt;
 }
 
 // ===========================================================================

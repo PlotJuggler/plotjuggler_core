@@ -34,38 +34,38 @@ std::size_t count_leaf_fields_impl(const TypeTreeNode& node) {
 }  // namespace
 
 std::shared_ptr<TypeTreeNode> make_primitive(std::string name, PrimitiveType type) {
-  auto node = std::make_shared<TypeTreeNode>();
-  node->name = std::move(name);
-  node->kind = TypeKind::kPrimitive;
-  node->primitive_type = type;
-  return node;
+  return std::make_shared<TypeTreeNode>(TypeTreeNode{
+      .name = std::move(name),
+      .kind = TypeKind::kPrimitive,
+      .primitive_type = type,
+  });
 }
 
 std::shared_ptr<TypeTreeNode> make_struct(std::string name, std::vector<std::shared_ptr<TypeTreeNode>> children) {
-  auto node = std::make_shared<TypeTreeNode>();
-  node->name = std::move(name);
-  node->kind = TypeKind::kStruct;
-  node->children = std::move(children);
-  return node;
+  return std::make_shared<TypeTreeNode>(TypeTreeNode{
+      .name = std::move(name),
+      .kind = TypeKind::kStruct,
+      .children = std::move(children),
+  });
 }
 
 std::shared_ptr<TypeTreeNode> make_array(
     std::string name, std::shared_ptr<TypeTreeNode> element_type, std::optional<uint32_t> fixed_size) {
-  auto node = std::make_shared<TypeTreeNode>();
-  node->name = std::move(name);
-  node->kind = TypeKind::kArray;
-  node->element_type = std::move(element_type);
-  node->fixed_array_size = fixed_size;
-  return node;
+  return std::make_shared<TypeTreeNode>(TypeTreeNode{
+      .name = std::move(name),
+      .kind = TypeKind::kArray,
+      .element_type = std::move(element_type),
+      .fixed_array_size = fixed_size,
+  });
 }
 
 std::shared_ptr<TypeTreeNode> make_enum(std::string name, PrimitiveType underlying_type, EnumMapping mapping) {
-  auto node = std::make_shared<TypeTreeNode>();
-  node->name = std::move(name);
-  node->kind = TypeKind::kEnum;
-  node->primitive_type = underlying_type;
-  node->enum_mapping = std::move(mapping);
-  return node;
+  return std::make_shared<TypeTreeNode>(TypeTreeNode{
+      .name = std::move(name),
+      .kind = TypeKind::kEnum,
+      .primitive_type = underlying_type,
+      .enum_mapping = std::move(mapping),
+  });
 }
 
 std::vector<std::string> flatten_field_paths(const TypeTreeNode& root) {

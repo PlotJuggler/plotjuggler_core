@@ -1,5 +1,6 @@
 #pragma once
 
+#include <string>
 #include <type_traits>
 #include <utility>
 #include <variant>
@@ -57,6 +58,27 @@ class Expected {
     return has_value();
   }
 
+  /// Dereference operator — access success payload.
+  [[nodiscard]] constexpr T& operator*() & {
+    return value();
+  }
+  [[nodiscard]] constexpr const T& operator*() const& {
+    return value();
+  }
+  [[nodiscard]] constexpr T&& operator*() && {
+    return std::move(*this).value();
+  }
+
+  /// Arrow operator — access success payload members.
+  [[nodiscard]] constexpr T* operator->() {
+    PJ_ASSERT(has_value(), "Expected does not contain a value");
+    return &std::get<T>(storage_);
+  }
+  [[nodiscard]] constexpr const T* operator->() const {
+    PJ_ASSERT(has_value(), "Expected does not contain a value");
+    return &std::get<T>(storage_);
+  }
+
   /// Access success payload. Asserts if this contains an error.
   [[nodiscard]] constexpr T& value() & {
     PJ_ASSERT(has_value(), "Expected does not contain a value");
@@ -96,5 +118,56 @@ class Expected {
  private:
   std::variant<T, E> storage_;
 };
+
+/// Specialization for void value type (replaces absl::Status).
+template <typename E>
+class Expected<void, E> {
+ public:
+  /// Construct a success (no-error) state.
+  constexpr Expected() noexcept : error_(), has_error_(false) {}
+
+  /// Construct an error state.
+  constexpr Expected(const Unexpected<E>& error) : error_(error.value()), has_error_(true) {}
+  /// Construct an error state.
+  constexpr Expected(Unexpected<E>&& error) : error_(std::move(error).value()), has_error_(true) {}
+
+  [[nodiscard]] constexpr bool has_value() const noexcept {
+    return !has_error_;
+  }
+
+  [[nodiscard]] constexpr explicit operator bool() const noexcept {
+    return has_value();
+  }
+
+  /// Access error payload. Asserts if this contains a value.
+  [[nodiscard]] constexpr E& error() & {
+    PJ_ASSERT(has_error_, "Expected does not contain an error");
+    return error_;
+  }
+
+  /// Access error payload. Asserts if this contains a value.
+  [[nodiscard]] constexpr const E& error() const& {
+    PJ_ASSERT(has_error_, "Expected does not contain an error");
+    return error_;
+  }
+
+  /// Access error payload. Asserts if this contains a value.
+  [[nodiscard]] constexpr E&& error() && {
+    PJ_ASSERT(has_error_, "Expected does not contain an error");
+    return std::move(error_);
+  }
+
+ private:
+  E error_;
+  bool has_error_;
+};
+
+/// Alias for Expected<void> — a lightweight status type.
+using Status = Expected<void, std::string>;
+
+/// Construct a success Status.
+[[nodiscard]] inline Status ok_status() {
+  return Status{};
+}
 
 }  // namespace pj

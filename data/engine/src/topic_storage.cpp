@@ -3,21 +3,21 @@
 #include <utility>
 #include <variant>
 
-#include "absl/status/status.h"
 #include "absl/strings/str_cat.h"
+#include "pj/base/expected.hpp"
 
 namespace pj::engine {
 
 TopicStorage::TopicStorage(TopicId topic_id, TopicDescriptor descriptor)
     : topic_id_(topic_id), descriptor_(std::move(descriptor)) {}
 
-absl::Status TopicStorage::append_sealed_chunk(TopicChunk chunk) {
+pj::Status TopicStorage::append_sealed_chunk(TopicChunk chunk) {
   if (!sealed_chunks_.empty() && chunk.stats.t_min < sealed_chunks_.back().stats.t_min) {
-    return absl::FailedPreconditionError(absl::StrCat(
+    return pj::unexpected(absl::StrCat(
         "Out-of-order chunk: new t_min=", chunk.stats.t_min, " < last t_min=", sealed_chunks_.back().stats.t_min));
   }
   sealed_chunks_.push_back(std::move(chunk));
-  return absl::OkStatus();
+  return pj::ok_status();
 }
 
 void TopicStorage::evict_before(Timestamp t_keep_min) {

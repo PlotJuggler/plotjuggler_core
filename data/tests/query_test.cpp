@@ -125,36 +125,36 @@ TEST(QueryTest, ForEachCallback) {
 TEST(QueryTest, LatestAtInMiddleOfChunk) {
   auto chunks = make_standard_chunks();
   auto result = latest_at(chunks, 155);
-  ASSERT_TRUE(result.found);
-  EXPECT_EQ(result.timestamp, 150);
+  ASSERT_TRUE(result.has_value());
+  EXPECT_EQ(result->timestamp, 150);
 }
 
 TEST(QueryTest, LatestAtExactTimestamp) {
   auto chunks = make_standard_chunks();
   auto result = latest_at(chunks, 200);
-  ASSERT_TRUE(result.found);
-  EXPECT_EQ(result.timestamp, 200);
+  ASSERT_TRUE(result.has_value());
+  EXPECT_EQ(result->timestamp, 200);
 }
 
 TEST(QueryTest, LatestAtBeforeAllData) {
   auto chunks = make_standard_chunks();
   auto result = latest_at(chunks, -10);
-  EXPECT_FALSE(result.found);
+  EXPECT_FALSE(result.has_value());
 }
 
 TEST(QueryTest, LatestAtAfterAllData) {
   auto chunks = make_standard_chunks();
   auto result = latest_at(chunks, 1000);
-  ASSERT_TRUE(result.found);
-  EXPECT_EQ(result.timestamp, 490);
+  ASSERT_TRUE(result.has_value());
+  EXPECT_EQ(result->timestamp, 490);
 }
 
 TEST(QueryTest, LatestAtBetweenChunks) {
   auto chunks = make_standard_chunks();
   // t=95 is between chunk 0 (t_max=90) and chunk 1 (t_min=100)
   auto result = latest_at(chunks, 95);
-  ASSERT_TRUE(result.found);
-  EXPECT_EQ(result.timestamp, 90);
+  ASSERT_TRUE(result.has_value());
+  EXPECT_EQ(result->timestamp, 90);
 }
 
 // =========================================================================
@@ -170,7 +170,7 @@ TEST(QueryTest, EmptyDequeRangeQuery) {
 TEST(QueryTest, EmptyDequeLatestAt) {
   std::deque<TopicChunk> empty;
   auto result = latest_at(empty, 50);
-  EXPECT_FALSE(result.found);
+  EXPECT_FALSE(result.has_value());
 }
 
 // =========================================================================

@@ -8,10 +8,9 @@
 #include <variant>
 #include <vector>
 
-#include "absl/status/status.h"
-#include "absl/status/statusor.h"
 #include "absl/strings/str_cat.h"
 #include "pj/base/assert.hpp"
+#include "pj/base/expected.hpp"
 #include "pj/base/type_tree.hpp"
 #include "pj/base/types.hpp"
 #include "pj/engine/chunk.hpp"
@@ -123,7 +122,7 @@ DataWriter::DataWriter(DataEngine& engine) : engine_(engine) {}
 // Schema registration
 // ---------------------------------------------------------------------------
 
-absl::StatusOr<SchemaId> DataWriter::register_schema(std::string schema_name, std::shared_ptr<TypeTreeNode> type_tree) {
+Expected<SchemaId> DataWriter::register_schema(std::string schema_name, std::shared_ptr<TypeTreeNode> type_tree) {
   return engine_.type_registry().register_schema(std::move(schema_name), std::move(type_tree));
 }
 
@@ -131,7 +130,7 @@ absl::StatusOr<SchemaId> DataWriter::register_schema(std::string schema_name, st
 // Topic registration
 // ---------------------------------------------------------------------------
 
-absl::StatusOr<TopicId> DataWriter::register_topic(DatasetId dataset_id, TopicDescriptor descriptor) {
+Expected<TopicId> DataWriter::register_topic(DatasetId dataset_id, TopicDescriptor descriptor) {
   return engine_.create_topic(dataset_id, std::move(descriptor));
 }
 
@@ -139,10 +138,10 @@ absl::StatusOr<TopicId> DataWriter::register_topic(DatasetId dataset_id, TopicDe
 // Bind for fast-path access
 // ---------------------------------------------------------------------------
 
-absl::StatusOr<TopicWriteHandle> DataWriter::bind_topic_writer(TopicId topic_id) {
+Expected<TopicWriteHandle> DataWriter::bind_topic_writer(TopicId topic_id) {
   const auto* storage = engine_.get_topic_storage(topic_id);
   if (storage == nullptr) {
-    return absl::NotFoundError(absl::StrCat("Topic ", topic_id, " not found"));
+    return pj::unexpected("Topic " + std::to_string(topic_id) + " not found");
   }
 
   // Ensure column descriptors are cached
@@ -163,14 +162,14 @@ absl::StatusOr<TopicWriteHandle> DataWriter::bind_topic_writer(TopicId topic_id)
 // Field resolution
 // ---------------------------------------------------------------------------
 
-absl::StatusOr<FieldId> DataWriter::resolve_field(TopicId topic_id, std::string_view field_path) {
+Expected<FieldId> DataWriter::resolve_field(TopicId topic_id, std::string_view field_path) {
   // Ensure columns are cached by getting or creating the builder
   auto& builder = get_or_create_builder(topic_id);
   (void)builder;
 
   auto col_it = topic_columns_.find(topic_id);
   if (col_it == topic_columns_.end()) {
-    return absl::NotFoundError(absl::StrCat("Topic ", topic_id, " not found"));
+    return pj::unexpected("Topic " + std::to_string(topic_id) + " not found");
   }
 
   for (const auto& col : col_it->second) {
@@ -178,38 +177,38 @@ absl::StatusOr<FieldId> DataWriter::resolve_field(TopicId topic_id, std::string_
       return col.field_id;
     }
   }
-  return absl::NotFoundError(absl::StrCat("Field '", field_path, "' not found in topic ", topic_id));
+  return pj::unexpected("Field '" + std::string(field_path) + "' not found in topic " + std::to_string(topic_id));
 }
 
 // ---------------------------------------------------------------------------
 // Row-at-a-time append
 // ---------------------------------------------------------------------------
 
-absl::Status DataWriter::begin_row(TopicId topic_id, Timestamp t) {
+pj::Status DataWriter::begin_row(TopicId topic_id, Timestamp t) {
   auto* storage = engine_.get_topic_storage(topic_id);
   if (storage == nullptr) {
-    return absl::NotFoundError(absl::StrCat("Topic ", topic_id, " not found"));
+    return pj::unexpected(absl::StrCat("Topic ", topic_id, " not found"));
   }
   auto& builder = get_or_create_builder(topic_id);
   if (builder.row_count() > 0 && t < builder.last_timestamp()) {
-    return absl::InvalidArgumentError(
+    return pj::unexpected(
         absl::StrCat("Out-of-order timestamp: t=", t, " < last_timestamp=", builder.last_timestamp()));
   }
   builder.begin_row(t);
-  return absl::OkStatus();
+  return pj::ok_status();
 }
 
-void DataWriter::finish_row(TopicId topic_id) {
+pj::Status DataWriter::finish_row(pj::TopicId topic_id) {
   auto it = builders_.find(topic_id);
-  PJ_ASSERT(it != builders_.end(), "finish_row called without begin_row");
   if (it == builders_.end()) {
-    return;  // no builder — nothing to finish
+    return pj::unexpected(absl::StrCat("finish_row: no active row for topic ", topic_id));
   }
   it->second.finish_row();
 
   if (it->second.is_full()) {
     auto_seal(topic_id);
   }
+  return pj::ok_status();
 }
 
 // ---------------------------------------------------------------------------
@@ -310,40 +309,40 @@ void append_single_column_to_builder(
 
 }  // namespace
 
-absl::Status DataWriter::append_columns(
+pj::Status DataWriter::append_columns(
     TopicId topic_id, Span<const Timestamp> timestamps, Span<const ColumnData> columns) {
   auto* storage = engine_.get_topic_storage(topic_id);
   if (storage == nullptr) {
-    return absl::NotFoundError(absl::StrCat("Topic ", topic_id, " not found"));
+    return pj::unexpected(absl::StrCat("Topic ", topic_id, " not found"));
   }
 
   // Validate all column row counts match timestamp count
   for (const auto& col : columns) {
     const std::size_t n = col.row_count();
     if (n != timestamps.size()) {
-      return absl::InvalidArgumentError(
+      return pj::unexpected(
           absl::StrCat("Column ", col.col_index, " has ", n, " rows but ", timestamps.size(), " timestamps provided"));
     }
 
     if (!col.validity.empty()) {
       if (col.validity.bit_length != n) {
-        return absl::InvalidArgumentError(absl::StrCat("Column ", col.col_index, " validity bit_length mismatch"));
+        return pj::unexpected(absl::StrCat("Column ", col.col_index, " validity bit_length mismatch"));
       }
       const std::size_t available_bits = col.validity.bytes.size() * 8;
       if (col.validity.bit_offset + col.validity.bit_length > available_bits) {
-        return absl::InvalidArgumentError(absl::StrCat("Column ", col.col_index, " validity range out of bounds"));
+        return pj::unexpected(absl::StrCat("Column ", col.col_index, " validity range out of bounds"));
       }
     }
   }
 
   if (timestamps.empty()) {
-    return absl::OkStatus();
+    return pj::ok_status();
   }
 
   // Validate timestamp ordering
   auto& builder = get_or_create_builder(topic_id);
   if (builder.row_count() > 0 && timestamps[0] < builder.last_timestamp()) {
-    return absl::InvalidArgumentError(
+    return pj::unexpected(
         absl::StrCat("Out-of-order timestamp: t=", timestamps[0], " < last_timestamp=", builder.last_timestamp()));
   }
 
@@ -367,14 +366,14 @@ absl::Status DataWriter::append_columns(
     offset += batch_size;
   }
 
-  return absl::OkStatus();
+  return pj::ok_status();
 }
 
 // ---------------------------------------------------------------------------
 // Scalar convenience API
 // ---------------------------------------------------------------------------
 
-absl::StatusOr<ScalarSeriesHandle> DataWriter::register_scalar_series(
+Expected<ScalarSeriesHandle> DataWriter::register_scalar_series(
     DatasetId dataset_id, std::string_view topic_name, NumericType value_type) {
   // Create a topic descriptor for a scalar series (schema_id = 0)
   TopicDescriptor desc;
@@ -382,8 +381,8 @@ absl::StatusOr<ScalarSeriesHandle> DataWriter::register_scalar_series(
   desc.schema_id = 0;
 
   auto topic_id_or = engine_.create_topic(dataset_id, std::move(desc));
-  if (!topic_id_or.ok()) {
-    return topic_id_or.status();
+  if (!topic_id_or.has_value()) {
+    return pj::unexpected(topic_id_or.error());
   }
   TopicId topic_id = *topic_id_or;
 

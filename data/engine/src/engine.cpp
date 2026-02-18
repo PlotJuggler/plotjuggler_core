@@ -2,9 +2,9 @@
 
 #include <utility>
 
-#include "absl/status/status.h"
 #include "absl/strings/str_cat.h"
 #include "pj/base/assert.hpp"
+#include "pj/base/expected.hpp"
 #include "pj/engine/reader.hpp"
 #include "pj/engine/writer.hpp"
 
@@ -16,14 +16,14 @@ DataEngine::DataEngine() = default;
 // Dataset management
 // ---------------------------------------------------------------------------
 
-absl::StatusOr<DatasetId> DataEngine::create_dataset(DatasetDescriptor descriptor) {
+Expected<DatasetId> DataEngine::create_dataset(DatasetDescriptor descriptor) {
   DatasetId id = next_dataset_id_++;
 
   // Verify time domain exists if specified
   if (descriptor.time_domain_id != 0) {
     auto it = time_domains_.find(descriptor.time_domain_id);
     if (it == time_domains_.end()) {
-      return absl::NotFoundError(absl::StrCat("Time domain ", descriptor.time_domain_id, " not found"));
+      return pj::unexpected(absl::StrCat("Time domain ", descriptor.time_domain_id, " not found"));
     }
   }
 
@@ -49,16 +49,16 @@ const DatasetInfo* DataEngine::get_dataset(DatasetId id) const {
 // Topic management
 // ---------------------------------------------------------------------------
 
-absl::StatusOr<TopicId> DataEngine::create_topic(DatasetId dataset_id, TopicDescriptor descriptor) {
+Expected<TopicId> DataEngine::create_topic(DatasetId dataset_id, TopicDescriptor descriptor) {
   auto it = datasets_.find(dataset_id);
   if (it == datasets_.end()) {
-    return absl::NotFoundError(absl::StrCat("Dataset ", dataset_id, " not found"));
+    return pj::unexpected(absl::StrCat("Dataset ", dataset_id, " not found"));
   }
 
   // Validate schema_id if non-zero (zero means inline columns, e.g. scalar series)
   if (descriptor.schema_id != 0) {
     if (type_registry_.lookup(descriptor.schema_id) == nullptr) {
-      return absl::NotFoundError(absl::StrCat("Schema ", descriptor.schema_id, " not found"));
+      return pj::unexpected(absl::StrCat("Schema ", descriptor.schema_id, " not found"));
     }
   }
 
@@ -102,7 +102,7 @@ const TypeRegistry& DataEngine::type_registry() const {
 // Time domains
 // ---------------------------------------------------------------------------
 
-absl::StatusOr<TimeDomainId> DataEngine::create_time_domain(std::string name) {
+Expected<TimeDomainId> DataEngine::create_time_domain(std::string name) {
   TimeDomainId id = next_time_domain_id_++;
   TimeDomain td;
   td.id = id;
@@ -136,7 +136,7 @@ void DataEngine::commit_chunks(
     auto* storage = get_topic_storage(topic_id);
     if (storage != nullptr) {
       auto status = storage->append_sealed_chunk(std::move(chunk));
-      PJ_ASSERT(status.ok(), "out-of-order chunk from writer — writer bug");
+      PJ_ASSERT(status.has_value(), "out-of-order chunk from writer — writer bug");
       (void)status;  // suppress unused-variable warning in release builds
     }
   }

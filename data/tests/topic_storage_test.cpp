@@ -6,7 +6,7 @@
 #include <string>
 #include <vector>
 
-#include "absl/status/status.h"
+#include "pj/base/expected.hpp"
 #include "pj/engine/chunk.hpp"
 
 namespace pj::engine {
@@ -40,9 +40,9 @@ TEST(TopicStorageTest, AppendChunks) {
 
   TopicStorage storage(/*topic_id=*/1, std::move(desc));
 
-  ASSERT_TRUE(storage.append_sealed_chunk(make_test_chunk(1, 1000, 1900, 10)).ok());
-  ASSERT_TRUE(storage.append_sealed_chunk(make_test_chunk(1, 2000, 2900, 10)).ok());
-  ASSERT_TRUE(storage.append_sealed_chunk(make_test_chunk(1, 3000, 3900, 10)).ok());
+  ASSERT_TRUE(storage.append_sealed_chunk(make_test_chunk(1, 1000, 1900, 10)).has_value());
+  ASSERT_TRUE(storage.append_sealed_chunk(make_test_chunk(1, 2000, 2900, 10)).has_value());
+  ASSERT_TRUE(storage.append_sealed_chunk(make_test_chunk(1, 3000, 3900, 10)).has_value());
 
   EXPECT_EQ(storage.sealed_chunks().size(), 3U);
 }
@@ -62,9 +62,9 @@ TEST(TopicStorageTest, TimeMinMax) {
   EXPECT_EQ(storage.time_min(), 0);
   EXPECT_EQ(storage.time_max(), 0);
 
-  ASSERT_TRUE(storage.append_sealed_chunk(make_test_chunk(2, 1000, 1900, 10)).ok());
-  ASSERT_TRUE(storage.append_sealed_chunk(make_test_chunk(2, 2000, 2900, 10)).ok());
-  ASSERT_TRUE(storage.append_sealed_chunk(make_test_chunk(2, 3000, 3900, 10)).ok());
+  ASSERT_TRUE(storage.append_sealed_chunk(make_test_chunk(2, 1000, 1900, 10)).has_value());
+  ASSERT_TRUE(storage.append_sealed_chunk(make_test_chunk(2, 2000, 2900, 10)).has_value());
+  ASSERT_TRUE(storage.append_sealed_chunk(make_test_chunk(2, 3000, 3900, 10)).has_value());
 
   EXPECT_EQ(storage.time_min(), 1000);
   EXPECT_EQ(storage.time_max(), 3900);
@@ -81,9 +81,9 @@ TEST(TopicStorageTest, EvictNone) {
 
   TopicStorage storage(/*topic_id=*/3, std::move(desc));
 
-  ASSERT_TRUE(storage.append_sealed_chunk(make_test_chunk(3, 1000, 1900, 10)).ok());
-  ASSERT_TRUE(storage.append_sealed_chunk(make_test_chunk(3, 2000, 2900, 10)).ok());
-  ASSERT_TRUE(storage.append_sealed_chunk(make_test_chunk(3, 3000, 3900, 10)).ok());
+  ASSERT_TRUE(storage.append_sealed_chunk(make_test_chunk(3, 1000, 1900, 10)).has_value());
+  ASSERT_TRUE(storage.append_sealed_chunk(make_test_chunk(3, 2000, 2900, 10)).has_value());
+  ASSERT_TRUE(storage.append_sealed_chunk(make_test_chunk(3, 3000, 3900, 10)).has_value());
 
   // Evict before the first chunk's t_min -- nothing should be removed
   storage.evict_before(500);
@@ -106,9 +106,9 @@ TEST(TopicStorageTest, EvictSome) {
 
   TopicStorage storage(/*topic_id=*/4, std::move(desc));
 
-  ASSERT_TRUE(storage.append_sealed_chunk(make_test_chunk(4, 1000, 1900, 10)).ok());
-  ASSERT_TRUE(storage.append_sealed_chunk(make_test_chunk(4, 2000, 2900, 10)).ok());
-  ASSERT_TRUE(storage.append_sealed_chunk(make_test_chunk(4, 3000, 3900, 10)).ok());
+  ASSERT_TRUE(storage.append_sealed_chunk(make_test_chunk(4, 1000, 1900, 10)).has_value());
+  ASSERT_TRUE(storage.append_sealed_chunk(make_test_chunk(4, 2000, 2900, 10)).has_value());
+  ASSERT_TRUE(storage.append_sealed_chunk(make_test_chunk(4, 3000, 3900, 10)).has_value());
 
   // Evict chunks whose t_max < 2500
   // Chunk 1 (t_max=1900 < 2500) -> evicted
@@ -131,9 +131,9 @@ TEST(TopicStorageTest, EvictAll) {
 
   TopicStorage storage(/*topic_id=*/5, std::move(desc));
 
-  ASSERT_TRUE(storage.append_sealed_chunk(make_test_chunk(5, 1000, 1900, 10)).ok());
-  ASSERT_TRUE(storage.append_sealed_chunk(make_test_chunk(5, 2000, 2900, 10)).ok());
-  ASSERT_TRUE(storage.append_sealed_chunk(make_test_chunk(5, 3000, 3900, 10)).ok());
+  ASSERT_TRUE(storage.append_sealed_chunk(make_test_chunk(5, 1000, 1900, 10)).has_value());
+  ASSERT_TRUE(storage.append_sealed_chunk(make_test_chunk(5, 2000, 2900, 10)).has_value());
+  ASSERT_TRUE(storage.append_sealed_chunk(make_test_chunk(5, 3000, 3900, 10)).has_value());
 
   // Evict with t_keep_min beyond all chunks
   storage.evict_before(5000);
@@ -155,9 +155,9 @@ TEST(TopicStorageTest, Metadata) {
 
   TopicStorage storage(/*topic_id=*/6, std::move(desc));
 
-  ASSERT_TRUE(storage.append_sealed_chunk(make_test_chunk(6, 1000, 1900, 10)).ok());
-  ASSERT_TRUE(storage.append_sealed_chunk(make_test_chunk(6, 2000, 2900, 10)).ok());
-  ASSERT_TRUE(storage.append_sealed_chunk(make_test_chunk(6, 3000, 3900, 10)).ok());
+  ASSERT_TRUE(storage.append_sealed_chunk(make_test_chunk(6, 1000, 1900, 10)).has_value());
+  ASSERT_TRUE(storage.append_sealed_chunk(make_test_chunk(6, 2000, 2900, 10)).has_value());
+  ASSERT_TRUE(storage.append_sealed_chunk(make_test_chunk(6, 3000, 3900, 10)).has_value());
 
   TopicMetadata meta = storage.metadata();
 
@@ -186,7 +186,7 @@ TEST(TopicStorageTest, Empty) {
   EXPECT_TRUE(storage.empty());
 
   // After appending, not empty
-  ASSERT_TRUE(storage.append_sealed_chunk(make_test_chunk(7, 1000, 1900, 10)).ok());
+  ASSERT_TRUE(storage.append_sealed_chunk(make_test_chunk(7, 1000, 1900, 10)).has_value());
   EXPECT_FALSE(storage.empty());
 
   // After evicting all, empty again
@@ -226,12 +226,11 @@ TEST(TopicStorageTest, RejectOutOfOrderChunk) {
 
   TopicStorage storage(/*topic_id=*/9, std::move(desc));
 
-  ASSERT_TRUE(storage.append_sealed_chunk(make_test_chunk(9, 2000, 2900, 10)).ok());
+  ASSERT_TRUE(storage.append_sealed_chunk(make_test_chunk(9, 2000, 2900, 10)).has_value());
 
   // Append a chunk with t_min < previous chunk's t_min — should fail
   auto status = storage.append_sealed_chunk(make_test_chunk(9, 1000, 1900, 10));
-  EXPECT_FALSE(status.ok());
-  EXPECT_TRUE(absl::IsFailedPrecondition(status));
+  EXPECT_FALSE(status.has_value());
 
   // Only the first chunk should be stored
   EXPECT_EQ(storage.sealed_chunks().size(), 1U);
@@ -248,9 +247,9 @@ TEST(TopicStorageTest, EqualTMinChunksAllowed) {
 
   TopicStorage storage(/*topic_id=*/10, std::move(desc));
 
-  ASSERT_TRUE(storage.append_sealed_chunk(make_test_chunk(10, 1000, 1900, 10)).ok());
+  ASSERT_TRUE(storage.append_sealed_chunk(make_test_chunk(10, 1000, 1900, 10)).has_value());
   // Same t_min as previous chunk — should succeed (non-decreasing)
-  ASSERT_TRUE(storage.append_sealed_chunk(make_test_chunk(10, 1000, 1500, 5)).ok());
+  ASSERT_TRUE(storage.append_sealed_chunk(make_test_chunk(10, 1000, 1500, 5)).has_value());
 
   EXPECT_EQ(storage.sealed_chunks().size(), 2U);
 }

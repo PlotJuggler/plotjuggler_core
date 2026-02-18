@@ -36,13 +36,13 @@ TEST(EngineIntegrationTest, EndToEndScalarWriteRead) {
 
   // Create dataset with default time domain id=0
   auto dataset_id_or = engine.create_dataset(DatasetDescriptor{.source_name = "test_source", .time_domain_id = 0});
-  ASSERT_TRUE(dataset_id_or.ok()) << dataset_id_or.status();
+  ASSERT_TRUE(dataset_id_or.has_value()) << dataset_id_or.error();
   DatasetId dataset_id = *dataset_id_or;
 
   // Create writer, register scalar series (float64)
   DataWriter writer = engine.create_writer();
   auto handle_or = writer.register_scalar_series(dataset_id, "temperature", NumericType::kFloat64);
-  ASSERT_TRUE(handle_or.ok()) << handle_or.status();
+  ASSERT_TRUE(handle_or.has_value()) << handle_or.error();
   ScalarSeriesHandle handle = *handle_or;
 
   // Append 5000 scalar values: timestamps 0, 1000, 2000, ...
@@ -65,7 +65,7 @@ TEST(EngineIntegrationTest, EndToEndScalarWriteRead) {
   std::size_t count = 0;
   auto cursor_or = reader.range_query(
       QueryRange{.topic_id = handle.topic_id, .t_min = 0, .t_max = static_cast<Timestamp>(kRowCount - 1) * 1000});
-  ASSERT_TRUE(cursor_or.ok()) << cursor_or.status();
+  ASSERT_TRUE(cursor_or.has_value()) << cursor_or.error();
   cursor_or->for_each([&count](const SampleRow& row) {
     (void)row;
     ++count;
@@ -81,12 +81,12 @@ TEST(EngineIntegrationTest, EndToEndScalarWriteRead) {
   // Expected value at i=2500: 2500 * 0.5 = 1250.0
   Timestamp midpoint_ts = static_cast<Timestamp>(2500) * 1000;
   auto latest_or = reader.latest_at(QueryPoint{.topic_id = handle.topic_id, .t = midpoint_ts});
-  ASSERT_TRUE(latest_or.ok()) << latest_or.status();
+  ASSERT_TRUE(latest_or.has_value()) << latest_or.error();
   auto& latest = *latest_or;
-  ASSERT_TRUE(latest.found);
-  EXPECT_EQ(latest.timestamp, midpoint_ts);
-  ASSERT_NE(latest.chunk, nullptr);
-  double midpoint_value = latest.chunk->read_numeric_as_double(0, latest.row_index);
+  ASSERT_TRUE(latest.has_value());
+  EXPECT_EQ(latest->timestamp, midpoint_ts);
+  ASSERT_NE(latest->chunk, nullptr);
+  double midpoint_value = latest->chunk->read_numeric_as_double(0, latest->row_index);
   EXPECT_DOUBLE_EQ(midpoint_value, 1250.0);
 
   // Also verify metadata
@@ -118,25 +118,25 @@ TEST(EngineIntegrationTest, EndToEndStructuredWriteRead) {
 
   // Create dataset
   auto dataset_id_or = engine.create_dataset(DatasetDescriptor{.source_name = "robot", .time_domain_id = 0});
-  ASSERT_TRUE(dataset_id_or.ok()) << dataset_id_or.status();
+  ASSERT_TRUE(dataset_id_or.has_value()) << dataset_id_or.error();
   DatasetId dataset_id = *dataset_id_or;
 
   // Register schema and create topic via writer
   DataWriter writer = engine.create_writer();
   auto schema_id_or = writer.register_schema("robot_pose", robot_pose);
-  ASSERT_TRUE(schema_id_or.ok()) << schema_id_or.status();
+  ASSERT_TRUE(schema_id_or.has_value()) << schema_id_or.error();
   SchemaId schema_id = *schema_id_or;
 
   TopicDescriptor topic_desc;
   topic_desc.name = "pose";
   topic_desc.schema_id = schema_id;
   auto topic_id_or = writer.register_topic(dataset_id, topic_desc);
-  ASSERT_TRUE(topic_id_or.ok()) << topic_id_or.status();
+  ASSERT_TRUE(topic_id_or.has_value()) << topic_id_or.error();
   TopicId topic_id = *topic_id_or;
 
   // Bind to get field IDs (column indices)
   auto write_handle_or = writer.bind_topic_writer(topic_id);
-  ASSERT_TRUE(write_handle_or.ok()) << write_handle_or.status();
+  ASSERT_TRUE(write_handle_or.has_value()) << write_handle_or.error();
   TopicWriteHandle write_handle = *write_handle_or;
   ASSERT_EQ(write_handle.field_ids.size(), 4U);
 
@@ -144,14 +144,14 @@ TEST(EngineIntegrationTest, EndToEndStructuredWriteRead) {
   constexpr std::size_t kRows = 200;
   for (std::size_t i = 0; i < kRows; ++i) {
     Timestamp ts = static_cast<Timestamp>(i) * 1000000;  // 1ms apart
-    ASSERT_TRUE(writer.begin_row(topic_id, ts).ok());
+    ASSERT_TRUE(writer.begin_row(topic_id, ts).has_value());
     writer.set_float32(topic_id, 0, static_cast<float>(i) * 1.0F);
     writer.set_float32(topic_id, 1, static_cast<float>(i) * 2.0F);
     writer.set_float32(topic_id, 2, static_cast<float>(i) * 3.0F);
     // Alternate frame name for variety
     std::string_view frame_name = (i % 2 == 0) ? "base_link" : "odom";
     writer.set_string(topic_id, 3, frame_name);
-    writer.finish_row(topic_id);
+    ASSERT_TRUE(writer.finish_row(topic_id).has_value());
   }
 
   // Flush + commit
@@ -166,7 +166,7 @@ TEST(EngineIntegrationTest, EndToEndStructuredWriteRead) {
   std::size_t count = 0;
   auto cursor_or = reader.range_query(
       QueryRange{.topic_id = topic_id, .t_min = 0, .t_max = static_cast<Timestamp>(kRows - 1) * 1000000});
-  ASSERT_TRUE(cursor_or.ok()) << cursor_or.status();
+  ASSERT_TRUE(cursor_or.has_value()) << cursor_or.error();
   // Collect first and last rows for verification
   SampleRow first_row{};
   SampleRow last_row{};
@@ -224,7 +224,7 @@ TEST(EngineIntegrationTest, RetentionEviction) {
   DataEngine engine;
 
   auto dataset_id_or = engine.create_dataset(DatasetDescriptor{.source_name = "retention_test", .time_domain_id = 0});
-  ASSERT_TRUE(dataset_id_or.ok()) << dataset_id_or.status();
+  ASSERT_TRUE(dataset_id_or.has_value()) << dataset_id_or.error();
   DatasetId dataset_id = *dataset_id_or;
 
   DataWriter writer = engine.create_writer();
@@ -233,7 +233,7 @@ TEST(EngineIntegrationTest, RetentionEviction) {
   // We use scalar API but with a custom topic for control over chunk size
   auto x_tree = make_primitive("value", PrimitiveType::kFloat64);
   auto schema_id_or = writer.register_schema("scalar_retention", x_tree);
-  ASSERT_TRUE(schema_id_or.ok()) << schema_id_or.status();
+  ASSERT_TRUE(schema_id_or.has_value()) << schema_id_or.error();
   SchemaId schema_id = *schema_id_or;
 
   TopicDescriptor topic_desc;
@@ -241,20 +241,20 @@ TEST(EngineIntegrationTest, RetentionEviction) {
   topic_desc.schema_id = schema_id;
   topic_desc.max_chunk_rows = 100;  // small chunks for easier eviction testing
   auto topic_id_or = writer.register_topic(dataset_id, topic_desc);
-  ASSERT_TRUE(topic_id_or.ok()) << topic_id_or.status();
+  ASSERT_TRUE(topic_id_or.has_value()) << topic_id_or.error();
   TopicId topic_id = *topic_id_or;
 
   auto write_handle_or = writer.bind_topic_writer(topic_id);
-  ASSERT_TRUE(write_handle_or.ok()) << write_handle_or.status();
+  ASSERT_TRUE(write_handle_or.has_value()) << write_handle_or.error();
 
   // Write 3000 rows: timestamps 0 to 9999 (spacing ~3.333)
   // Simplify: timestamps from 0 to 2999, one per integer timestamp
   constexpr std::size_t kRowCount = 3000;
   for (std::size_t i = 0; i < kRowCount; ++i) {
     Timestamp ts = static_cast<Timestamp>(i);
-    ASSERT_TRUE(writer.begin_row(topic_id, ts).ok());
+    ASSERT_TRUE(writer.begin_row(topic_id, ts).has_value());
     writer.set_float64(topic_id, 0, static_cast<double>(i) * 0.1);
-    writer.finish_row(topic_id);
+    ASSERT_TRUE(writer.finish_row(topic_id).has_value());
   }
 
   auto flushed = writer.flush_all();
@@ -265,7 +265,7 @@ TEST(EngineIntegrationTest, RetentionEviction) {
   {
     std::size_t count = 0;
     auto cursor_or = reader.range_query(QueryRange{.topic_id = topic_id, .t_min = 0, .t_max = 2999});
-    ASSERT_TRUE(cursor_or.ok()) << cursor_or.status();
+    ASSERT_TRUE(cursor_or.has_value()) << cursor_or.error();
     cursor_or->for_each([&count](const SampleRow&) { ++count; });
     EXPECT_EQ(count, kRowCount);
   }
@@ -287,7 +287,7 @@ TEST(EngineIntegrationTest, RetentionEviction) {
   {
     std::size_t count = 0;
     auto cursor_or = reader.range_query(QueryRange{.topic_id = topic_id, .t_min = 0, .t_max = 999});
-    ASSERT_TRUE(cursor_or.ok()) << cursor_or.status();
+    ASSERT_TRUE(cursor_or.has_value()) << cursor_or.error();
     cursor_or->for_each([&count](const SampleRow&) { ++count; });
     // Old chunks (t_max < 1499) are fully evicted.
     // Chunks with rows in [0, 999] and t_max < 1499 are gone.
@@ -300,7 +300,7 @@ TEST(EngineIntegrationTest, RetentionEviction) {
   {
     std::size_t count = 0;
     auto cursor_or = reader.range_query(QueryRange{.topic_id = topic_id, .t_min = 1500, .t_max = 2999});
-    ASSERT_TRUE(cursor_or.ok()) << cursor_or.status();
+    ASSERT_TRUE(cursor_or.has_value()) << cursor_or.error();
     cursor_or->for_each([&count](const SampleRow&) { ++count; });
     EXPECT_EQ(count, 1500U) << "Recent data should be intact";
   }
@@ -319,7 +319,7 @@ TEST(EngineIntegrationTest, SchemaEvolution) {
   DataEngine engine;
 
   auto dataset_id_or = engine.create_dataset(DatasetDescriptor{.source_name = "evolution", .time_domain_id = 0});
-  ASSERT_TRUE(dataset_id_or.ok()) << dataset_id_or.status();
+  ASSERT_TRUE(dataset_id_or.has_value()) << dataset_id_or.error();
   DatasetId dataset_id = *dataset_id_or;
 
   // Schema v1: struct { float32 x, y, z }
@@ -330,7 +330,7 @@ TEST(EngineIntegrationTest, SchemaEvolution) {
 
   DataWriter writer = engine.create_writer();
   auto schema_id_or = writer.register_schema("pose", schema_v1);
-  ASSERT_TRUE(schema_id_or.ok()) << schema_id_or.status();
+  ASSERT_TRUE(schema_id_or.has_value()) << schema_id_or.error();
   SchemaId schema_id = *schema_id_or;
 
   TopicDescriptor topic_desc;
@@ -338,21 +338,21 @@ TEST(EngineIntegrationTest, SchemaEvolution) {
   topic_desc.schema_id = schema_id;
   topic_desc.max_chunk_rows = 200;  // Ensure v1 data fits in one chunk
   auto topic_id_or = writer.register_topic(dataset_id, topic_desc);
-  ASSERT_TRUE(topic_id_or.ok()) << topic_id_or.status();
+  ASSERT_TRUE(topic_id_or.has_value()) << topic_id_or.error();
   TopicId topic_id = *topic_id_or;
 
   auto wh_or = writer.bind_topic_writer(topic_id);
-  ASSERT_TRUE(wh_or.ok()) << wh_or.status();
+  ASSERT_TRUE(wh_or.has_value()) << wh_or.error();
   EXPECT_EQ(wh_or->field_ids.size(), 3U);
 
   // Write 100 rows with v1 schema (3 columns)
   for (std::size_t i = 0; i < 100; ++i) {
     Timestamp ts = static_cast<Timestamp>(i) * 1000;
-    ASSERT_TRUE(writer.begin_row(topic_id, ts).ok());
+    ASSERT_TRUE(writer.begin_row(topic_id, ts).has_value());
     writer.set_float32(topic_id, 0, static_cast<float>(i) * 1.0F);
     writer.set_float32(topic_id, 1, static_cast<float>(i) * 2.0F);
     writer.set_float32(topic_id, 2, static_cast<float>(i) * 3.0F);
-    writer.finish_row(topic_id);
+    ASSERT_TRUE(writer.finish_row(topic_id).has_value());
   }
 
   // Flush v1 data and commit
@@ -364,23 +364,23 @@ TEST(EngineIntegrationTest, SchemaEvolution) {
   auto w = make_primitive("w", PrimitiveType::kFloat32);
   auto schema_v2 = make_struct("pose", {x, y, z, w});
   auto evolve_status = engine.type_registry().evolve_schema(schema_id, schema_v2);
-  ASSERT_TRUE(evolve_status.ok()) << evolve_status;
+  ASSERT_TRUE(evolve_status.has_value()) << evolve_status.error();
 
   // Create a new writer so it picks up the evolved schema's column layout
   DataWriter writer2 = engine.create_writer();
   auto wh2_or = writer2.bind_topic_writer(topic_id);
-  ASSERT_TRUE(wh2_or.ok()) << wh2_or.status();
+  ASSERT_TRUE(wh2_or.has_value()) << wh2_or.error();
   EXPECT_EQ(wh2_or->field_ids.size(), 4U);
 
   // Write 100 more rows with v2 schema (4 columns)
   for (std::size_t i = 0; i < 100; ++i) {
     Timestamp ts = static_cast<Timestamp>(100 + i) * 1000;
-    ASSERT_TRUE(writer2.begin_row(topic_id, ts).ok());
+    ASSERT_TRUE(writer2.begin_row(topic_id, ts).has_value());
     writer2.set_float32(topic_id, 0, static_cast<float>(100 + i) * 1.0F);
     writer2.set_float32(topic_id, 1, static_cast<float>(100 + i) * 2.0F);
     writer2.set_float32(topic_id, 2, static_cast<float>(100 + i) * 3.0F);
     writer2.set_float32(topic_id, 3, static_cast<float>(100 + i) * 4.0F);
-    writer2.finish_row(topic_id);
+    ASSERT_TRUE(writer2.finish_row(topic_id).has_value());
   }
 
   auto flushed_v2 = writer2.flush_all();
@@ -394,7 +394,7 @@ TEST(EngineIntegrationTest, SchemaEvolution) {
   {
     std::size_t count = 0;
     auto cursor_or = reader.range_query(QueryRange{.topic_id = topic_id, .t_min = 0, .t_max = 99000});
-    ASSERT_TRUE(cursor_or.ok()) << cursor_or.status();
+    ASSERT_TRUE(cursor_or.has_value()) << cursor_or.error();
     cursor_or->for_each([&count](const SampleRow& row) {
       ASSERT_NE(row.chunk, nullptr);
       // Old chunks should have 3 column descriptors
@@ -414,7 +414,7 @@ TEST(EngineIntegrationTest, SchemaEvolution) {
   {
     std::size_t count = 0;
     auto cursor_or = reader.range_query(QueryRange{.topic_id = topic_id, .t_min = 100000, .t_max = 199000});
-    ASSERT_TRUE(cursor_or.ok()) << cursor_or.status();
+    ASSERT_TRUE(cursor_or.has_value()) << cursor_or.error();
     cursor_or->for_each([&count](const SampleRow& row) {
       ASSERT_NE(row.chunk, nullptr);
       // New chunks should have 4 column descriptors
@@ -435,7 +435,7 @@ TEST(EngineIntegrationTest, SchemaEvolution) {
   {
     std::size_t count = 0;
     auto cursor_or = reader.range_query(QueryRange{.topic_id = topic_id, .t_min = 0, .t_max = 199000});
-    ASSERT_TRUE(cursor_or.ok()) << cursor_or.status();
+    ASSERT_TRUE(cursor_or.has_value()) << cursor_or.error();
     cursor_or->for_each([&count](const SampleRow&) { ++count; });
     EXPECT_EQ(count, 200U);
   }
@@ -455,11 +455,11 @@ TEST(EngineIntegrationTest, TimeDomainOffset) {
 
   // Create two time domains
   auto td1_or = engine.create_time_domain("ros_time");
-  ASSERT_TRUE(td1_or.ok()) << td1_or.status();
+  ASSERT_TRUE(td1_or.has_value()) << td1_or.error();
   TimeDomainId td1_id = *td1_or;
 
   auto td2_or = engine.create_time_domain("sim_time");
-  ASSERT_TRUE(td2_or.ok()) << td2_or.status();
+  ASSERT_TRUE(td2_or.has_value()) << td2_or.error();
   TimeDomainId td2_id = *td2_or;
 
   // Verify they have distinct IDs
@@ -484,11 +484,11 @@ TEST(EngineIntegrationTest, TimeDomainOffset) {
 
   // Create datasets bound to each time domain
   auto ds1_or = engine.create_dataset(DatasetDescriptor{.source_name = "robot1", .time_domain_id = td1_id});
-  ASSERT_TRUE(ds1_or.ok()) << ds1_or.status();
+  ASSERT_TRUE(ds1_or.has_value()) << ds1_or.error();
   DatasetId ds1_id = *ds1_or;
 
   auto ds2_or = engine.create_dataset(DatasetDescriptor{.source_name = "simulator", .time_domain_id = td2_id});
-  ASSERT_TRUE(ds2_or.ok()) << ds2_or.status();
+  ASSERT_TRUE(ds2_or.has_value()) << ds2_or.error();
   DatasetId ds2_id = *ds2_or;
 
   // Verify datasets have the correct time domains
@@ -532,7 +532,7 @@ TEST(EngineIntegrationTest, TimeDomainOffset) {
 
   // Verify creating dataset with non-existent time domain fails
   auto bad_ds = engine.create_dataset(DatasetDescriptor{.source_name = "bad", .time_domain_id = 999});
-  EXPECT_FALSE(bad_ds.ok());
+  EXPECT_FALSE(bad_ds.has_value());
 }
 
 // ===========================================================================
@@ -546,7 +546,7 @@ TEST(EngineIntegrationTest, CreateTopicRejectsInvalidSchemaId) {
   DataEngine engine;
 
   auto dataset_id_or = engine.create_dataset(DatasetDescriptor{.source_name = "test", .time_domain_id = 0});
-  ASSERT_TRUE(dataset_id_or.ok()) << dataset_id_or.status();
+  ASSERT_TRUE(dataset_id_or.has_value()) << dataset_id_or.error();
   DatasetId dataset_id = *dataset_id_or;
 
   // schema_id=999 doesn't exist — should fail
@@ -554,15 +554,14 @@ TEST(EngineIntegrationTest, CreateTopicRejectsInvalidSchemaId) {
   desc.name = "bad_topic";
   desc.schema_id = 999;
   auto result = engine.create_topic(dataset_id, desc);
-  EXPECT_FALSE(result.ok());
-  EXPECT_TRUE(absl::IsNotFound(result.status()));
+  EXPECT_FALSE(result.has_value());
 
   // schema_id=0 (inline columns) should still succeed
   TopicDescriptor scalar_desc;
   scalar_desc.name = "scalar_topic";
   scalar_desc.schema_id = 0;
   auto scalar_result = engine.create_topic(dataset_id, scalar_desc);
-  EXPECT_TRUE(scalar_result.ok()) << scalar_result.status();
+  EXPECT_TRUE(scalar_result.has_value()) << scalar_result.error();
 }
 
 // ===========================================================================
@@ -576,12 +575,11 @@ TEST(EngineIntegrationTest, BeginRowRejectsInvalidTopicId) {
   DataEngine engine;
 
   auto dataset_id_or = engine.create_dataset(DatasetDescriptor{.source_name = "test", .time_domain_id = 0});
-  ASSERT_TRUE(dataset_id_or.ok()) << dataset_id_or.status();
+  ASSERT_TRUE(dataset_id_or.has_value()) << dataset_id_or.error();
 
   DataWriter writer = engine.create_writer();
   auto status = writer.begin_row(/*topic_id=*/999, /*t=*/1000);
-  EXPECT_FALSE(status.ok());
-  EXPECT_TRUE(absl::IsNotFound(status));
+  EXPECT_FALSE(status.has_value());
 }
 
 // ===========================================================================
@@ -595,7 +593,7 @@ TEST(EngineIntegrationTest, PartialRowAutoFillsNulls) {
   DataEngine engine;
 
   auto dataset_id_or = engine.create_dataset(DatasetDescriptor{.source_name = "test", .time_domain_id = 0});
-  ASSERT_TRUE(dataset_id_or.ok()) << dataset_id_or.status();
+  ASSERT_TRUE(dataset_id_or.has_value()) << dataset_id_or.error();
   DatasetId dataset_id = *dataset_id_or;
 
   // Create a 3-column schema: float32 x, y, z
@@ -606,25 +604,25 @@ TEST(EngineIntegrationTest, PartialRowAutoFillsNulls) {
 
   DataWriter writer = engine.create_writer();
   auto schema_id_or = writer.register_schema("point", schema_tree);
-  ASSERT_TRUE(schema_id_or.ok()) << schema_id_or.status();
+  ASSERT_TRUE(schema_id_or.has_value()) << schema_id_or.error();
 
   TopicDescriptor topic_desc;
   topic_desc.name = "partial";
   topic_desc.schema_id = *schema_id_or;
   auto topic_id_or = writer.register_topic(dataset_id, topic_desc);
-  ASSERT_TRUE(topic_id_or.ok()) << topic_id_or.status();
+  ASSERT_TRUE(topic_id_or.has_value()) << topic_id_or.error();
   TopicId topic_id = *topic_id_or;
 
   auto wh_or = writer.bind_topic_writer(topic_id);
-  ASSERT_TRUE(wh_or.ok()) << wh_or.status();
+  ASSERT_TRUE(wh_or.has_value()) << wh_or.error();
 
   // Row 1: set only x (columns y and z should be auto-null-filled)
-  ASSERT_TRUE(writer.begin_row(topic_id, 1000).ok());
+  ASSERT_TRUE(writer.begin_row(topic_id, 1000).has_value());
   writer.set_float32(topic_id, 0, 1.0F);
   writer.finish_row(topic_id);
 
   // Row 2: set all 3 columns (no nulls)
-  ASSERT_TRUE(writer.begin_row(topic_id, 2000).ok());
+  ASSERT_TRUE(writer.begin_row(topic_id, 2000).has_value());
   writer.set_float32(topic_id, 0, 2.0F);
   writer.set_float32(topic_id, 1, 3.0F);
   writer.set_float32(topic_id, 2, 4.0F);
@@ -637,7 +635,7 @@ TEST(EngineIntegrationTest, PartialRowAutoFillsNulls) {
   // Read back and verify
   DataReader reader = engine.create_reader();
   auto cursor_or = reader.range_query(QueryRange{.topic_id = topic_id, .t_min = 0, .t_max = 3000});
-  ASSERT_TRUE(cursor_or.ok()) << cursor_or.status();
+  ASSERT_TRUE(cursor_or.has_value()) << cursor_or.error();
 
   std::size_t count = 0;
   cursor_or->for_each([&count](const SampleRow& row) {
@@ -672,12 +670,12 @@ TEST(EngineIntegrationTest, RetentionWorksWithNegativeTimestamps) {
   DataEngine engine;
 
   auto dataset_id_or = engine.create_dataset(DatasetDescriptor{.source_name = "test", .time_domain_id = 0});
-  ASSERT_TRUE(dataset_id_or.ok()) << dataset_id_or.status();
+  ASSERT_TRUE(dataset_id_or.has_value()) << dataset_id_or.error();
   DatasetId dataset_id = *dataset_id_or;
 
   DataWriter writer = engine.create_writer();
   auto handle_or = writer.register_scalar_series(dataset_id, "negative_ts", NumericType::kFloat64);
-  ASSERT_TRUE(handle_or.ok()) << handle_or.status();
+  ASSERT_TRUE(handle_or.has_value()) << handle_or.error();
   ScalarSeriesHandle handle = *handle_or;
 
   // Write data with negative timestamps: -1000, -900, ..., -100, 0
@@ -707,7 +705,7 @@ TEST(EngineIntegrationTest, RetentionWorksWithNegativeTimestamps) {
 
   DataReader reader = engine.create_reader();
   auto cursor_or = reader.range_query(QueryRange{.topic_id = handle.topic_id, .t_min = -1000, .t_max = 0});
-  ASSERT_TRUE(cursor_or.ok()) << cursor_or.status();
+  ASSERT_TRUE(cursor_or.has_value()) << cursor_or.error();
   std::size_t count = 0;
   cursor_or->for_each([&count](const SampleRow&) { ++count; });
   EXPECT_EQ(count, 11U);
@@ -727,13 +725,11 @@ TEST(EngineIntegrationTest, QueryReturnsErrorForMissingTopic) {
 
   // range_query with non-existent topic
   auto cursor_or = reader.range_query(QueryRange{.topic_id = 999, .t_min = 0, .t_max = 1000});
-  EXPECT_FALSE(cursor_or.ok());
-  EXPECT_TRUE(absl::IsNotFound(cursor_or.status()));
+  EXPECT_FALSE(cursor_or.has_value());
 
   // latest_at with non-existent topic
   auto latest_or = reader.latest_at(QueryPoint{.topic_id = 999, .t = 500});
-  EXPECT_FALSE(latest_or.ok());
-  EXPECT_TRUE(absl::IsNotFound(latest_or.status()));
+  EXPECT_FALSE(latest_or.has_value());
 }
 
 // ===========================================================================
@@ -744,23 +740,22 @@ TEST(EngineIntegrationTest, BeginRowRejectsOutOfOrderTimestamp) {
   DataEngine engine;
 
   auto dataset_id_or = engine.create_dataset(DatasetDescriptor{.source_name = "test", .time_domain_id = 0});
-  ASSERT_TRUE(dataset_id_or.ok()) << dataset_id_or.status();
+  ASSERT_TRUE(dataset_id_or.has_value()) << dataset_id_or.error();
   DatasetId dataset_id = *dataset_id_or;
 
   DataWriter writer = engine.create_writer();
   auto handle_or = writer.register_scalar_series(dataset_id, "ordered", NumericType::kFloat64);
-  ASSERT_TRUE(handle_or.ok()) << handle_or.status();
+  ASSERT_TRUE(handle_or.has_value()) << handle_or.error();
   TopicId topic_id = handle_or->topic_id;
 
   // First row at t=200 succeeds
-  ASSERT_TRUE(writer.begin_row(topic_id, 200).ok());
+  ASSERT_TRUE(writer.begin_row(topic_id, 200).has_value());
   writer.set_float64(topic_id, 0, 1.0);
   writer.finish_row(topic_id);
 
   // Second row at t=100 (out of order) should fail
   auto status = writer.begin_row(topic_id, 100);
-  EXPECT_FALSE(status.ok());
-  EXPECT_TRUE(absl::IsInvalidArgument(status));
+  EXPECT_FALSE(status.has_value());
 }
 
 // ===========================================================================
@@ -771,25 +766,25 @@ TEST(EngineIntegrationTest, EqualTimestampsAllowed) {
   DataEngine engine;
 
   auto dataset_id_or = engine.create_dataset(DatasetDescriptor{.source_name = "test", .time_domain_id = 0});
-  ASSERT_TRUE(dataset_id_or.ok()) << dataset_id_or.status();
+  ASSERT_TRUE(dataset_id_or.has_value()) << dataset_id_or.error();
   DatasetId dataset_id = *dataset_id_or;
 
   DataWriter writer = engine.create_writer();
   auto handle_or = writer.register_scalar_series(dataset_id, "equal_ts", NumericType::kFloat64);
-  ASSERT_TRUE(handle_or.ok()) << handle_or.status();
+  ASSERT_TRUE(handle_or.has_value()) << handle_or.error();
   TopicId topic_id = handle_or->topic_id;
 
   // Two rows at t=100 should both succeed
-  ASSERT_TRUE(writer.begin_row(topic_id, 100).ok());
+  ASSERT_TRUE(writer.begin_row(topic_id, 100).has_value());
   writer.set_float64(topic_id, 0, 1.0);
   writer.finish_row(topic_id);
 
-  ASSERT_TRUE(writer.begin_row(topic_id, 100).ok());
+  ASSERT_TRUE(writer.begin_row(topic_id, 100).has_value());
   writer.set_float64(topic_id, 0, 2.0);
   writer.finish_row(topic_id);
 
   // Third row at higher timestamp also succeeds
-  ASSERT_TRUE(writer.begin_row(topic_id, 200).ok());
+  ASSERT_TRUE(writer.begin_row(topic_id, 200).has_value());
   writer.set_float64(topic_id, 0, 3.0);
   writer.finish_row(topic_id);
 
@@ -799,7 +794,7 @@ TEST(EngineIntegrationTest, EqualTimestampsAllowed) {
   DataReader reader = engine.create_reader();
   std::size_t count = 0;
   auto cursor_or = reader.range_query(QueryRange{.topic_id = topic_id, .t_min = 0, .t_max = 300});
-  ASSERT_TRUE(cursor_or.ok()) << cursor_or.status();
+  ASSERT_TRUE(cursor_or.has_value()) << cursor_or.error();
   cursor_or->for_each([&count](const SampleRow&) { ++count; });
   EXPECT_EQ(count, 3U);
 }
@@ -812,7 +807,7 @@ TEST(EngineIntegrationTest, BulkAppendColumnsMultiChunk) {
   DataEngine engine;
 
   auto dataset_id_or = engine.create_dataset(DatasetDescriptor{.source_name = "bulk_test", .time_domain_id = 0});
-  ASSERT_TRUE(dataset_id_or.ok()) << dataset_id_or.status();
+  ASSERT_TRUE(dataset_id_or.has_value()) << dataset_id_or.error();
   DatasetId dataset_id = *dataset_id_or;
 
   // Create a 3-column schema: float32 x, y, z
@@ -823,14 +818,14 @@ TEST(EngineIntegrationTest, BulkAppendColumnsMultiChunk) {
 
   DataWriter writer = engine.create_writer();
   auto schema_id_or = writer.register_schema("imu_schema", schema_tree);
-  ASSERT_TRUE(schema_id_or.ok()) << schema_id_or.status();
+  ASSERT_TRUE(schema_id_or.has_value()) << schema_id_or.error();
 
   TopicDescriptor topic_desc;
   topic_desc.name = "imu_data";
   topic_desc.schema_id = *schema_id_or;
   topic_desc.max_chunk_rows = 256;  // small chunks to force splitting
   auto topic_id_or = writer.register_topic(dataset_id, topic_desc);
-  ASSERT_TRUE(topic_id_or.ok()) << topic_id_or.status();
+  ASSERT_TRUE(topic_id_or.has_value()) << topic_id_or.error();
   TopicId topic_id = *topic_id_or;
 
   // Prepare 1000 rows of bulk data
@@ -850,7 +845,7 @@ TEST(EngineIntegrationTest, BulkAppendColumnsMultiChunk) {
       ColumnData::Float32(2, z_vals),
   };
   auto status = writer.append_columns(topic_id, timestamps, columns);
-  ASSERT_TRUE(status.ok()) << status;
+  ASSERT_TRUE(status.has_value()) << status.error();
 
   auto flushed = writer.flush_all();
   EXPECT_FALSE(flushed.empty());
@@ -866,7 +861,7 @@ TEST(EngineIntegrationTest, BulkAppendColumnsMultiChunk) {
   std::size_t count = 0;
   auto cursor_or =
       reader.range_query(QueryRange{.topic_id = topic_id, .t_min = 0, .t_max = static_cast<Timestamp>(N - 1) * 1000});
-  ASSERT_TRUE(cursor_or.ok()) << cursor_or.status();
+  ASSERT_TRUE(cursor_or.has_value()) << cursor_or.error();
   cursor_or->for_each([&count](const SampleRow& row) {
     ASSERT_NE(row.chunk, nullptr);
     ++count;
@@ -875,11 +870,13 @@ TEST(EngineIntegrationTest, BulkAppendColumnsMultiChunk) {
 
   // Spot-check specific values via latest_at
   auto latest_or = reader.latest_at(QueryPoint{.topic_id = topic_id, .t = 500 * 1000});
-  ASSERT_TRUE(latest_or.ok()) << latest_or.status();
-  ASSERT_TRUE(latest_or->found);
-  EXPECT_EQ(latest_or->timestamp, 500 * 1000);
-  EXPECT_FLOAT_EQ(static_cast<float>(latest_or->chunk->read_numeric_as_double(0, latest_or->row_index)), 500.0F * 0.1F);
-  EXPECT_FLOAT_EQ(static_cast<float>(latest_or->chunk->read_numeric_as_double(1, latest_or->row_index)), 500.0F * 0.2F);
+  ASSERT_TRUE(latest_or.has_value()) << latest_or.error();
+  ASSERT_TRUE(latest_or->has_value());
+  EXPECT_EQ((*latest_or)->timestamp, 500 * 1000);
+  EXPECT_FLOAT_EQ(
+      static_cast<float>((*latest_or)->chunk->read_numeric_as_double(0, (*latest_or)->row_index)), 500.0F * 0.1F);
+  EXPECT_FLOAT_EQ(
+      static_cast<float>((*latest_or)->chunk->read_numeric_as_double(1, (*latest_or)->row_index)), 500.0F * 0.2F);
 }
 
 // ===========================================================================
@@ -890,7 +887,7 @@ TEST(EngineIntegrationTest, BulkAppendErrorHandling) {
   DataEngine engine;
 
   auto dataset_id_or = engine.create_dataset(DatasetDescriptor{.source_name = "err_test", .time_domain_id = 0});
-  ASSERT_TRUE(dataset_id_or.ok());
+  ASSERT_TRUE(dataset_id_or.has_value());
   DatasetId dataset_id = *dataset_id_or;
 
   DataWriter writer = engine.create_writer();
@@ -903,8 +900,7 @@ TEST(EngineIntegrationTest, BulkAppendErrorHandling) {
         ColumnData::Float32(0, Span<const float>(vals, 1)),
     };
     auto status = writer.append_columns(999, Span<const Timestamp>(ts, 1), cols);
-    EXPECT_FALSE(status.ok());
-    EXPECT_TRUE(absl::IsNotFound(status));
+    EXPECT_FALSE(status.has_value());
   }
 
   // Mismatched column count
@@ -922,8 +918,7 @@ TEST(EngineIntegrationTest, BulkAppendErrorHandling) {
         ColumnData::Float32(0, Span<const float>(vals, 2)),
     };
     auto status = writer.append_columns(tid, Span<const Timestamp>(ts, 3), cols);
-    EXPECT_FALSE(status.ok());
-    EXPECT_TRUE(absl::IsInvalidArgument(status));
+    EXPECT_FALSE(status.has_value());
   }
 }
 
@@ -935,7 +930,7 @@ TEST(EngineIntegrationTest, BulkAppendEmpty) {
   DataEngine engine;
 
   auto dataset_id_or = engine.create_dataset(DatasetDescriptor{.source_name = "empty_test", .time_domain_id = 0});
-  ASSERT_TRUE(dataset_id_or.ok());
+  ASSERT_TRUE(dataset_id_or.has_value());
   DatasetId dataset_id = *dataset_id_or;
 
   auto tree = make_primitive("val", PrimitiveType::kFloat64);
@@ -948,7 +943,7 @@ TEST(EngineIntegrationTest, BulkAppendEmpty) {
 
   // Empty append should succeed and produce no data
   auto status = writer.append_columns(tid, Span<const Timestamp>(), Span<const ColumnData>());
-  EXPECT_TRUE(status.ok()) << status;
+  EXPECT_TRUE(status.has_value()) << status.error();
 
   auto flushed = writer.flush_all();
   EXPECT_TRUE(flushed.empty());

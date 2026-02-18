@@ -3,7 +3,7 @@
 #include <deque>
 #include <string>
 
-#include "absl/status/status.h"
+#include "pj/base/expected.hpp"
 #include "pj/base/types.hpp"
 #include "pj/engine/chunk.hpp"
 
@@ -53,7 +53,7 @@ class TopicStorage {
   TopicStorage(TopicId topic_id, TopicDescriptor descriptor);
 
   /// Append a sealed chunk; rejects out-of-order chunk timestamps.
-  [[nodiscard]] absl::Status append_sealed_chunk(TopicChunk chunk);
+  [[nodiscard]] pj::Status append_sealed_chunk(TopicChunk chunk);
 
   /// Remove chunks whose max time is strictly before `t_keep_min`.
   void evict_before(Timestamp t_keep_min);

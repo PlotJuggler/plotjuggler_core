@@ -9,10 +9,9 @@
 #include <utility>
 #include <vector>
 
-#include "absl/status/status.h"
-#include "absl/status/statusor.h"
 #include "absl/strings/str_cat.h"
-#include "absl/types/span.h"
+#include "pj/base/expected.hpp"
+#include "pj/base/span.hpp"
 #include "nanoarrow/nanoarrow.h"
 #include "nanoarrow/nanoarrow.hpp"
 #include "nanoarrow/nanoarrow_ipc.h"
@@ -25,7 +24,7 @@ namespace pj::engine::arrow_import {
 namespace {
 
 // ---------------------------------------------------------------------------
-// Non-owning IPC input stream from absl::Span<const uint8_t>
+// Non-owning IPC input stream from pj::Span<const uint8_t>
 // ---------------------------------------------------------------------------
 
 struct SpanInputStreamData {
@@ -53,7 +52,7 @@ void span_input_stream_release(ArrowIpcInputStream* stream) {
   stream->release = nullptr;
 }
 
-void init_span_input_stream(ArrowIpcInputStream* stream, absl::Span<const uint8_t> span) {
+void init_span_input_stream(ArrowIpcInputStream* stream, pj::Span<const uint8_t> span) {
   stream->read = span_input_stream_read;
   stream->release = span_input_stream_release;
   stream->private_data = new SpanInputStreamData{span.data(), static_cast<int64_t>(span.size()), 0};
@@ -255,21 +254,21 @@ std::vector<Timestamp> generate_sequential_timestamps(int64_t length) {
 // schema_from_ipc
 // ---------------------------------------------------------------------------
 
-absl::StatusOr<std::pair<std::shared_ptr<pj::TypeTreeNode>, std::vector<ArrowColumnMapping>>> schema_from_ipc(
-    absl::Span<const uint8_t> ipc_stream) {
+pj::Expected<std::pair<std::shared_ptr<pj::TypeTreeNode>, std::vector<ArrowColumnMapping>>> schema_from_ipc(
+    pj::Span<const uint8_t> ipc_stream) {
   ArrowIpcInputStream input;
   init_span_input_stream(&input, ipc_stream);
 
   nanoarrow::UniqueArrayStream stream;
   int rc = ArrowIpcArrayStreamReaderInit(stream.get(), &input, nullptr);
   if (rc != NANOARROW_OK) {
-    return absl::InternalError("Failed to initialize IPC stream reader");
+    return pj::unexpected(std::string("Failed to initialize IPC stream reader"));
   }
 
   nanoarrow::UniqueSchema schema;
   rc = stream->get_schema(stream.get(), schema.get());
   if (rc != NANOARROW_OK) {
-    return absl::InvalidArgumentError("Failed to read schema from IPC stream");
+    return pj::unexpected(std::string("Failed to read schema from IPC stream"));
   }
 
   std::vector<ArrowColumnMapping> mappings;
@@ -299,7 +298,7 @@ absl::StatusOr<std::pair<std::shared_ptr<pj::TypeTreeNode>, std::vector<ArrowCol
   }
 
   if (mappings.empty()) {
-    return absl::InvalidArgumentError("No supported columns found in Arrow IPC schema");
+    return pj::unexpected(std::string("No supported columns found in Arrow IPC schema"));
   }
 
   auto type_tree = pj::make_struct("arrow_row", std::move(children));
@@ -310,8 +309,8 @@ absl::StatusOr<std::pair<std::shared_ptr<pj::TypeTreeNode>, std::vector<ArrowCol
 // import_ipc_stream
 // ---------------------------------------------------------------------------
 
-absl::Status import_ipc_stream(
-    DataWriter& writer, TopicId topic_id, absl::Span<const uint8_t> ipc_stream,
+pj::Status import_ipc_stream(
+    DataWriter& writer, TopicId topic_id, pj::Span<const uint8_t> ipc_stream,
     const std::vector<ArrowColumnMapping>& mappings, int timestamp_column) {
   ArrowIpcInputStream input;
   init_span_input_stream(&input, ipc_stream);
@@ -319,21 +318,21 @@ absl::Status import_ipc_stream(
   nanoarrow::UniqueArrayStream stream;
   int rc = ArrowIpcArrayStreamReaderInit(stream.get(), &input, nullptr);
   if (rc != NANOARROW_OK) {
-    return absl::InternalError("Failed to initialize IPC stream reader");
+    return pj::unexpected(std::string("Failed to initialize IPC stream reader"));
   }
 
   // Read schema (required by IPC stream format)
   nanoarrow::UniqueSchema schema;
   rc = stream->get_schema(stream.get(), schema.get());
   if (rc != NANOARROW_OK) {
-    return absl::InvalidArgumentError("Failed to read schema from IPC stream");
+    return pj::unexpected(std::string("Failed to read schema from IPC stream"));
   }
 
   // Initialize array view from schema for decoding batches
   nanoarrow::UniqueArrayView array_view;
   rc = ArrowArrayViewInitFromSchema(array_view.get(), schema.get(), nullptr);
   if (rc != NANOARROW_OK) {
-    return absl::InternalError("Failed to initialize ArrowArrayView from schema");
+    return pj::unexpected(std::string("Failed to initialize ArrowArrayView from schema"));
   }
 
   // Iterate over record batches
@@ -342,7 +341,7 @@ absl::Status import_ipc_stream(
     batch.reset();
     rc = stream->get_next(stream.get(), batch.get());
     if (rc != NANOARROW_OK) {
-      return absl::InternalError("Failed to read next batch from IPC stream");
+      return pj::unexpected(std::string("Failed to read next batch from IPC stream"));
     }
     if (batch->release == nullptr) {
       break;  // end of stream
@@ -356,14 +355,14 @@ absl::Status import_ipc_stream(
     // Set array data into the view for buffer access
     rc = ArrowArrayViewSetArray(array_view.get(), batch.get(), nullptr);
     if (rc != NANOARROW_OK) {
-      return absl::InternalError("Failed to set array on ArrowArrayView");
+      return pj::unexpected(std::string("Failed to set array on ArrowArrayView"));
     }
 
     // Extract timestamps
     std::vector<Timestamp> timestamps;
     if (timestamp_column >= 0) {
       if (timestamp_column >= static_cast<int>(array_view->n_children)) {
-        return absl::InvalidArgumentError(absl::StrCat(
+        return pj::unexpected(absl::StrCat(
             "timestamp_column ", timestamp_column, " out of range (", array_view->n_children, " children)"));
       }
       timestamps = extract_timestamps_nanoarrow(array_view->children[timestamp_column], num_rows);
@@ -379,7 +378,7 @@ absl::Status import_ipc_stream(
 
     for (const auto& mapping : mappings) {
       if (mapping.arrow_column_index >= static_cast<int>(array_view->n_children)) {
-        return absl::InvalidArgumentError(
+        return pj::unexpected(
             absl::StrCat("Arrow column index ", mapping.arrow_column_index, " out of range"));
       }
       col_buffers.push_back(
@@ -391,12 +390,12 @@ absl::Status import_ipc_stream(
     }
 
     auto status = writer.append_columns(topic_id, timestamps, col_data_vec);
-    if (!status.ok()) {
+    if (!status.has_value()) {
       return status;
     }
   }
 
-  return absl::OkStatus();
+  return pj::ok_status();
 }
 
 }  // namespace pj::engine::arrow_import

@@ -1,39 +1,36 @@
 #pragma once
 #include <cstddef>
 #include <deque>
+#include <functional>
+#include <optional>
 #include <vector>
 
-#include "absl/functional/function_ref.h"
 #include "pj/base/types.hpp"
 #include "pj/engine/chunk.hpp"
 
 namespace pj::engine {
 
-// Import base types into engine namespace
-using pj::Timestamp;
-using pj::TopicId;
-
 struct QueryRange {
   /// Topic to query.
-  TopicId topic_id = 0;
+  pj::TopicId topic_id = 0;
   /// Inclusive range start.
-  Timestamp t_min = 0;
+  pj::Timestamp t_min = 0;
   /// Inclusive range end.
-  Timestamp t_max = 0;
+  pj::Timestamp t_max = 0;
 };
 
 /// Point query descriptor for latest-at lookup.
 struct QueryPoint {
   /// Topic to query.
-  TopicId topic_id = 0;
+  pj::TopicId topic_id = 0;
   /// Query timestamp.
-  Timestamp t = 0;
+  pj::Timestamp t = 0;
 };
 
 /// One materialized row reference returned by cursors.
 struct SampleRow {
   /// Sample timestamp.
-  Timestamp timestamp = 0;
+  pj::Timestamp timestamp = 0;
   /// Pointer to source chunk containing this row.
   const TopicChunk* chunk = nullptr;
   /// Row index inside `chunk`.
@@ -54,7 +51,7 @@ struct ChunkRowRange {
 class RangeCursor {
  public:
   /// Construct cursor over [t_min, t_max] from committed chunks.
-  RangeCursor(const std::deque<TopicChunk>& chunks, Timestamp t_min, Timestamp t_max);
+  RangeCursor(const std::deque<TopicChunk>& chunks, pj::Timestamp t_min, pj::Timestamp t_max);
 
   [[nodiscard]] bool valid() const noexcept;
 
@@ -65,15 +62,15 @@ class RangeCursor {
   [[nodiscard]] SampleRow current() const;
 
   // Iterate all results via callback (per-row)
-  void for_each(absl::FunctionRef<void(const SampleRow&)> callback);
+  void for_each(std::function<void(const SampleRow&)> callback);
 
   // Iterate chunk-at-a-time (bulk path)
-  void for_each_chunk(absl::FunctionRef<void(const ChunkRowRange&)> callback);
+  void for_each_chunk(std::function<void(const ChunkRowRange&)> callback);
 
  private:
   const std::deque<TopicChunk>* chunks_;
-  Timestamp t_min_;
-  Timestamp t_max_;
+  pj::Timestamp t_min_;
+  pj::Timestamp t_max_;
   std::size_t chunk_index_ = 0;
   std::size_t row_index_ = 0;
 
@@ -82,21 +79,11 @@ class RangeCursor {
   void skip_to_valid();
 };
 
-struct LatestAtResult {
-  /// True when at least one sample <= query time was found.
-  bool found = false;
-  /// Timestamp of returned sample.
-  Timestamp timestamp = 0;
-  /// Source chunk pointer.
-  const TopicChunk* chunk = nullptr;
-  /// Row index within `chunk`.
-  std::size_t row_index = 0;
-};
-
-// Find the most recent sample at or before time t
-[[nodiscard]] LatestAtResult latest_at(const std::deque<TopicChunk>& chunks, Timestamp t);
+// Find the most recent sample at or before time t; nullopt if none exists.
+[[nodiscard]] std::optional<SampleRow> latest_at(const std::deque<TopicChunk>& chunks, pj::Timestamp t);
 
 // Create a range cursor
-[[nodiscard]] RangeCursor range_query(const std::deque<TopicChunk>& chunks, Timestamp t_min, Timestamp t_max);
+[[nodiscard]] RangeCursor range_query(
+    const std::deque<TopicChunk>& chunks, pj::Timestamp t_min, pj::Timestamp t_max);
 
 }  // namespace pj::engine

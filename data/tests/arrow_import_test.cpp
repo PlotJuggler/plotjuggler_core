@@ -13,6 +13,7 @@
 #include "nanoarrow/nanoarrow.hpp"
 #include "nanoarrow/nanoarrow_ipc.h"
 #include "pj/base/dataset.hpp"
+#include "pj/base/span.hpp"
 #include "pj/base/type_tree.hpp"
 #include "pj/base/types.hpp"
 #include "pj/engine/engine.hpp"
@@ -136,8 +137,8 @@ TEST(ArrowImportTest, SchemaFromIpc) {
 
   auto ipc_bytes = serialize_to_ipc(schema.get(), array.get());
 
-  auto result_or = schema_from_ipc(absl::Span<const uint8_t>(ipc_bytes.data(), ipc_bytes.size()));
-  ASSERT_TRUE(result_or.ok()) << result_or.status();
+  auto result_or = schema_from_ipc(pj::Span<const uint8_t>(ipc_bytes.data(), ipc_bytes.size()));
+  ASSERT_TRUE(result_or.has_value()) << result_or.error();
 
   const auto& [type_tree, mappings] = *result_or;
   ASSERT_EQ(mappings.size(), 3u);
@@ -165,7 +166,7 @@ TEST(ArrowImportTest, SchemaFromIpc) {
 TEST(ArrowImportTest, ImportFloat32) {
   DataEngine engine;
   auto ds_or = engine.create_dataset(DatasetDescriptor{.source_name = "test", .time_domain_id = 0});
-  ASSERT_TRUE(ds_or.ok());
+  ASSERT_TRUE(ds_or.has_value());
 
   DataWriter writer = engine.create_writer();
 
@@ -207,7 +208,7 @@ TEST(ArrowImportTest, ImportFloat32) {
   auto ipc_bytes = serialize_to_ipc(schema.get(), array.get());
 
   // Parse schema and register
-  auto [type_tree, mappings] = *schema_from_ipc(absl::Span<const uint8_t>(ipc_bytes.data(), ipc_bytes.size()));
+  auto [type_tree, mappings] = *schema_from_ipc(pj::Span<const uint8_t>(ipc_bytes.data(), ipc_bytes.size()));
   auto schema_id = *writer.register_schema("test_schema", type_tree);
 
   TopicDescriptor desc;
@@ -217,8 +218,8 @@ TEST(ArrowImportTest, ImportFloat32) {
 
   // Import
   auto status =
-      import_ipc_stream(writer, topic_id, absl::Span<const uint8_t>(ipc_bytes.data(), ipc_bytes.size()), mappings);
-  ASSERT_TRUE(status.ok()) << status;
+      import_ipc_stream(writer, topic_id, pj::Span<const uint8_t>(ipc_bytes.data(), ipc_bytes.size()), mappings);
+  ASSERT_TRUE(status.has_value()) << status.error();
 
   auto flushed = writer.flush_all();
   engine.commit_chunks(std::move(flushed));
@@ -227,7 +228,7 @@ TEST(ArrowImportTest, ImportFloat32) {
   DataReader reader = engine.create_reader();
   std::size_t count = 0;
   auto cursor_or = reader.range_query(QueryRange{.topic_id = topic_id, .t_min = 0, .t_max = N - 1});
-  ASSERT_TRUE(cursor_or.ok()) << cursor_or.status();
+  ASSERT_TRUE(cursor_or.has_value()) << cursor_or.error();
   cursor_or->for_each([&](const SampleRow& row) {
     auto x = static_cast<float>(row.chunk->read_numeric_as_double(0, row.row_index));
     EXPECT_FLOAT_EQ(x, x_vals[count]);
@@ -243,7 +244,7 @@ TEST(ArrowImportTest, ImportFloat32) {
 TEST(ArrowImportTest, ImportWithTimestampColumn) {
   DataEngine engine;
   auto ds_or = engine.create_dataset(DatasetDescriptor{.source_name = "test", .time_domain_id = 0});
-  ASSERT_TRUE(ds_or.ok());
+  ASSERT_TRUE(ds_or.has_value());
 
   DataWriter writer = engine.create_writer();
 
@@ -292,8 +293,8 @@ TEST(ArrowImportTest, ImportWithTimestampColumn) {
 
   // Import with timestamp_column=0
   auto status =
-      import_ipc_stream(writer, tid, absl::Span<const uint8_t>(ipc_bytes.data(), ipc_bytes.size()), mappings, 0);
-  ASSERT_TRUE(status.ok()) << status;
+      import_ipc_stream(writer, tid, pj::Span<const uint8_t>(ipc_bytes.data(), ipc_bytes.size()), mappings, 0);
+  ASSERT_TRUE(status.has_value()) << status.error();
 
   auto flushed = writer.flush_all();
   engine.commit_chunks(std::move(flushed));
@@ -301,10 +302,10 @@ TEST(ArrowImportTest, ImportWithTimestampColumn) {
   // Verify timestamps
   DataReader reader = engine.create_reader();
   auto latest_or = reader.latest_at(QueryPoint{.topic_id = tid, .t = 25000});
-  ASSERT_TRUE(latest_or.ok()) << latest_or.status();
-  ASSERT_TRUE(latest_or->found);
-  EXPECT_EQ(latest_or->timestamp, 25000);
-  EXPECT_DOUBLE_EQ(latest_or->chunk->read_numeric_as_double(0, latest_or->row_index), 25.0 * 0.5);
+  ASSERT_TRUE(latest_or.has_value()) << latest_or.error();
+  ASSERT_TRUE(latest_or->has_value());
+  EXPECT_EQ((*latest_or)->timestamp, 25000);
+  EXPECT_DOUBLE_EQ((*latest_or)->chunk->read_numeric_as_double(0, (*latest_or)->row_index), 25.0 * 0.5);
 }
 
 // ===========================================================================
@@ -314,7 +315,7 @@ TEST(ArrowImportTest, ImportWithTimestampColumn) {
 TEST(ArrowImportTest, ImportStrings) {
   DataEngine engine;
   auto ds_or = engine.create_dataset(DatasetDescriptor{.source_name = "test", .time_domain_id = 0});
-  ASSERT_TRUE(ds_or.ok());
+  ASSERT_TRUE(ds_or.has_value());
 
   DataWriter writer = engine.create_writer();
 
@@ -349,15 +350,15 @@ TEST(ArrowImportTest, ImportStrings) {
 
   auto ipc_bytes = serialize_to_ipc(schema.get(), array.get());
 
-  auto [type_tree, mappings] = *schema_from_ipc(absl::Span<const uint8_t>(ipc_bytes.data(), ipc_bytes.size()));
+  auto [type_tree, mappings] = *schema_from_ipc(pj::Span<const uint8_t>(ipc_bytes.data(), ipc_bytes.size()));
   auto sid = *writer.register_schema("str_schema", type_tree);
   TopicDescriptor desc;
   desc.name = "str_topic";
   desc.schema_id = sid;
   auto tid = *writer.register_topic(*ds_or, desc);
 
-  auto status = import_ipc_stream(writer, tid, absl::Span<const uint8_t>(ipc_bytes.data(), ipc_bytes.size()), mappings);
-  ASSERT_TRUE(status.ok()) << status;
+  auto status = import_ipc_stream(writer, tid, pj::Span<const uint8_t>(ipc_bytes.data(), ipc_bytes.size()), mappings);
+  ASSERT_TRUE(status.has_value()) << status.error();
 
   auto flushed = writer.flush_all();
   engine.commit_chunks(std::move(flushed));
@@ -366,7 +367,7 @@ TEST(ArrowImportTest, ImportStrings) {
   DataReader reader = engine.create_reader();
   std::vector<std::string> read_strings;
   auto cursor_or = reader.range_query(QueryRange{.topic_id = tid, .t_min = 0, .t_max = 10});
-  ASSERT_TRUE(cursor_or.ok());
+  ASSERT_TRUE(cursor_or.has_value());
   cursor_or->for_each(
       [&](const SampleRow& row) { read_strings.emplace_back(row.chunk->read_string(0, row.row_index)); });
   ASSERT_EQ(read_strings.size(), 3u);
@@ -382,7 +383,7 @@ TEST(ArrowImportTest, ImportStrings) {
 TEST(ArrowImportTest, ImportNarrowIntegerWidening) {
   DataEngine engine;
   auto ds_or = engine.create_dataset(DatasetDescriptor{.source_name = "test", .time_domain_id = 0});
-  ASSERT_TRUE(ds_or.ok());
+  ASSERT_TRUE(ds_or.has_value());
 
   DataWriter writer = engine.create_writer();
 
@@ -410,15 +411,15 @@ TEST(ArrowImportTest, ImportNarrowIntegerWidening) {
 
   auto ipc_bytes = serialize_to_ipc(schema.get(), array.get());
 
-  auto [type_tree, mappings] = *schema_from_ipc(absl::Span<const uint8_t>(ipc_bytes.data(), ipc_bytes.size()));
+  auto [type_tree, mappings] = *schema_from_ipc(pj::Span<const uint8_t>(ipc_bytes.data(), ipc_bytes.size()));
   auto sid = *writer.register_schema("i8_schema", type_tree);
   TopicDescriptor desc;
   desc.name = "i8_topic";
   desc.schema_id = sid;
   auto tid = *writer.register_topic(*ds_or, desc);
 
-  auto status = import_ipc_stream(writer, tid, absl::Span<const uint8_t>(ipc_bytes.data(), ipc_bytes.size()), mappings);
-  ASSERT_TRUE(status.ok()) << status;
+  auto status = import_ipc_stream(writer, tid, pj::Span<const uint8_t>(ipc_bytes.data(), ipc_bytes.size()), mappings);
+  ASSERT_TRUE(status.has_value()) << status.error();
 
   auto flushed = writer.flush_all();
   engine.commit_chunks(std::move(flushed));
@@ -426,7 +427,7 @@ TEST(ArrowImportTest, ImportNarrowIntegerWidening) {
   DataReader reader = engine.create_reader();
   std::vector<double> values;
   auto cursor_or = reader.range_query(QueryRange{.topic_id = tid, .t_min = 0, .t_max = 10});
-  ASSERT_TRUE(cursor_or.ok());
+  ASSERT_TRUE(cursor_or.has_value());
   cursor_or->for_each(
       [&](const SampleRow& row) { values.push_back(row.chunk->read_numeric_as_double(0, row.row_index)); });
   ASSERT_EQ(values.size(), 3u);
@@ -442,7 +443,7 @@ TEST(ArrowImportTest, ImportNarrowIntegerWidening) {
 TEST(ArrowImportTest, ImportLargeDataset) {
   DataEngine engine;
   auto ds_or = engine.create_dataset(DatasetDescriptor{.source_name = "test", .time_domain_id = 0});
-  ASSERT_TRUE(ds_or.ok());
+  ASSERT_TRUE(ds_or.has_value());
 
   DataWriter writer = engine.create_writer();
 
@@ -469,7 +470,7 @@ TEST(ArrowImportTest, ImportLargeDataset) {
 
   auto ipc_bytes = serialize_to_ipc(schema.get(), array.get());
 
-  auto [type_tree, mappings] = *schema_from_ipc(absl::Span<const uint8_t>(ipc_bytes.data(), ipc_bytes.size()));
+  auto [type_tree, mappings] = *schema_from_ipc(pj::Span<const uint8_t>(ipc_bytes.data(), ipc_bytes.size()));
   auto sid = *writer.register_schema("tbl_schema", type_tree);
   TopicDescriptor desc;
   desc.name = "tbl_topic";
@@ -477,8 +478,8 @@ TEST(ArrowImportTest, ImportLargeDataset) {
   desc.max_chunk_rows = 128;
   auto tid = *writer.register_topic(*ds_or, desc);
 
-  auto status = import_ipc_stream(writer, tid, absl::Span<const uint8_t>(ipc_bytes.data(), ipc_bytes.size()), mappings);
-  ASSERT_TRUE(status.ok()) << status;
+  auto status = import_ipc_stream(writer, tid, pj::Span<const uint8_t>(ipc_bytes.data(), ipc_bytes.size()), mappings);
+  ASSERT_TRUE(status.has_value()) << status.error();
 
   auto flushed = writer.flush_all();
   engine.commit_chunks(std::move(flushed));
@@ -486,7 +487,7 @@ TEST(ArrowImportTest, ImportLargeDataset) {
   DataReader reader = engine.create_reader();
   std::size_t count = 0;
   auto cursor_or = reader.range_query(QueryRange{.topic_id = tid, .t_min = 0, .t_max = N - 1});
-  ASSERT_TRUE(cursor_or.ok());
+  ASSERT_TRUE(cursor_or.has_value());
   cursor_or->for_each([&](const SampleRow&) { ++count; });
   EXPECT_EQ(count, static_cast<std::size_t>(N));
 }
@@ -498,7 +499,7 @@ TEST(ArrowImportTest, ImportLargeDataset) {
 TEST(ArrowImportTest, ImportWithNulls) {
   DataEngine engine;
   auto ds_or = engine.create_dataset(DatasetDescriptor{.source_name = "test", .time_domain_id = 0});
-  ASSERT_TRUE(ds_or.ok());
+  ASSERT_TRUE(ds_or.has_value());
 
   DataWriter writer = engine.create_writer();
 
@@ -531,22 +532,22 @@ TEST(ArrowImportTest, ImportWithNulls) {
 
   auto ipc_bytes = serialize_to_ipc(schema.get(), array.get());
 
-  auto [type_tree, mappings] = *schema_from_ipc(absl::Span<const uint8_t>(ipc_bytes.data(), ipc_bytes.size()));
+  auto [type_tree, mappings] = *schema_from_ipc(pj::Span<const uint8_t>(ipc_bytes.data(), ipc_bytes.size()));
   auto sid = *writer.register_schema("null_schema", type_tree);
   TopicDescriptor desc;
   desc.name = "null_topic";
   desc.schema_id = sid;
   auto tid = *writer.register_topic(*ds_or, desc);
 
-  auto status = import_ipc_stream(writer, tid, absl::Span<const uint8_t>(ipc_bytes.data(), ipc_bytes.size()), mappings);
-  ASSERT_TRUE(status.ok()) << status;
+  auto status = import_ipc_stream(writer, tid, pj::Span<const uint8_t>(ipc_bytes.data(), ipc_bytes.size()), mappings);
+  ASSERT_TRUE(status.has_value()) << status.error();
 
   auto flushed = writer.flush_all();
   engine.commit_chunks(std::move(flushed));
 
   DataReader reader = engine.create_reader();
   auto cursor_or = reader.range_query(QueryRange{.topic_id = tid, .t_min = 0, .t_max = 10});
-  ASSERT_TRUE(cursor_or.ok());
+  ASSERT_TRUE(cursor_or.has_value());
   std::size_t row = 0;
   cursor_or->for_each([&](const SampleRow& r) {
     if (row == 0) {

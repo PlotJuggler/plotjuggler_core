@@ -216,7 +216,7 @@ void BM_Writer_RowAtATime_Float32(benchmark::State& state) {
     for (int i = 0; i < kRowCount; ++i) {
       (void)writer.begin_row(topic_id, data.timestamps[static_cast<std::size_t>(i)]);
       writer.set_float32(topic_id, 0, data.floats[static_cast<std::size_t>(i)]);
-      writer.finish_row(topic_id);
+      (void)writer.finish_row(topic_id);
     }
     auto chunks = writer.flush(topic_id);
     benchmark::DoNotOptimize(chunks);

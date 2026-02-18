@@ -144,18 +144,9 @@ target_link_libraries(plotjuggler_engine
   PUBLIC
     plotjuggler_base
     absl::flat_hash_map
-    absl::flat_hash_set
-    absl::btree
-    absl::status
-    absl::statusor
-    absl::strings
-    absl::str_format
     absl::hash
-    absl::inlined_vector
-    absl::span
-    absl::time
-    absl::function_ref
   PRIVATE
+    absl::strings
     ${PJ_NANOARROW_TARGET}
     ${PJ_NANOARROW_IPC_TARGET}
 )

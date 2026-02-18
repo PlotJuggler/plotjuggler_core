@@ -19,7 +19,7 @@
 #include <variant>
 #include <vector>
 
-#include "absl/types/span.h"
+#include "pj/base/span.hpp"
 #include "pj/base/types.hpp"
 #include "pj/engine/arrow_import.hpp"
 #include "pj/engine/chunk.hpp"
@@ -297,15 +297,15 @@ int main(int argc, char* argv[]) {
   }
   auto ipc_buffer = *ipc_buf_result;
 
-  absl::Span<const uint8_t> ipc_bytes(ipc_buffer->data(), static_cast<std::size_t>(ipc_buffer->size()));
+  pj::Span<const uint8_t> ipc_bytes(ipc_buffer->data(), static_cast<std::size_t>(ipc_buffer->size()));
 
   std::cout << "Serialized to IPC: " << ipc_buffer->size() << " bytes\n";
 
   // ── 3. Map IPC schema → TypeTreeNode via arrow_import ──────────────────
 
   auto schema_result = pj::engine::arrow_import::schema_from_ipc(ipc_bytes);
-  if (!schema_result.ok()) {
-    std::cerr << "Schema conversion failed: " << schema_result.status().ToString() << "\n";
+  if (!schema_result.has_value()) {
+    std::cerr << "Schema conversion failed: " << schema_result.error() << "\n";
     return 1;
   }
   auto& [type_tree, arrow_mappings] = *schema_result;
@@ -327,8 +327,8 @@ int main(int argc, char* argv[]) {
   DataEngine engine;
 
   auto td_or = engine.create_time_domain("default");
-  if (!td_or.ok()) {
-    std::cerr << "Failed to create time domain: " << td_or.status().ToString() << "\n";
+  if (!td_or.has_value()) {
+    std::cerr << "Failed to create time domain: " << td_or.error() << "\n";
     return 1;
   }
 
@@ -336,8 +336,8 @@ int main(int argc, char* argv[]) {
   ds_desc.source_name = path;
   ds_desc.time_domain_id = *td_or;
   auto ds_or = engine.create_dataset(std::move(ds_desc));
-  if (!ds_or.ok()) {
-    std::cerr << "Failed to create dataset: " << ds_or.status().ToString() << "\n";
+  if (!ds_or.has_value()) {
+    std::cerr << "Failed to create dataset: " << ds_or.error() << "\n";
     return 1;
   }
   auto dataset_id = *ds_or;
@@ -345,8 +345,8 @@ int main(int argc, char* argv[]) {
   auto writer = engine.create_writer();
 
   auto schema_or = writer.register_schema("parquet_schema", type_tree);
-  if (!schema_or.ok()) {
-    std::cerr << "Failed to register schema: " << schema_or.status().ToString() << "\n";
+  if (!schema_or.has_value()) {
+    std::cerr << "Failed to register schema: " << schema_or.error() << "\n";
     return 1;
   }
 
@@ -357,8 +357,8 @@ int main(int argc, char* argv[]) {
   topic_desc.max_chunk_rows = chunk_rows;
 
   auto topic_or = writer.register_topic(dataset_id, std::move(topic_desc));
-  if (!topic_or.ok()) {
-    std::cerr << "Failed to register topic: " << topic_or.status().ToString() << "\n";
+  if (!topic_or.has_value()) {
+    std::cerr << "Failed to register topic: " << topic_or.error() << "\n";
     return 1;
   }
   auto topic_id = *topic_or;
@@ -368,8 +368,8 @@ int main(int argc, char* argv[]) {
   auto t_start = std::chrono::steady_clock::now();
 
   auto import_st = pj::engine::arrow_import::import_ipc_stream(writer, topic_id, ipc_bytes, arrow_mappings);
-  if (!import_st.ok()) {
-    std::cerr << "import_ipc_stream failed: " << import_st.ToString() << "\n";
+  if (!import_st.has_value()) {
+    std::cerr << "import_ipc_stream failed: " << import_st.error() << "\n";
     return 1;
   }
 

@@ -5,8 +5,7 @@
 #include <memory>
 #include <string>
 
-#include "absl/status/status.h"
-#include "absl/status/statusor.h"
+#include "pj/base/expected.hpp"
 #include "pj/base/type_tree.hpp"
 #include "pj/base/types.hpp"
 
@@ -39,7 +38,7 @@ TEST(TypeRegistryTest, RegisterAndLookupById) {
   auto* raw_ptr = tree.get();
 
   auto result = registry.register_schema("Point", tree);
-  ASSERT_TRUE(result.ok()) << result.status();
+  ASSERT_TRUE(result.has_value()) << result.error();
 
   const TypeTreeNode* looked_up = registry.lookup(*result);
   ASSERT_NE(looked_up, nullptr);
@@ -55,7 +54,7 @@ TEST(TypeRegistryTest, RegisterAndFindByName) {
   auto tree = make_point_schema();
 
   auto result = registry.register_schema("Point", tree);
-  ASSERT_TRUE(result.ok()) << result.status();
+  ASSERT_TRUE(result.has_value()) << result.error();
 
   auto found = registry.find_by_name("Point");
   ASSERT_TRUE(found.has_value());
@@ -67,11 +66,10 @@ TEST(TypeRegistryTest, RegisterDuplicateNameFails) {
   TypeRegistry registry;
 
   auto result1 = registry.register_schema("Point", make_point_schema());
-  ASSERT_TRUE(result1.ok()) << result1.status();
+  ASSERT_TRUE(result1.has_value()) << result1.error();
 
   auto result2 = registry.register_schema("Point", make_point_schema());
-  ASSERT_FALSE(result2.ok());
-  EXPECT_EQ(result2.status().code(), absl::StatusCode::kAlreadyExists);
+  ASSERT_FALSE(result2.has_value());
 }
 
 // 4. register_or_get with new name: registers and returns ID
@@ -79,7 +77,7 @@ TEST(TypeRegistryTest, RegisterOrGetNewName) {
   TypeRegistry registry;
 
   auto result = registry.register_or_get("Point", make_point_schema());
-  ASSERT_TRUE(result.ok()) << result.status();
+  ASSERT_TRUE(result.has_value()) << result.error();
 
   // Verify it was actually registered
   auto found = registry.find_by_name("Point");
@@ -96,11 +94,11 @@ TEST(TypeRegistryTest, RegisterOrGetExistingName) {
   TypeRegistry registry;
 
   auto result1 = registry.register_schema("Point", make_point_schema());
-  ASSERT_TRUE(result1.ok()) << result1.status();
+  ASSERT_TRUE(result1.has_value()) << result1.error();
 
   // register_or_get should return the same ID, ignoring the new tree
   auto result2 = registry.register_or_get("Point", make_point3d_schema());
-  ASSERT_TRUE(result2.ok()) << result2.status();
+  ASSERT_TRUE(result2.has_value()) << result2.error();
   EXPECT_EQ(*result1, *result2);
 
   // The original tree should still be the one stored (2 fields, not 3)
@@ -128,14 +126,14 @@ TEST(TypeRegistryTest, EvolveSchemaAdditiveChange) {
 
   auto original = make_point_schema();
   auto result = registry.register_schema("Point", original);
-  ASSERT_TRUE(result.ok()) << result.status();
+  ASSERT_TRUE(result.has_value()) << result.error();
   SchemaId id = *result;
 
   // Evolve: add a z field
   auto evolved = make_point3d_schema();
   auto* evolved_ptr = evolved.get();
-  absl::Status status = registry.evolve_schema(id, evolved);
-  ASSERT_TRUE(status.ok()) << status;
+  pj::Status status = registry.evolve_schema(id, evolved);
+  ASSERT_TRUE(status.has_value()) << status.error();
 
   // lookup should now return the evolved tree
   const TypeTreeNode* looked_up = registry.lookup(id);
@@ -151,13 +149,12 @@ TEST(TypeRegistryTest, EvolveSchemaRemovedFieldFails) {
   // Start with 3 fields
   auto original = make_point3d_schema();
   auto result = registry.register_schema("Point3D", original);
-  ASSERT_TRUE(result.ok()) << result.status();
+  ASSERT_TRUE(result.has_value()) << result.error();
 
   // Try to evolve to 2 fields (removing z)
   auto reduced = make_point_schema();
-  absl::Status status = registry.evolve_schema(*result, reduced);
-  ASSERT_FALSE(status.ok());
-  EXPECT_EQ(status.code(), absl::StatusCode::kInvalidArgument);
+  pj::Status status = registry.evolve_schema(*result, reduced);
+  ASSERT_FALSE(status.has_value());
 }
 
 // 10. evolve_schema with type change on existing field: returns InvalidArgumentError
@@ -166,7 +163,7 @@ TEST(TypeRegistryTest, EvolveSchemaTypeChangeFails) {
 
   auto original = make_point_schema();  // x: float64, y: float64
   auto result = registry.register_schema("Point", original);
-  ASSERT_TRUE(result.ok()) << result.status();
+  ASSERT_TRUE(result.has_value()) << result.error();
 
   // Try to evolve: change x from float64 to int32
   auto changed = make_struct(
@@ -175,18 +172,16 @@ TEST(TypeRegistryTest, EvolveSchemaTypeChangeFails) {
                    make_primitive("y", PrimitiveType::kFloat64),
                    make_primitive("z", PrimitiveType::kFloat64),
                });
-  absl::Status status = registry.evolve_schema(*result, changed);
-  ASSERT_FALSE(status.ok());
-  EXPECT_EQ(status.code(), absl::StatusCode::kInvalidArgument);
+  pj::Status status = registry.evolve_schema(*result, changed);
+  ASSERT_FALSE(status.has_value());
 }
 
 // 11. evolve_schema with unknown ID: returns NotFoundError
 TEST(TypeRegistryTest, EvolveSchemaUnknownIdFails) {
   TypeRegistry registry;
 
-  absl::Status status = registry.evolve_schema(999, make_point_schema());
-  ASSERT_FALSE(status.ok());
-  EXPECT_EQ(status.code(), absl::StatusCode::kNotFound);
+  pj::Status status = registry.evolve_schema(999, make_point_schema());
+  ASSERT_FALSE(status.has_value());
 }
 
 // 12. Multiple schemas: register 3, verify each has unique ID and correct tree
@@ -215,9 +210,9 @@ TEST(TypeRegistryTest, MultipleSchemas) {
   auto id_b = registry.register_schema("Point", tree_b);
   auto id_c = registry.register_schema("Pose", tree_c);
 
-  ASSERT_TRUE(id_a.ok()) << id_a.status();
-  ASSERT_TRUE(id_b.ok()) << id_b.status();
-  ASSERT_TRUE(id_c.ok()) << id_c.status();
+  ASSERT_TRUE(id_a.has_value()) << id_a.error();
+  ASSERT_TRUE(id_b.has_value()) << id_b.error();
+  ASSERT_TRUE(id_c.has_value()) << id_c.error();
 
   // All IDs are unique
   EXPECT_NE(*id_a, *id_b);
