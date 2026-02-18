@@ -78,7 +78,13 @@ using NumericValue =
   return std::visit([](const auto& val) -> double { return static_cast<double>(val); }, v);
 }
 
+/// Stable identifier for a derived DAG node.
+using NodeId = uint32_t;
+
 /// Sentinel value for an invalid/uninitialized chunk id.
 constexpr ChunkId kInvalidChunkId = 0;
+
+/// Sentinel value for an invalid/uninitialized node id.
+constexpr NodeId kInvalidNodeId = 0;
 
 }  // namespace pj

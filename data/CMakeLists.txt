@@ -129,6 +129,8 @@ add_library(plotjuggler_engine STATIC
   engine/src/reader.cpp
   engine/src/engine.cpp
   engine/src/arrow_import.cpp
+  engine/src/derived_engine.cpp
+  engine/src/builtin_transforms.cpp
 )
 target_include_directories(plotjuggler_engine PUBLIC engine/include)
 target_compile_features(plotjuggler_engine PUBLIC cxx_std_20)
@@ -182,6 +184,7 @@ set(ENGINE_TEST_SOURCES
   tests/topic_storage_test.cpp
   tests/query_test.cpp
   tests/engine_integration_test.cpp
+  tests/derived_engine_test.cpp
 )
 
 foreach(test_src ${ENGINE_TEST_SOURCES})

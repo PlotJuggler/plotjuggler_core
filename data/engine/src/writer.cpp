@@ -511,7 +511,11 @@ TopicChunkBuilder& DataWriter::get_or_create_builder(TopicId topic_id) {
     if (type_tree != nullptr) {
       topic_columns_[topic_id] = build_column_descriptors(*type_tree);
     } else {
-      topic_columns_[topic_id] = {};
+      // schema_id == 0 (inline layout, e.g. topics created via register_scalar_series):
+      // fall back to the first committed chunk's column_descriptors.
+      const auto& chunks = storage->sealed_chunks();
+      topic_columns_[topic_id] = chunks.empty() ? std::vector<ColumnDescriptor>{}
+                                                 : chunks[0].column_descriptors;
     }
     col_it = topic_columns_.find(topic_id);
   }
