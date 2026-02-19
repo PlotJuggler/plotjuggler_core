@@ -161,6 +161,17 @@ class DataWriter {
   /// Append one scalar sample.
   void append_scalar(const ScalarSeriesHandle& handle, pj::Timestamp t, pj::NumericValue value);
 
+  // ---- Variable-length array expansion ----
+  /// Ensure the variable-length array at `array_field_path` has at least `new_length`
+  /// element columns. Must be called OUTSIDE a begin_row/finish_row block.
+  /// - new_length <= current expansion: no-op, returns current count.
+  /// - new_length > array_expansion_limit: clamps to limit, records truncation.
+  /// - Otherwise: seals current builder, adds new ColumnDescriptors, updates TopicStorage.
+  /// Returns actual expansion count (may be less than new_length if clamped).
+  [[nodiscard]] pj::Expected<uint32_t> expand_array(pj::TopicId topic_id,
+                                                     std::string_view array_field_path,
+                                                     uint32_t new_length);
+
   // ---- Flush ----
   /// Seal and return pending chunks for one topic.
   [[nodiscard]] std::vector<TopicChunk> flush(pj::TopicId topic_id);
@@ -175,6 +186,10 @@ class DataWriter {
 
   // Column descriptors cached per topic (needed to recreate builders)
   absl::flat_hash_map<pj::TopicId, std::vector<ColumnDescriptor>> topic_columns_;
+
+  // Per-topic, per-array-field current expansion count.
+  // Key: topic_id → (field_path_string → current_element_count).
+  absl::flat_hash_map<pj::TopicId, absl::flat_hash_map<std::string, uint32_t>> expanded_arrays_;
 
   TopicChunkBuilder& get_or_create_builder(pj::TopicId topic_id);
 

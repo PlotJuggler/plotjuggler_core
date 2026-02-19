@@ -24,6 +24,9 @@ struct TopicDescriptor {
   DatasetId dataset_id = 0;
   /// Target maximum rows per chunk for writers.
   uint32_t max_chunk_rows = 1024;  // Default chunk size
+  /// Maximum number of element columns to expand per variable-length array field.
+  /// Prevents column explosion. expand_array() clamps to this limit.
+  uint32_t array_expansion_limit = 64;
 };
 
 /// Aggregated metadata snapshot for one topic.
@@ -44,6 +47,10 @@ struct TopicMetadata {
   uint64_t total_row_count = 0;
   /// Approximate total memory footprint across retained chunks.
   uint64_t total_byte_size = 0;  // approximate
+  /// Largest array length ever passed to expand_array() for any field in this topic.
+  uint32_t max_observed_array_length = 0;
+  /// Number of times expand_array() clamped due to array_expansion_limit.
+  uint32_t truncated_sample_count = 0;
 };
 
 /// Storage container for committed chunks of one topic.
@@ -92,11 +99,25 @@ class TopicStorage {
   /// Update descriptor schema id for future writes.
   void update_schema(SchemaId new_schema);
 
+  /// Track the largest observed array length (called by DataWriter::expand_array).
+  void update_max_observed_array_length(uint32_t observed_length);
+
+  /// Increment the truncation counter (called when expand_array clamps due to limit).
+  void increment_truncated_sample_count();
+
+  /// Largest array length ever passed to expand_array() for any field in this topic.
+  [[nodiscard]] uint32_t max_observed_array_length() const noexcept;
+
+  /// Number of times expand_array() clamped due to array_expansion_limit.
+  [[nodiscard]] uint32_t truncated_sample_count() const noexcept;
+
  private:
   TopicId topic_id_;
   TopicDescriptor descriptor_;
   std::deque<TopicChunk> sealed_chunks_;
   std::vector<ColumnDescriptor> column_descriptors_;  // for schema_id==0 topics
+  uint32_t max_observed_array_length_ = 0;
+  uint32_t truncated_sample_count_ = 0;
 };
 
 }  // namespace pj::engine

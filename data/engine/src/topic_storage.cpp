@@ -49,6 +49,9 @@ TopicMetadata TopicStorage::metadata() const {
   meta.current_schema = descriptor_.schema_id;
   meta.dataset_id = descriptor_.dataset_id;
 
+  meta.max_observed_array_length = max_observed_array_length_;
+  meta.truncated_sample_count = truncated_sample_count_;
+
   if (sealed_chunks_.empty()) {
     return meta;
   }
@@ -120,6 +123,24 @@ Timestamp TopicStorage::time_max() const noexcept {
 
 void TopicStorage::update_schema(SchemaId new_schema) {
   descriptor_.schema_id = new_schema;
+}
+
+void TopicStorage::update_max_observed_array_length(uint32_t observed_length) {
+  if (observed_length > max_observed_array_length_) {
+    max_observed_array_length_ = observed_length;
+  }
+}
+
+void TopicStorage::increment_truncated_sample_count() {
+  ++truncated_sample_count_;
+}
+
+uint32_t TopicStorage::max_observed_array_length() const noexcept {
+  return max_observed_array_length_;
+}
+
+uint32_t TopicStorage::truncated_sample_count() const noexcept {
+  return truncated_sample_count_;
 }
 
 }  // namespace pj::engine
