@@ -125,10 +125,14 @@ A hybrid approach:
   topics sharing the same type reference the same schema ID.
   *Implemented in `TypeRegistry` with `register_schema()`,
   `register_or_get()`, `lookup()`, `find_by_name()`.*
-- ❌ **Late discovery**: for schema-less formats (JSON, MessagePack, CBOR, XML),
+- ⚠️ **Late discovery**: for schema-less formats (JSON, MessagePack, CBOR, XML),
   the schema is inferred from the first message and registered automatically.
   Subsequent messages may add new fields (see Schema Evolution below).
-  *Not yet implemented -- requires plugin integration.*
+  *Storage primitives are now in place: `DataWriter::ensure_column()` adds a
+  single typed column dynamically (any topic, typed or schemaless), and
+  `DataWriter::expand_array()` supports schemaless topics via an `element_type`
+  parameter. The missing piece is automatic schema inference from the first
+  message and plugin-level field discovery — requires plugin integration.*
 - **Schema-based formats** (Protobuf, ROS, FlatBuffers, DDS): the schema is
   provided upfront by the data source plugin and is fixed.
   *The registration API is ready; plugin integration is Phase 5.*
@@ -343,6 +347,9 @@ This reuses the additive schema evolution mechanism.
 - Variable-length arrays (`make_array(..., std::nullopt)`) start with 0 columns; callers use `DataWriter::expand_array(topic_id, field_path, new_length)` to add element columns dynamically
 - `expand_array()` seals the current builder, appends new `ColumnDescriptor` entries (using `generate_array_element_columns`), and persists the layout in `TopicStorage`; old chunks retain their original column count (cross-chunk column count handled via per-chunk `column_descriptors`)
 - Struct element arrays supported recursively (e.g., `Pose[]` → `poses[0].x`, `poses[0].y`, ...)
+- **Schemaless expand_array**: `expand_array(topic_id, path, N, element_type=kFloat64)` now works on `schema_id=0` topics; skips schema validation and uses `element_type` for new columns
+- **`DataWriter::ensure_column(topic_id, field_path, PrimitiveType)`**: new low-level primitive that adds a single typed column by path, independent of any schema; idempotent (returns existing `FieldId` on same type, error on type mismatch); works on typed and schemaless topics; seals any pending builder before modifying the layout; returns error if a row is in progress for a new column
+- Mixed usage of `ensure_column` and `expand_array` is safe and idempotent — no duplicate columns regardless of call order; both methods use `ensure_cols_loaded()` to share column-loading logic
 
 #### Column explosion guard
 
@@ -737,6 +744,10 @@ public:
 > interface). The API deviates from the plan:
 > - ✅ `register_schema()`, `register_topic()`, `bind_topic_writer()`,
 >   `resolve_field()` -- implemented as planned.
+> - ✅ `ensure_column(topic_id, field_path, PrimitiveType)` -- not in the
+>   original plan; added to support dynamic/schemaless column registration.
+> - ✅ `expand_array(topic_id, path, N, element_type=kFloat64)` -- extended
+>   from plan; now supports schemaless topics via `element_type` parameter.
 > - ⚠️ `append()` / `append_fast()` / `append_batch()` /
 >   `append_batch_fast()` with `MessageView` -- **not implemented**. Instead,
 >   the writer provides two ingestion APIs:
@@ -1227,6 +1238,8 @@ Explicitly deferred items that should not block v1:
 | `engine/include/pj/engine/topic_storage.hpp` | Added `set_column_descriptors()` / `column_descriptors()` / `clear_chunks()` |
 | `engine/src/topic_storage.cpp` | Implementations of the above |
 | `engine/src/writer.cpp` | `register_scalar_series` now propagates column layout to `TopicStorage`; `get_or_create_builder` checks stored layout before sealed chunks |
+| `engine/include/pj/engine/writer.hpp` | Added `ensure_column()`; added `element_type` param to `expand_array()`; added private `ensure_cols_loaded()` helper |
+| `engine/src/writer.cpp` | Extracted `ensure_cols_loaded()` private helper shared by all three column-layout methods; implemented `ensure_column()`; added schemaless branch to `expand_array()` |
 | `data/conanfile.txt` | abseil/20240722.0, gtest/1.15.0, benchmark/1.8.3, arrow/18.1.0, nanoarrow/0.7.0 |
 
 ---
