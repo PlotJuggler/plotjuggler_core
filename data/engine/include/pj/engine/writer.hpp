@@ -163,10 +163,14 @@ class DataWriter {
 
   // ---- Dynamic column addition ----
   /// Ensure a column with `field_path` and `type` exists for `topic_id`.
-  /// - No-op if a column with this exact path already exists; returns its FieldId.
-  /// - If new: seals any pending builder, appends a ColumnDescriptor, persists layout.
-  /// - Returns error if called while a row is in progress (between begin_row / finish_row).
+  /// - No-op if a column with this exact path already exists with the same type; returns its FieldId.
+  /// - Returns error if the path already exists with a DIFFERENT type.
+  /// - If new and a row is IN PROGRESS: returns error (applies only to new columns; existing columns
+  ///   are returned safely even mid-row).
+  /// - If new and no row in progress: seals any pending builder, appends a ColumnDescriptor, persists layout.
   /// Works for both typed (schema_id != 0) and schemaless (schema_id == 0) topics.
+  /// NOTE: on typed topics, columns added via ensure_column are NOT reflected in get_type_tree() —
+  /// they exist only in the physical column layout (TopicStorage::column_descriptors / chunk descriptors).
   [[nodiscard]] pj::Expected<pj::FieldId> ensure_column(pj::TopicId topic_id, std::string_view field_path,
                                                          pj::PrimitiveType type);
 

@@ -567,9 +567,16 @@ Expected<FieldId> DataWriter::ensure_column(TopicId topic_id, std::string_view f
   ensure_cols_loaded(topic_id, *storage);
   auto& cols = topic_columns_[topic_id];
 
-  // No-op: column already exists — return existing field id
+  // No-op: column already exists — return existing field id.
+  // Type mismatch is an error: caller must not re-register with a different type.
   for (const auto& col : cols) {
-    if (col.field_path == field_path) return col.field_id;
+    if (col.field_path == field_path) {
+      if (col.logical_type != type) {
+        return pj::unexpected(absl::StrCat("ensure_column: field '", field_path,
+                                            "' already exists with a different type"));
+      }
+      return col.field_id;
+    }
   }
 
   // Guard: no row in progress
@@ -691,8 +698,23 @@ pj::Expected<uint32_t> DataWriter::expand_array(pj::TopicId topic_id, std::strin
     }
   } else {
     // Typed path: generate columns from the schema element type.
+    // Use a per-index existence check (same as schemaless) so that columns
+    // manually added via ensure_column are not duplicated.
     FieldId next_field_id = static_cast<FieldId>(cols.size());
-    generate_array_element_columns(*array_node->element_type, array_field_path, current, actual, next_field_id, cols);
+    for (uint32_t i = current; i < actual; ++i) {
+      std::string elem_prefix = absl::StrCat(array_field_path, "[", i, "]");
+      // Check for both exact match (primitive element) and prefix match (struct element fields).
+      bool already_exists = false;
+      for (const auto& col : cols) {
+        if (col.field_path == elem_prefix || col.field_path.starts_with(elem_prefix + ".")) {
+          already_exists = true;
+          break;
+        }
+      }
+      if (!already_exists) {
+        flatten_array_element_impl(*array_node->element_type, elem_prefix, next_field_id, cols);
+      }
+    }
   }
 
   // Persist updated layout and expansion count in TopicStorage

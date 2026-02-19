@@ -1161,6 +1161,70 @@ TEST(ArrayExpansionTest, Mixed_ExpandArrayThenEnsureColumn_NoConflict) {
 }
 
 // ─────────────────────────────────────────────────────────────────
+// Group C2: regression tests for review findings
+// ─────────────────────────────────────────────────────────────────
+
+// Review finding 1: typed expand_array duplicated element columns when
+// ensure_column had already added an array-indexed path.
+TEST(ArrayExpansionTest, Typed_EnsureColumnThenExpandArray_NoDuplicateColumns) {
+  DataEngine engine;
+  DatasetId ds = *engine.create_dataset(pj::DatasetDescriptor{.source_name = "t"});
+  DataWriter writer = engine.create_writer();
+
+  auto data_arr = pj::make_array("data", pj::make_primitive("", pj::PrimitiveType::kFloat64), std::nullopt);
+  auto root = pj::make_struct("msg", {data_arr});
+  auto sid = *writer.register_schema("typed_ec_ea_dedup", root);
+
+  TopicDescriptor desc;
+  desc.name = "typed_ec_ea_dedup";
+  desc.schema_id = sid;
+  auto topic_id = *writer.register_topic(ds, desc);
+
+  // Manually add data[0] via ensure_column (does not update array_expansion_count)
+  auto fid0 = writer.ensure_column(topic_id, "data[0]", pj::PrimitiveType::kFloat64);
+  ASSERT_TRUE(fid0.has_value()) << fid0.error();
+  EXPECT_EQ(*fid0, 0u);
+
+  // expand_array for the same typed field: must NOT duplicate data[0]
+  auto result = writer.expand_array(topic_id, "data", 3u);
+  ASSERT_TRUE(result.has_value()) << result.error();
+  EXPECT_EQ(*result, 3u);
+
+  auto handle = *writer.bind_topic_writer(topic_id);
+  EXPECT_EQ(handle.field_ids.size(), 3u) << "Must have exactly 3 columns, no duplicates";
+  EXPECT_EQ(*writer.resolve_field(topic_id, "data[0]"), 0u);
+  EXPECT_EQ(*writer.resolve_field(topic_id, "data[1]"), 1u);
+  EXPECT_EQ(*writer.resolve_field(topic_id, "data[2]"), 2u);
+}
+
+// Review finding 2: ensure_column must return error when the path already exists
+// with a different type instead of silently accepting the mismatch.
+TEST(ArrayExpansionTest, EnsureColumn_TypeMismatch_ReturnsError) {
+  DataEngine engine;
+  DatasetId ds = *engine.create_dataset(pj::DatasetDescriptor{.source_name = "t"});
+  DataWriter writer = engine.create_writer();
+
+  TopicDescriptor desc;
+  desc.name = "type_mismatch";
+  desc.schema_id = 0;
+  auto topic_id = *writer.register_topic(ds, desc);
+
+  // Register as float64
+  auto fid = writer.ensure_column(topic_id, "value", pj::PrimitiveType::kFloat64);
+  ASSERT_TRUE(fid.has_value());
+  EXPECT_EQ(*fid, 0u);
+
+  // Re-register same path with float32: must fail
+  auto mismatch = writer.ensure_column(topic_id, "value", pj::PrimitiveType::kFloat32);
+  EXPECT_FALSE(mismatch.has_value()) << "Type mismatch must return error, not silent success";
+
+  // Re-register same path with same type: must succeed (idempotent)
+  auto same_type = writer.ensure_column(topic_id, "value", pj::PrimitiveType::kFloat64);
+  ASSERT_TRUE(same_type.has_value());
+  EXPECT_EQ(*same_type, 0u);  // same field id
+}
+
+// ─────────────────────────────────────────────────────────────────
 // Group D: typed topic with ensure_column
 // ─────────────────────────────────────────────────────────────────
 
