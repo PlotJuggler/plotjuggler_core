@@ -2,7 +2,6 @@
 
 #include <algorithm>
 #include <cassert>
-#include <limits>
 #include <queue>
 #include <string>
 #include <vector>
@@ -31,11 +30,15 @@ static std::optional<pj::PrimitiveType> find_first_leaf(const pj::TypeTreeNode& 
       return node.primitive_type;  // set by make_enum via primitive_type field
     case pj::TypeKind::kStruct:
       for (const auto& child : node.children) {
-        if (auto r = find_first_leaf(*child)) return r;
+        if (auto r = find_first_leaf(*child)) {
+          return r;
+        }
       }
       return std::nullopt;
     case pj::TypeKind::kArray:
-      if (node.element_type) return find_first_leaf(*node.element_type);
+      if (node.element_type) {
+        return find_first_leaf(*node.element_type);
+      }
       return std::nullopt;
   }
   return std::nullopt;
@@ -43,20 +46,26 @@ static std::optional<pj::PrimitiveType> find_first_leaf(const pj::TypeTreeNode& 
 
 static pj::PrimitiveType storage_kind_to_primitive(StorageKind k) {
   switch (k) {
-    case StorageKind::kFloat32: return pj::PrimitiveType::kFloat32;
-    case StorageKind::kFloat64: return pj::PrimitiveType::kFloat64;
-    case StorageKind::kInt32:   return pj::PrimitiveType::kInt32;
-    case StorageKind::kInt64:   return pj::PrimitiveType::kInt64;
-    case StorageKind::kUint64:  return pj::PrimitiveType::kUint64;
-    case StorageKind::kBool:    return pj::PrimitiveType::kBool;
-    case StorageKind::kString:  return pj::PrimitiveType::kString;
+    case StorageKind::kFloat32:
+      return pj::PrimitiveType::kFloat32;
+    case StorageKind::kFloat64:
+      return pj::PrimitiveType::kFloat64;
+    case StorageKind::kInt32:
+      return pj::PrimitiveType::kInt32;
+    case StorageKind::kInt64:
+      return pj::PrimitiveType::kInt64;
+    case StorageKind::kUint64:
+      return pj::PrimitiveType::kUint64;
+    case StorageKind::kBool:
+      return pj::PrimitiveType::kBool;
+    case StorageKind::kString:
+      return pj::PrimitiveType::kString;
   }
   return pj::PrimitiveType::kFloat64;
 }
 
 // Decode one row of a chunk column into a VarValue, based on the column's StorageKind.
-static VarValue decode_as_varvalue(const TopicChunk& chunk, std::size_t col, std::size_t row,
-                                   StorageKind kind) {
+static VarValue decode_as_varvalue(const TopicChunk& chunk, std::size_t col, std::size_t row, StorageKind kind) {
   switch (kind) {
     case StorageKind::kFloat32:
     case StorageKind::kFloat64:
@@ -75,8 +84,8 @@ static VarValue decode_as_varvalue(const TopicChunk& chunk, std::size_t col, std
 }
 
 // Write a VarValue to a DataWriter row at (topic, col), coercing to out_kind.
-static void write_varvalue(DataWriter& writer, pj::TopicId tid, std::size_t col,
-                           const VarValue& val, StorageKind out_kind) {
+static void write_varvalue(
+    DataWriter& writer, pj::TopicId tid, std::size_t col, const VarValue& val, StorageKind out_kind) {
   if (out_kind == StorageKind::kString) {
     if (const auto* s = std::get_if<std::string>(&val)) {
       writer.set_string(tid, col, *s);
@@ -88,20 +97,35 @@ static void write_varvalue(DataWriter& writer, pj::TopicId tid, std::size_t col,
   double dval = std::visit(
       [](const auto& v) -> double {
         using T = std::decay_t<decltype(v)>;
-        if constexpr (std::is_same_v<T, std::string>) return 0.0;
-        else
+        if constexpr (std::is_same_v<T, std::string>) {
+          return 0.0;
+        } else {
           return static_cast<double>(v);
+        }
       },
       val);
 
   switch (out_kind) {
-    case StorageKind::kFloat32: writer.set_float32(tid, col, static_cast<float>(dval)); break;
-    case StorageKind::kFloat64: writer.set_float64(tid, col, dval); break;
-    case StorageKind::kInt32:   writer.set_int32(tid, col, static_cast<int32_t>(dval)); break;
-    case StorageKind::kInt64:   writer.set_int64(tid, col, static_cast<int64_t>(dval)); break;
-    case StorageKind::kUint64:  writer.set_uint64(tid, col, static_cast<uint64_t>(dval)); break;
-    case StorageKind::kBool:    writer.set_bool(tid, col, dval != 0.0); break;
-    case StorageKind::kString: break;  // handled above
+    case StorageKind::kFloat32:
+      writer.set_float32(tid, col, static_cast<float>(dval));
+      break;
+    case StorageKind::kFloat64:
+      writer.set_float64(tid, col, dval);
+      break;
+    case StorageKind::kInt32:
+      writer.set_int32(tid, col, static_cast<int32_t>(dval));
+      break;
+    case StorageKind::kInt64:
+      writer.set_int64(tid, col, static_cast<int64_t>(dval));
+      break;
+    case StorageKind::kUint64:
+      writer.set_uint64(tid, col, static_cast<uint64_t>(dval));
+      break;
+    case StorageKind::kBool:
+      writer.set_bool(tid, col, dval != 0.0);
+      break;
+    case StorageKind::kString:
+      break;  // handled above
   }
 }
 
@@ -127,13 +151,13 @@ struct DerivedNode {
 
   // Common
   std::vector<pj::TopicId> all_input_topic_ids;  // unified input list for all types
-  std::vector<pj::TopicId> output_topic_ids;      // 1 for SISO, M for MIMO
+  std::vector<pj::TopicId> output_topic_ids;     // 1 for SISO, M for MIMO
   bool dirty = true;
   pj::ChunkId last_processed_chunk_id = 0;  // 0 = never processed
 
   // Reusable decode buffers (avoid per-row allocation)
-  VarValue in_val_buf = 0.0;    // SISO input
-  VarValue out_val_buf = 0.0;   // SISO output
+  VarValue in_val_buf = 0.0;           // SISO input
+  VarValue out_val_buf = 0.0;          // SISO output
   std::vector<VarValue> mimo_in_buf;   // MIMO inputs
   std::vector<VarValue> mimo_out_buf;  // MIMO outputs
 };
@@ -158,8 +182,7 @@ struct DerivedEngineImpl {
 // DerivedEngine — constructor / destructor
 // ---------------------------------------------------------------------------
 
-DerivedEngine::DerivedEngine(DataEngine& engine)
-    : engine_(engine), impl_(std::make_unique<DerivedEngineImpl>()) {}
+DerivedEngine::DerivedEngine(DataEngine& engine) : engine_(engine), impl_(std::make_unique<DerivedEngineImpl>()) {}
 
 DerivedEngine::~DerivedEngine() = default;
 
@@ -168,9 +191,9 @@ DerivedEngine::~DerivedEngine() = default;
 // ---------------------------------------------------------------------------
 // Returns an error string if adding a node with `input_topics → output_topics`
 // would create a cycle. Otherwise returns empty string.
-static std::string check_cycle(const DerivedEngineImpl& impl,
-                                const std::vector<pj::TopicId>& input_topics,
-                                const std::vector<pj::TopicId>& output_topics) {
+static std::string check_cycle(
+    const DerivedEngineImpl& impl, const std::vector<pj::TopicId>& input_topics,
+    const std::vector<pj::TopicId>& output_topics) {
   absl::flat_hash_set<pj::TopicId> outputs(output_topics.begin(), output_topics.end());
 
   // DFS from each input: follow upstream edges (output → producing node → its inputs).
@@ -181,21 +204,29 @@ static std::string check_cycle(const DerivedEngineImpl& impl,
   while (!stack.empty()) {
     pj::TopicId t = stack.back();
     stack.pop_back();
-    if (!visited.insert(t).second) continue;
+    if (!visited.insert(t).second) {
+      continue;
+    }
 
     if (outputs.contains(t)) {
       return absl::StrCat("cycle detected: topic ", t, " is both an input and an output");
     }
 
     auto it = impl.output_topic_to_node.find(t);
-    if (it == impl.output_topic_to_node.end()) continue;  // source topic, no upstream
+    if (it == impl.output_topic_to_node.end()) {
+      continue;  // source topic, no upstream
+    }
 
     pj::NodeId producer = it->second;
     auto nit = impl.nodes.find(producer);
-    if (nit == impl.nodes.end()) continue;
+    if (nit == impl.nodes.end()) {
+      continue;
+    }
 
     for (pj::TopicId in : nit->second.all_input_topic_ids) {
-      if (!visited.contains(in)) stack.push_back(in);
+      if (!visited.contains(in)) {
+        stack.push_back(in);
+      }
     }
   }
   return "";  // no cycle
@@ -205,10 +236,9 @@ static std::string check_cycle(const DerivedEngineImpl& impl,
 // add_siso_transform
 // ---------------------------------------------------------------------------
 
-pj::Expected<pj::NodeId> DerivedEngine::add_siso_transform(pj::TopicId input_topic_id,
-                                                             std::string output_topic_name,
-                                                             pj::DatasetId output_dataset_id,
-                                                             std::unique_ptr<ISISOTransform> op) {
+pj::Expected<pj::NodeId> DerivedEngine::add_siso_transform(
+    pj::TopicId input_topic_id, std::string output_topic_name, pj::DatasetId output_dataset_id,
+    std::unique_ptr<ISISOTransform> op) {
   // 1. Check input topic exists
   const TopicStorage* in_storage = engine_.get_topic_storage(input_topic_id);
   if (!in_storage) {
@@ -233,7 +263,17 @@ pj::Expected<pj::NodeId> DerivedEngine::add_siso_transform(pj::TopicId input_top
   }
 
   if (num_cols == 0) {
-    // Fall back: read from the first sealed chunk's column_descriptors.
+    // Fall back 1: inline column layout stored in TopicStorage at registration time.
+    // This covers schema_id==0 topics (register_scalar_series) with no committed chunks yet.
+    const auto& stored = in_storage->column_descriptors();
+    if (!stored.empty()) {
+      num_cols = stored.size();
+      leaf_primitive = stored[0].logical_type;
+    }
+  }
+
+  if (num_cols == 0) {
+    // Fall back 2: first committed chunk's column_descriptors (legacy path).
     const auto& chunks = in_storage->sealed_chunks();
     if (!chunks.empty() && !chunks[0].column_descriptors.empty()) {
       num_cols = chunks[0].column_descriptors.size();
@@ -242,17 +282,16 @@ pj::Expected<pj::NodeId> DerivedEngine::add_siso_transform(pj::TopicId input_top
   }
 
   if (num_cols == 0) {
-    return pj::unexpected(absl::StrCat("add_siso_transform: cannot determine column layout for topic ",
-                                        input_topic_id,
-                                        " (no schema_id and no committed chunks)"));
+    return pj::unexpected(absl::StrCat(
+        "add_siso_transform: cannot determine column layout for topic ", input_topic_id,
+        " (no schema_id, no stored column layout, and no committed chunks)"));
   }
   if (num_cols != 1) {
-    return pj::unexpected(absl::StrCat("add_siso_transform: SISO requires single-column input, got ",
-                                        num_cols, " columns"));
+    return pj::unexpected(
+        absl::StrCat("add_siso_transform: SISO requires single-column input, got ", num_cols, " columns"));
   }
   if (!leaf_primitive) {
-    return pj::unexpected(
-        std::string("add_siso_transform: could not determine leaf primitive type"));
+    return pj::unexpected(std::string("add_siso_transform: could not determine leaf primitive type"));
   }
   StorageKind in_kind = storage_kind_of(*leaf_primitive);
 
@@ -262,27 +301,33 @@ pj::Expected<pj::NodeId> DerivedEngine::add_siso_transform(pj::TopicId input_top
   // 4. Check output name uniqueness within dataset
   auto name_key = std::make_pair(output_dataset_id, output_topic_name);
   if (impl_->registered_output_names.contains(name_key)) {
-    return pj::unexpected(absl::StrCat("add_siso_transform: output topic '", output_topic_name,
-                                        "' already registered in dataset ", output_dataset_id));
+    return pj::unexpected(absl::StrCat(
+        "add_siso_transform: output topic '", output_topic_name, "' already registered in dataset ",
+        output_dataset_id));
   }
 
   // 5. Cycle detection (structurally impossible for SISO fresh output, but guard correctly)
   std::string cycle_err = check_cycle(*impl_, {input_topic_id}, {});  // output topic doesn't exist yet
-  if (!cycle_err.empty()) return pj::unexpected(cycle_err);
+  if (!cycle_err.empty()) {
+    return pj::unexpected(cycle_err);
+  }
 
   // 6. Create output schema (single column, output_kind, name = "value")
   pj::PrimitiveType out_primitive = storage_kind_to_primitive(out_kind);
   std::string schema_name = absl::StrCat("derived_siso_", output_topic_name, "_", next_node_id_);
   auto out_type_tree = pj::make_primitive("value", out_primitive);
   auto out_schema_or = engine_.type_registry().register_or_get(schema_name, out_type_tree);
-  if (!out_schema_or.has_value()) return pj::unexpected(out_schema_or.error());
+  if (!out_schema_or.has_value()) {
+    return pj::unexpected(out_schema_or.error());
+  }
 
   // 7. Create output topic
-  auto out_topic_or = engine_.create_topic(output_dataset_id,
-                                            TopicDescriptor{.name = output_topic_name,
-                                                            .schema_id = *out_schema_or,
-                                                            .dataset_id = output_dataset_id});
-  if (!out_topic_or.has_value()) return pj::unexpected(out_topic_or.error());
+  auto out_topic_or = engine_.create_topic(
+      output_dataset_id,
+      TopicDescriptor{.name = output_topic_name, .schema_id = *out_schema_or, .dataset_id = output_dataset_id});
+  if (!out_topic_or.has_value()) {
+    return pj::unexpected(out_topic_or.error());
+  }
   pj::TopicId out_topic_id = *out_topic_or;
 
   // 8. Register node
@@ -317,9 +362,8 @@ pj::Expected<pj::NodeId> DerivedEngine::add_siso_transform(pj::TopicId input_top
 // ---------------------------------------------------------------------------
 
 pj::Expected<pj::NodeId> DerivedEngine::add_mimo_transform(
-    std::vector<pj::TopicId> /*input_topic_ids*/,
-    std::vector<std::string> /*output_topic_names*/, pj::DatasetId /*output_dataset_id*/,
-    std::unique_ptr<IMIMOTransform> /*op*/) {
+    std::vector<pj::TopicId> /*input_topic_ids*/, std::vector<std::string> /*output_topic_names*/,
+    pj::DatasetId /*output_dataset_id*/, std::unique_ptr<IMIMOTransform> /*op*/) {
   return pj::unexpected(std::string("add_mimo_transform: Phase 3 not yet implemented"));
 }
 
@@ -345,8 +389,7 @@ pj::Status DerivedEngine::remove_node(pj::NodeId id) {
   for (pj::TopicId out_tid : node.output_topic_ids) {
     impl_->output_topic_to_node.erase(out_tid);
     // Remove from registered_output_names (scan for the value)
-    for (auto sit = impl_->registered_output_names.begin();
-         sit != impl_->registered_output_names.end(); ++sit) {
+    for (auto sit = impl_->registered_output_names.begin(); sit != impl_->registered_output_names.end(); ++sit) {
       if (sit->second == out_tid) {
         impl_->registered_output_names.erase(sit);
         break;
@@ -370,7 +413,9 @@ bool DerivedEngine::has_node(pj::NodeId id) const noexcept {
 
 std::vector<pj::TopicId> DerivedEngine::output_topics(pj::NodeId id) const {
   auto it = impl_->nodes.find(id);
-  if (it == impl_->nodes.end()) return {};
+  if (it == impl_->nodes.end()) {
+    return {};
+  }
   return it->second.output_topic_ids;
 }
 
@@ -380,11 +425,15 @@ std::vector<pj::TopicId> DerivedEngine::output_topics(pj::NodeId id) const {
 
 std::vector<pj::NodeId> DerivedEngine::topological_order() const {
   absl::flat_hash_map<pj::NodeId, int> in_degree;
-  for (const auto& [id, _] : impl_->nodes) in_degree[id] = 0;
+  for (const auto& [id, _] : impl_->nodes) {
+    in_degree[id] = 0;
+  }
 
   for (const auto& [upstream, downstream_list] : impl_->downstream_of) {
     for (pj::NodeId downstream : downstream_list) {
-      if (impl_->nodes.contains(downstream)) in_degree[downstream]++;
+      if (impl_->nodes.contains(downstream)) {
+        in_degree[downstream]++;
+      }
     }
   }
 
@@ -392,7 +441,9 @@ std::vector<pj::NodeId> DerivedEngine::topological_order() const {
   std::vector<pj::NodeId> ready;
   ready.reserve(in_degree.size());
   for (const auto& [id, deg] : in_degree) {
-    if (deg == 0) ready.push_back(id);
+    if (deg == 0) {
+      ready.push_back(id);
+    }
   }
   std::sort(ready.begin(), ready.end());
 
@@ -405,16 +456,24 @@ std::vector<pj::NodeId> DerivedEngine::topological_order() const {
     order.push_back(n);
 
     auto it = impl_->downstream_of.find(n);
-    if (it == impl_->downstream_of.end()) continue;
+    if (it == impl_->downstream_of.end()) {
+      continue;
+    }
 
     std::vector<pj::NodeId> newly_ready;
     for (pj::NodeId m : it->second) {
-      if (!impl_->nodes.contains(m)) continue;
-      if (--in_degree[m] == 0) newly_ready.push_back(m);
+      if (!impl_->nodes.contains(m)) {
+        continue;
+      }
+      if (--in_degree[m] == 0) {
+        newly_ready.push_back(m);
+      }
     }
     // Keep deterministic order within the newly ready set
     std::sort(newly_ready.begin(), newly_ready.end());
-    for (pj::NodeId m : newly_ready) ready.push_back(m);
+    for (pj::NodeId m : newly_ready) {
+      ready.push_back(m);
+    }
   }
 
   return order;
@@ -427,10 +486,14 @@ std::vector<pj::NodeId> DerivedEngine::topological_order() const {
 void DerivedEngine::on_source_committed(pj::Span<const pj::TopicId> changed_topics) {
   for (pj::TopicId tid : changed_topics) {
     auto it = impl_->topic_to_nodes.find(tid);
-    if (it == impl_->topic_to_nodes.end()) continue;
+    if (it == impl_->topic_to_nodes.end()) {
+      continue;
+    }
     for (pj::NodeId nid : it->second) {
       auto nit = impl_->nodes.find(nid);
-      if (nit != impl_->nodes.end()) nit->second.dirty = true;
+      if (nit != impl_->nodes.end()) {
+        nit->second.dirty = true;
+      }
     }
   }
 }
@@ -439,12 +502,10 @@ void DerivedEngine::on_source_committed(pj::Span<const pj::TopicId> changed_topi
 // run_node_incremental (private helper)
 // ---------------------------------------------------------------------------
 
-static pj::Status run_siso_incremental(DerivedEngineImpl& /*impl*/, DataEngine& engine,
-                                        DerivedNode& node) {
+static pj::Status run_siso_incremental(DerivedEngineImpl& /*impl*/, DataEngine& engine, DerivedNode& node) {
   const TopicStorage* in_storage = engine.get_topic_storage(node.siso_input_topic_id);
   if (!in_storage) {
-    return pj::unexpected(absl::StrCat("run_siso_incremental: input topic ", node.siso_input_topic_id,
-                                        " not found"));
+    return pj::unexpected(absl::StrCat("run_siso_incremental: input topic ", node.siso_input_topic_id, " not found"));
   }
 
   const std::deque<TopicChunk>& all_chunks = in_storage->sealed_chunks();
@@ -456,7 +517,9 @@ static pj::Status run_siso_incremental(DerivedEngineImpl& /*impl*/, DataEngine& 
   pj::Timestamp out_ts = 0;
 
   for (const TopicChunk& chunk : all_chunks) {
-    if (chunk.id <= node.last_processed_chunk_id) continue;
+    if (chunk.id <= node.last_processed_chunk_id) {
+      continue;
+    }
     max_seen = std::max(max_seen, chunk.id);
 
     for (uint32_t i = 0; i < chunk.stats.row_count; ++i) {
@@ -465,10 +528,14 @@ static pj::Status run_siso_incremental(DerivedEngineImpl& /*impl*/, DataEngine& 
 
       if (node.siso_op->calculate(ts, node.in_val_buf, out_ts, node.out_val_buf)) {
         auto s = writer.begin_row(out_tid, out_ts);
-        if (!s.has_value()) return s;
+        if (!s.has_value()) {
+          return s;
+        }
         write_varvalue(writer, out_tid, 0, node.out_val_buf, node.siso_output_kind);
         s = writer.finish_row(out_tid);
-        if (!s.has_value()) return s;
+        if (!s.has_value()) {
+          return s;
+        }
         wrote_any = true;
       }
     }
@@ -504,21 +571,31 @@ pj::Status DerivedEngine::schedule(const std::unordered_set<pj::NodeId>& active_
       pj::NodeId curr = bfs.front();
       bfs.pop();
       auto nit = impl_->nodes.find(curr);
-      if (nit == impl_->nodes.end()) continue;
+      if (nit == impl_->nodes.end()) {
+        continue;
+      }
       for (pj::TopicId in_tid : nit->second.all_input_topic_ids) {
         auto prod_it = impl_->output_topic_to_node.find(in_tid);
-        if (prod_it == impl_->output_topic_to_node.end()) continue;
+        if (prod_it == impl_->output_topic_to_node.end()) {
+          continue;
+        }
         pj::NodeId prod = prod_it->second;
-        if (filter.insert(prod).second) bfs.push(prod);
+        if (filter.insert(prod).second) {
+          bfs.push(prod);
+        }
       }
     }
   }
 
   for (pj::NodeId node_id : order) {
-    if (!active_nodes.empty() && !filter.contains(node_id)) continue;
+    if (!active_nodes.empty() && !filter.contains(node_id)) {
+      continue;
+    }
 
     auto& node = impl_->nodes.at(node_id);
-    if (!node.dirty) continue;
+    if (!node.dirty) {
+      continue;
+    }
 
     pj::Status s = pj::ok_status();
     if (!node.is_mimo) {
@@ -526,7 +603,9 @@ pj::Status DerivedEngine::schedule(const std::unordered_set<pj::NodeId>& active_
     }
     // MIMO path: Phase 3
 
-    if (!s.has_value()) return s;
+    if (!s.has_value()) {
+      return s;
+    }
 
     node.dirty = false;
 
@@ -535,7 +614,9 @@ pj::Status DerivedEngine::schedule(const std::unordered_set<pj::NodeId>& active_
     if (dit != impl_->downstream_of.end()) {
       for (pj::NodeId downstream : dit->second) {
         auto dnit = impl_->nodes.find(downstream);
-        if (dnit != impl_->nodes.end()) dnit->second.dirty = true;
+        if (dnit != impl_->nodes.end()) {
+          dnit->second.dirty = true;
+        }
       }
     }
   }
@@ -554,19 +635,23 @@ pj::Status DerivedEngine::recompute_batch(pj::NodeId node_id) {
   }
   DerivedNode& node = it->second;
 
-  // 1. Evict all output chunks (evict_before(max) removes all chunks with t_max < INT64_MAX)
+  // 1. Clear all output chunks unconditionally.
   for (pj::TopicId out_tid : node.output_topic_ids) {
     TopicStorage* storage = engine_.get_topic_storage(out_tid);
     if (storage) {
-      storage->evict_before(std::numeric_limits<pj::Timestamp>::max());
+      storage->clear_chunks();
     }
   }
 
   // 2. Reset transform state
   if (!node.is_mimo) {
-    if (node.siso_op) node.siso_op->reset();
+    if (node.siso_op) {
+      node.siso_op->reset();
+    }
   } else {
-    if (node.mimo_op) node.mimo_op->reset();
+    if (node.mimo_op) {
+      node.mimo_op->reset();
+    }
   }
 
   // 3. Reset processed chunk watermark
@@ -578,7 +663,9 @@ pj::Status DerivedEngine::recompute_batch(pj::NodeId node_id) {
     s = run_siso_incremental(*impl_, engine_, node);
   }
 
-  if (!s.has_value()) return s;
+  if (!s.has_value()) {
+    return s;
+  }
   node.dirty = false;
   return pj::ok_status();
 }

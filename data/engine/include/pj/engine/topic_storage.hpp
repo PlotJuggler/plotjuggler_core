@@ -58,8 +58,18 @@ class TopicStorage {
   /// Remove chunks whose max time is strictly before `t_keep_min`.
   void evict_before(Timestamp t_keep_min);
 
+  /// Unconditionally remove all retained sealed chunks.
+  void clear_chunks() noexcept;
+
   /// Access retained sealed chunks in commit order.
   [[nodiscard]] const std::deque<TopicChunk>& sealed_chunks() const noexcept;
+
+  /// Store column layout for schema_id==0 topics (populated at writer registration time).
+  /// Allows derived engine and fresh writers to resolve the layout without a committed chunk.
+  void set_column_descriptors(std::vector<ColumnDescriptor> descs) noexcept;
+
+  /// Inline column layout (non-empty for schema_id==0 topics after the first writer is created).
+  [[nodiscard]] const std::vector<ColumnDescriptor>& column_descriptors() const noexcept;
 
   /// Compute aggregated metadata for current retained chunks.
   [[nodiscard]] TopicMetadata metadata() const;
@@ -86,6 +96,7 @@ class TopicStorage {
   TopicId topic_id_;
   TopicDescriptor descriptor_;
   std::deque<TopicChunk> sealed_chunks_;
+  std::vector<ColumnDescriptor> column_descriptors_;  // for schema_id==0 topics
 };
 
 }  // namespace pj::engine

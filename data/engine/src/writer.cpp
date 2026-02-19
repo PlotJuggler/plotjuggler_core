@@ -394,7 +394,13 @@ Expected<ScalarSeriesHandle> DataWriter::register_scalar_series(
 
   std::vector<ColumnDescriptor> columns;
   columns.push_back(std::move(col_desc));
-  topic_columns_[topic_id] = std::move(columns);
+  topic_columns_[topic_id] = columns;
+
+  // Persist the column layout in TopicStorage so fresh writers and the derived
+  // engine can resolve it without requiring a committed (sealed) chunk.
+  if (auto* storage = engine_.get_topic_storage(topic_id)) {
+    storage->set_column_descriptors(std::move(columns));
+  }
 
   ScalarSeriesHandle handle{topic_id, 0};
   return handle;
@@ -511,11 +517,16 @@ TopicChunkBuilder& DataWriter::get_or_create_builder(TopicId topic_id) {
     if (type_tree != nullptr) {
       topic_columns_[topic_id] = build_column_descriptors(*type_tree);
     } else {
-      // schema_id == 0 (inline layout, e.g. topics created via register_scalar_series):
-      // fall back to the first committed chunk's column_descriptors.
-      const auto& chunks = storage->sealed_chunks();
-      topic_columns_[topic_id] = chunks.empty() ? std::vector<ColumnDescriptor>{}
-                                                 : chunks[0].column_descriptors;
+      // schema_id == 0 (inline layout, e.g. topics created via register_scalar_series).
+      // Prefer the layout stored in TopicStorage at registration time; fall back to the
+      // first committed chunk only if no stored layout is present.
+      const auto& stored = storage->column_descriptors();
+      if (!stored.empty()) {
+        topic_columns_[topic_id] = stored;
+      } else {
+        const auto& chunks = storage->sealed_chunks();
+        topic_columns_[topic_id] = chunks.empty() ? std::vector<ColumnDescriptor>{} : chunks[0].column_descriptors;
+      }
     }
     col_it = topic_columns_.find(topic_id);
   }

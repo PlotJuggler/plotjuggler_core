@@ -26,6 +26,18 @@ void TopicStorage::evict_before(Timestamp t_keep_min) {
   }
 }
 
+void TopicStorage::clear_chunks() noexcept {
+  sealed_chunks_.clear();
+}
+
+void TopicStorage::set_column_descriptors(std::vector<ColumnDescriptor> descs) noexcept {
+  column_descriptors_ = std::move(descs);
+}
+
+const std::vector<ColumnDescriptor>& TopicStorage::column_descriptors() const noexcept {
+  return column_descriptors_;
+}
+
 const std::deque<TopicChunk>& TopicStorage::sealed_chunks() const noexcept {
   return sealed_chunks_;
 }

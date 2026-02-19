@@ -67,8 +67,7 @@ class ISISOTransform {
   /// out_time MAY differ from `time` — time-offset transforms and interpolation
   /// may produce output on a different time grid than their input.
   /// When true is returned, out_time must be >= all previously returned out_times.
-  virtual bool calculate(pj::Timestamp time, const VarValue& input,
-                         pj::Timestamp& out_time, VarValue& out_value) = 0;
+  virtual bool calculate(pj::Timestamp time, const VarValue& input, pj::Timestamp& out_time, VarValue& out_value) = 0;
 };
 
 // ---------------------------------------------------------------------------
@@ -100,8 +99,8 @@ class IMIMOTransform {
   /// Returns true to emit a row; false to suppress.
   /// out_time MAY differ from `time`. When true is returned, out_time must be
   /// >= all previously returned out_times. All M output topics share this timestamp.
-  virtual bool calculate(pj::Timestamp time, pj::Span<const VarValue> inputs,
-                         pj::Timestamp& out_time, std::vector<VarValue>& output) = 0;
+  virtual bool calculate(
+      pj::Timestamp time, pj::Span<const VarValue> inputs, pj::Timestamp& out_time, std::vector<VarValue>& output) = 0;
 };
 
 // ---------------------------------------------------------------------------
@@ -120,6 +119,14 @@ class DerivedEngine {
   //   - input_topic_id does not exist
   //   - input topic has more than one column
   //   - output_topic_name already registered within output_dataset_id
+  //
+  // Topics created via DataWriter::register_scalar_series (schema_id == 0)
+  // are supported even before any data has been committed: the column layout
+  // is stored in TopicStorage at registration time. Topics created via
+  // DataWriter::register_topic with schema_id != 0 are always supported.
+  // Returns error if the column layout cannot be determined (e.g. a topic
+  // created with schema_id==0 via the low-level register_topic API with no
+  // committed chunks and no stored column descriptors).
   [[nodiscard]] pj::Expected<pj::NodeId> add_siso_transform(
       pj::TopicId input_topic_id, std::string output_topic_name, pj::DatasetId output_dataset_id,
       std::unique_ptr<ISISOTransform> op);

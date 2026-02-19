@@ -72,8 +72,11 @@ Five concrete modules, each independently testable:
    Arrow-compatible memory layout utilities.
    *Implemented as `RawBuffer`, `TypedColumnBuffer`, `TopicChunkBuilder`,
    `TopicChunk`, `TopicStorage` in the `plotjuggler_engine` library.*
-3. ❌ **engine-derived**: Owns transform DAG, scheduler, dirty propagation.
+3. ✅ **engine-derived**: Owns transform DAG, scheduler, dirty propagation.
    Depends on engine-core interfaces only.
+   *Implemented as `DerivedEngine` in the `plotjuggler_engine` library.
+   SISO DAG with topological sort, cycle detection, incremental chunk-aligned
+   scheduling, and batch recompute. One built-in transform: `DerivativeTransform`.*
 4. ⚠️ **engine-time**: Owns time-domain registry and mapping functions for
    display.
    *Time domain creation and display offset are implemented in `DataEngine`.
@@ -497,10 +500,10 @@ Phase 1 alone is expected to achieve the majority of the savings.
 
 ---
 
-## 7. Derived Series and Transforms ❌
+## 7. Derived Series and Transforms ✅
 
-> **Not yet implemented.** This is Phase 2. The interfaces and data
-> structures described below remain the design target.
+> **Phase 2 is implemented.** The interfaces and data structures below
+> reflect the final design. See Appendix A for the concrete file map.
 
 ### 7.1 Dependency Graph
 
@@ -567,52 +570,50 @@ Batch recompute serves as the **correctness oracle** for incremental mode.
 
 ### 7.3 Transform Interface
 
+**Implementation:** Two separate interfaces are provided in
+`pj/engine/derived_engine.hpp`:
+
 ```cpp
-// Conceptual interface (not final)
-class ITransformOp {
-    // Declare inputs: which series/groups this transform reads
-    virtual InputSpec declare_inputs() = 0;
+// Single-input / single-output transform.
+// calculate() is called once per sample in strictly ascending timestamp order.
+// Implementations accumulate state in member variables between calls.
+// reset() is the only path that clears state; called before batch recompute.
+class ISISOTransform {
+public:
+    virtual StorageKind output_kind(StorageKind input_kind) const;  // default kFloat64
+    virtual void reset() {}
+    virtual bool calculate(pj::Timestamp time, const VarValue& input,
+                           pj::Timestamp& out_time, VarValue& out_value) = 0;
+};
 
-    // Declare outputs: what series/groups this transform produces
-    virtual OutputSpec declare_outputs() = 0;
-
-    // Whether this transform supports incremental computation
-    virtual bool supports_incremental() = 0;
-
-    // Process new chunk(s). For transforms that need history across chunk
-    // boundaries (moving average, derivative), previous_context provides
-    // read-only access to the tail of the previous output chunk.
-    virtual Chunk compute_incremental(
-        span<const Chunk> new_input_chunks,
-        optional<ChunkTail> previous_context) = 0;
-
-    // Full recompute over all available data. Reference implementation
-    // for correctness validation.
-    virtual void compute_batch(
-        const RangeCursor& full_input,
-        DataWriter& output) = 0;
+// Multi-input / multi-output transform (Phase 3: not yet used by scheduler).
+class IMIMOTransform {
+public:
+    virtual std::vector<StorageKind> output_kinds(Span<const StorageKind> input_kinds) const = 0;
+    virtual void reset() {}
+    virtual bool calculate(pj::Timestamp time, Span<const VarValue> inputs,
+                           pj::Timestamp& out_time, std::vector<VarValue>& output) = 0;
 };
 ```
 
+The key design deviation from the plan: transforms use a **sequential
+point-at-a-time** contract (`calculate()` once per sample) rather than a
+chunk-at-a-time contract. This is simpler and allows stateful transforms
+(moving average, derivative, integral) to hold cross-chunk state in member
+variables without needing an explicit `ChunkTail` mechanism in the public
+interface. The `DerivedEngine` calls `reset()` exclusively before batch
+recompute, and `calculate()` is called in ascending timestamp order across
+all chunks.
+
 SISO transforms (derivative, filter, integral) take one series, produce one.
 MIMO transforms (quaternion-to-RPY) take a group of series (identified by
-type in the type tree), produce a group.
+type in the type tree), produce a group. MIMO scheduling is deferred to Phase 3.
 
-The `previous_context` parameter is a **hard requirement** in the interface.
-Transforms that need cross-chunk state (derivative needing the last sample,
-moving average needing the last N samples) must be able to access the tail
-of their previous output without reading the entire history.
-
-`ChunkTail` semantics (see Section 11 for the concrete structure):
-- Each transform declares the number of trailing rows it requires (e.g.,
-  derivative needs 1, moving average of N needs N-1).
-- The derived engine stores a `ChunkTail` per derived node, updated after
-  each incremental computation.
-- The `ChunkTail` is a **copy** of the tail data, not a reference into
-  sealed chunks. This ensures it survives retention eviction of the
-  underlying source data.
-- The window size is declared by the transform at registration time and
-  is immutable.
+Built-in transforms: `DerivativeTransform` (in `pj/engine/builtin_transforms.hpp`).
+- Computes `(v[i] - v[i-1]) / dt` where dt is in seconds.
+- Suppresses the first row (no previous sample).
+- Guards against zero dt (emits 0.0).
+- Cross-chunk state is maintained in member variables (not ChunkTail).
 
 ---
 
@@ -753,7 +754,14 @@ public:
 > - ✅ `range_query()`, `latest_at()` -- implemented as planned, returning
 >   `absl::StatusOr` for error handling.
 >
-> **IDerivedEngine:** ❌ Not yet implemented (Phase 2).
+> **IDerivedEngine:** ✅ Implemented as concrete `DerivedEngine` class
+> (not a virtual interface). API:
+> - `add_siso_transform(input_topic_id, output_name, dataset_id, op)` → NodeId
+> - `add_mimo_transform(input_topic_ids, output_names, dataset_id, op)` → NodeId
+> - `remove_node(id)`, `has_node(id)`, `output_topics(id)`, `topological_order()`
+> - `on_source_committed(changed_topics)` — dirty propagation hook
+> - `schedule(active_nodes={})` — incremental lazy scheduling
+> - `recompute_batch(node_id)` — full history recompute / correctness oracle
 
 Write-path ergonomics are intentionally split:
 - ⚠️ **Simple path**: `append()` / `append_batch()` with field-name based
@@ -813,16 +821,16 @@ Define measurable acceptance criteria **before** implementation lock:
 | bytes/sample by data type and topic shape | Benchmark vs. current engine | ⚠️ Benchmark infrastructure exists (`read_benchmark.cpp`) but no comparison with current engine yet. |
 | Ingest throughput (rows/sec) in streaming | At least on par with current | ✅ Benchmarked. See Section 17 below. |
 | Max append latency per batch | Within frame budget | ✅ Benchmarked: 0.16ms per 100K rows via bulk path. |
-| Derived incremental update latency | Within frame budget | ❌ Derived engine not implemented. |
+| Derived incremental update latency | Within frame budget | ⚠️ Derived engine implemented; dedicated benchmark not yet written. |
 | Range query latency for plotting | At least on par with current | ⚠️ Read benchmark exists. |
 
 ### Correctness criteria
 
 - ✅ Type tree fidelity: round-trip schema registration and retrieval.
   *Tested in `type_tree_test.cpp` and `type_registry_test.cpp`.*
-- ❌ Derived DAG correctness: incremental output matches batch output within
+- ✅ Derived DAG correctness: incremental output matches batch output within
   numeric tolerance.
-  *Derived engine not implemented.*
+  *Tested in `derived_engine_test.cpp` (`Parity_*` tests, 1e-9 tolerance).*
 - ✅ Retention correctness: no data outside retention window, no gaps in
   retained data.
   *Tested in `topic_storage_test.cpp`.*
@@ -888,14 +896,13 @@ struct SchemaVersionHistory { // ❌ Not implemented. No version history
     // current() returns versions.back()
 };
 
-// Tail context provided to incremental transforms that need cross-chunk
-// history (e.g., derivative needs the last sample, moving average needs
-// the last N samples).
-struct ChunkTail {            // ❌ Not implemented (Phase 2: derived engine).
-    uint32_t requested_rows;
-    span<const Timestamp> timestamps;
-    std::vector<span<const uint8_t>> column_values;
-};
+// Cross-chunk state for transforms: handled internally by DerivedEngine.
+// The implementation deviates from this plan struct: ISISOTransform holds
+// state in member variables and is called sequentially per sample. There is
+// no separate ChunkTail struct in the public API; the sequential calculate()
+// contract replaces it. Internally, DerivedEngine tracks a watermark
+// (last_processed_chunk_id) per node for incremental scheduling.
+// ⚠️ The public ChunkTail struct as described here is NOT implemented.
 
 struct ColumnBuffer {         // ✅ Implemented as TypedColumnBuffer
     FieldId field_id;         //    in pj/engine/column_buffer.hpp.
@@ -956,9 +963,9 @@ Notes:
    Arrow objects directly as public plugin API types.
 2. ✅ **Chunk sizing**: Fixed row-count in v1. Byte-based adaptive chunking
    deferred.
-3. ❌ **Derived scheduling**: Batched lazy on main thread (once per frame) as
+3. ✅ **Derived scheduling**: Batched lazy on main thread (once per frame) as
    default. Batch recompute available on demand as correctness oracle.
-   *Derived engine not implemented.*
+   *Implemented in `DerivedEngine::schedule()` and `recompute_batch()`.*
 4. ❌ **Variable-length arrays**: Expand to indexed columns at ingest, with
    configurable max expansion limit. Viewer may additionally filter.
    *Type tree supports arrays; writer expansion not implemented.*
@@ -1017,13 +1024,19 @@ Notes:
   - ⚠️ Raw typed storage for all numeric types (preserving original width)
     *Narrow integers widened to int64/uint64.*
 
-### Phase 2: Derived DAG engine (engine-derived) -- ❌ NOT STARTED
+### Phase 2: Derived DAG engine (engine-derived) -- ✅ COMPLETE
 
-- Node / edge model with topological sort
-- Cycle detection on registration
-- Incremental chunk-aligned scheduling
-- Batch recompute path
-- Correctness parity tests (incremental vs. batch)
+- ✅ Node / edge model with topological sort (Kahn's algorithm)
+- ✅ Cycle detection on registration (DFS)
+- ✅ Incremental chunk-aligned scheduling (watermark per node)
+- ✅ Batch recompute path (correctness oracle)
+- ✅ Correctness parity tests (incremental == batch within 1e-9)
+- ✅ SISO interface (`ISISOTransform`) with sequential `calculate()` contract
+- ✅ MIMO interface (`IMIMOTransform`) declared; MIMO scheduling is Phase 3
+- ✅ Built-in: `DerivativeTransform`
+- ✅ `on_source_committed()` dirty propagation hook
+- ✅ `TopicStorage::set_column_descriptors()` — schema_id==0 topics require
+  no committed chunks before `add_siso_transform` registration
 
 ### Phase 3: Time domains + UI integration (engine-time) -- ⚠️ PARTIALLY STARTED
 
@@ -1157,6 +1170,8 @@ Explicitly deferred items that should not block v1:
 | `engine/include/pj/engine/writer.hpp` | Section 9.2: DataWriter (IDataWriter in plan) |
 | `engine/include/pj/engine/engine.hpp` | Section 2: DataEngine (coordinator) |
 | `engine/include/pj/engine/arrow_import.hpp` | Section 17: nanoarrow IPC import adapter utilities |
+| `engine/include/pj/engine/derived_engine.hpp` | Section 7: `VarValue`, `ISISOTransform`, `IMIMOTransform`, `DerivedEngine` |
+| `engine/include/pj/engine/builtin_transforms.hpp` | Section 7.3: `DerivativeTransform` built-in SISO |
 
 ### Tests
 
@@ -1175,6 +1190,7 @@ Explicitly deferred items that should not block v1:
 | `tests/query_test.cpp` | Range queries, latest_at, multi-chunk, boundaries |
 | `tests/engine_integration_test.cpp` | End-to-end: scalar + structured write/read, bulk ingest |
 | `tests/arrow_import_test.cpp` | nanoarrow IPC stream import, schema parsing, type widening |
+| `tests/derived_engine_test.cpp` | DerivedEngine DAG, scheduling, parity (incremental==batch), regression |
 
 ### Benchmarks
 
@@ -1194,6 +1210,16 @@ Explicitly deferred items that should not block v1:
 | File | Notes |
 |---|---|
 | `data/CMakeLists.txt` | C++20, two library targets, tests, benchmarks, examples |
+
+### Post-Phase-2 API additions
+
+| File | Change |
+|---|---|
+| `engine/src/derived_engine.cpp` | `DerivedEngine` implementation (DAG, scheduling, recompute) |
+| `engine/src/builtin_transforms.cpp` | `DerivativeTransform` implementation |
+| `engine/include/pj/engine/topic_storage.hpp` | Added `set_column_descriptors()` / `column_descriptors()` / `clear_chunks()` |
+| `engine/src/topic_storage.cpp` | Implementations of the above |
+| `engine/src/writer.cpp` | `register_scalar_series` now propagates column layout to `TopicStorage`; `get_or_create_builder` checks stored layout before sealed chunks |
 | `data/conanfile.txt` | abseil/20240722.0, gtest/1.15.0, benchmark/1.8.3, arrow/18.1.0, nanoarrow/0.7.0 |
 
 ---

@@ -1,3 +1,5 @@
+#include "pj/engine/derived_engine.hpp"
+
 #include <gtest/gtest.h>
 
 #include <cstdint>
@@ -11,7 +13,6 @@
 #include "pj/engine/builtin_transforms.hpp"
 #include "pj/engine/chunk.hpp"
 #include "pj/engine/column_buffer.hpp"
-#include "pj/engine/derived_engine.hpp"
 #include "pj/engine/engine.hpp"
 #include "pj/engine/query.hpp"
 #include "pj/engine/topic_storage.hpp"
@@ -33,8 +34,8 @@ static pj::DatasetId make_dataset(DataEngine& engine, const std::string& name = 
 // Write `n` rows to a float64 scalar topic with value = slope * (t_ns / 1e9).
 // Commits the chunk. Returns the TopicId.
 // Timestamps: 0, step_ns, 2*step_ns, ...
-static pj::TopicId make_linear_topic(DataEngine& engine, pj::DatasetId dataset_id, double slope,
-                                      int n, pj::Timestamp step_ns = 1'000'000'000LL) {
+static pj::TopicId make_linear_topic(
+    DataEngine& engine, pj::DatasetId dataset_id, double slope, int n, pj::Timestamp step_ns = 1'000'000'000LL) {
   DataWriter writer = engine.create_writer();
   auto handle_or = writer.register_scalar_series(dataset_id, "src", pj::NumericType::kFloat64);
   pj::TopicId tid = handle_or->topic_id;
@@ -48,8 +49,9 @@ static pj::TopicId make_linear_topic(DataEngine& engine, pj::DatasetId dataset_i
 }
 
 // Append `n` more rows to an existing scalar topic (continuing timestamps from start_i).
-static void append_linear_rows(DataEngine& engine, pj::TopicId src_topic_id, double slope,
-                                int n, int start_i, pj::Timestamp step_ns = 1'000'000'000LL) {
+static void append_linear_rows(
+    DataEngine& engine, pj::TopicId src_topic_id, double slope, int n, int start_i,
+    pj::Timestamp step_ns = 1'000'000'000LL) {
   // We need to write to an existing topic via begin_row / set_float64 / finish_row.
   DataWriter writer = engine.create_writer();
   for (int i = start_i; i < start_i + n; ++i) {
@@ -67,12 +69,12 @@ static void append_linear_rows(DataEngine& engine, pj::TopicId src_topic_id, dou
 // Collect all float64 values from a topic in timestamp order.
 static std::vector<double> collect_values(DataEngine& engine, pj::TopicId topic_id) {
   const TopicStorage* storage = engine.get_topic_storage(topic_id);
-  if (!storage) return {};
+  if (!storage) {
+    return {};
+  }
   std::vector<double> out;
   auto cursor = range_query(storage->sealed_chunks(), 0, std::numeric_limits<pj::Timestamp>::max());
-  cursor.for_each([&](const SampleRow& row) {
-    out.push_back(row.chunk->read_numeric_as_double(0, row.row_index));
-  });
+  cursor.for_each([&](const SampleRow& row) { out.push_back(row.chunk->read_numeric_as_double(0, row.row_index)); });
   return out;
 }
 
@@ -83,10 +85,11 @@ static void notify(DerivedEngine& derived, std::initializer_list<pj::TopicId> to
 }
 
 // Collect (timestamp, value) pairs.
-static std::vector<std::pair<pj::Timestamp, double>> collect_rows(DataEngine& engine,
-                                                                    pj::TopicId topic_id) {
+static std::vector<std::pair<pj::Timestamp, double>> collect_rows(DataEngine& engine, pj::TopicId topic_id) {
   const TopicStorage* storage = engine.get_topic_storage(topic_id);
-  if (!storage) return {};
+  if (!storage) {
+    return {};
+  }
   std::vector<std::pair<pj::Timestamp, double>> out;
   auto cursor = range_query(storage->sealed_chunks(), 0, std::numeric_limits<pj::Timestamp>::max());
   cursor.for_each([&](const SampleRow& row) {
@@ -164,8 +167,7 @@ TEST(DerivedEngineTest, AddTransform_CreatesOutputTopic) {
   pj::DatasetId ds = make_dataset(engine);
 
   pj::TopicId src = make_linear_topic(engine, ds, 1.0, 5);
-  auto node_or = derived.add_siso_transform(src, "deriv", ds,
-                                             std::make_unique<DerivativeTransform>());
+  auto node_or = derived.add_siso_transform(src, "deriv", ds, std::make_unique<DerivativeTransform>());
   ASSERT_TRUE(node_or.has_value()) << node_or.error();
   pj::NodeId node = *node_or;
   EXPECT_TRUE(derived.has_node(node));
@@ -181,11 +183,9 @@ TEST(DerivedEngineTest, AddTransform_DuplicateOutputName_Fails) {
   pj::DatasetId ds = make_dataset(engine);
 
   pj::TopicId src = make_linear_topic(engine, ds, 1.0, 5);
-  ASSERT_TRUE(derived.add_siso_transform(src, "deriv", ds,
-                                          std::make_unique<DerivativeTransform>()).has_value());
+  ASSERT_TRUE(derived.add_siso_transform(src, "deriv", ds, std::make_unique<DerivativeTransform>()).has_value());
   // Same output name → should fail
-  auto r = derived.add_siso_transform(src, "deriv", ds,
-                                       std::make_unique<DerivativeTransform>());
+  auto r = derived.add_siso_transform(src, "deriv", ds, std::make_unique<DerivativeTransform>());
   EXPECT_FALSE(r.has_value());
 }
 
@@ -194,8 +194,7 @@ TEST(DerivedEngineTest, AddTransform_UnknownInputTopic_Fails) {
   DerivedEngine derived(engine);
   pj::DatasetId ds = make_dataset(engine);
 
-  auto r = derived.add_siso_transform(9999u, "deriv", ds,
-                                       std::make_unique<DerivativeTransform>());
+  auto r = derived.add_siso_transform(9999u, "deriv", ds, std::make_unique<DerivativeTransform>());
   EXPECT_FALSE(r.has_value());
 }
 
@@ -209,8 +208,7 @@ TEST(DerivedEngineTest, TopologicalOrder_SingleNode) {
   pj::DatasetId ds = make_dataset(engine);
 
   pj::TopicId src = make_linear_topic(engine, ds, 1.0, 5);
-  pj::NodeId n = *derived.add_siso_transform(src, "d1", ds,
-                                              std::make_unique<DerivativeTransform>());
+  pj::NodeId n = *derived.add_siso_transform(src, "d1", ds, std::make_unique<DerivativeTransform>());
   auto order = derived.topological_order();
   ASSERT_EQ(order.size(), 1u);
   EXPECT_EQ(order[0], n);
@@ -223,11 +221,9 @@ TEST(DerivedEngineTest, TopologicalOrder_Chain_ABOrder) {
   pj::DatasetId ds = make_dataset(engine);
 
   pj::TopicId src = make_linear_topic(engine, ds, 1.0, 10);
-  pj::NodeId a = *derived.add_siso_transform(src, "d1", ds,
-                                              std::make_unique<DerivativeTransform>());
+  pj::NodeId a = *derived.add_siso_transform(src, "d1", ds, std::make_unique<DerivativeTransform>());
   pj::TopicId a_out = derived.output_topics(a)[0];
-  pj::NodeId b = *derived.add_siso_transform(a_out, "d2", ds,
-                                              std::make_unique<DerivativeTransform>());
+  pj::NodeId b = *derived.add_siso_transform(a_out, "d2", ds, std::make_unique<DerivativeTransform>());
 
   auto order = derived.topological_order();
   ASSERT_EQ(order.size(), 2u);
@@ -242,13 +238,10 @@ TEST(DerivedEngineTest, TopologicalOrder_Fork) {
   pj::DatasetId ds = make_dataset(engine);
 
   pj::TopicId src = make_linear_topic(engine, ds, 1.0, 10);
-  pj::NodeId a = *derived.add_siso_transform(src, "d1", ds,
-                                              std::make_unique<DerivativeTransform>());
+  pj::NodeId a = *derived.add_siso_transform(src, "d1", ds, std::make_unique<DerivativeTransform>());
   pj::TopicId a_out = derived.output_topics(a)[0];
-  pj::NodeId b = *derived.add_siso_transform(a_out, "d2", ds,
-                                              std::make_unique<DerivativeTransform>());
-  pj::NodeId c = *derived.add_siso_transform(a_out, "d3", ds,
-                                              std::make_unique<DerivativeTransform>());
+  pj::NodeId b = *derived.add_siso_transform(a_out, "d2", ds, std::make_unique<DerivativeTransform>());
+  pj::NodeId c = *derived.add_siso_transform(a_out, "d3", ds, std::make_unique<DerivativeTransform>());
 
   auto order = derived.topological_order();
   ASSERT_EQ(order.size(), 3u);
@@ -268,8 +261,7 @@ TEST(DerivedEngineTest, DirtyPropagation_SourceChanged) {
   pj::DatasetId ds = make_dataset(engine);
 
   pj::TopicId src = make_linear_topic(engine, ds, 1.0, 5);
-  pj::NodeId n = *derived.add_siso_transform(src, "d1", ds,
-                                              std::make_unique<DerivativeTransform>());
+  pj::NodeId n = *derived.add_siso_transform(src, "d1", ds, std::make_unique<DerivativeTransform>());
 
   // Run schedule to clear dirty flag
   notify(derived, {src});
@@ -294,11 +286,9 @@ TEST(DerivedEngineTest, DirtyPropagation_Chain) {
   pj::DatasetId ds = make_dataset(engine);
 
   pj::TopicId src = make_linear_topic(engine, ds, 1.0, 10);
-  pj::NodeId a = *derived.add_siso_transform(src, "d1", ds,
-                                              std::make_unique<DerivativeTransform>());
+  pj::NodeId a = *derived.add_siso_transform(src, "d1", ds, std::make_unique<DerivativeTransform>());
   pj::TopicId a_out = derived.output_topics(a)[0];
-  pj::NodeId b = *derived.add_siso_transform(a_out, "d2", ds,
-                                              std::make_unique<DerivativeTransform>());
+  pj::NodeId b = *derived.add_siso_transform(a_out, "d2", ds, std::make_unique<DerivativeTransform>());
 
   notify(derived, {src});
   ASSERT_TRUE(derived.schedule().has_value());
@@ -319,14 +309,15 @@ TEST(DerivedEngineTest, Schedule_ProducesCorrectDerivative) {
   pj::DatasetId ds = make_dataset(engine);
 
   pj::TopicId src = make_linear_topic(engine, ds, 2.0, 11);
-  pj::NodeId node = *derived.add_siso_transform(src, "deriv", ds,
-                                                 std::make_unique<DerivativeTransform>());
+  pj::NodeId node = *derived.add_siso_transform(src, "deriv", ds, std::make_unique<DerivativeTransform>());
   notify(derived, {src});
   ASSERT_TRUE(derived.schedule().has_value());
 
   auto vals = collect_values(engine, derived.output_topics(node)[0]);
   ASSERT_EQ(vals.size(), 10u);
-  for (double v : vals) EXPECT_NEAR(v, 2.0, 1e-6);
+  for (double v : vals) {
+    EXPECT_NEAR(v, 2.0, 1e-6);
+  }
 }
 
 TEST(DerivedEngineTest, Schedule_SecondCallNoNewChunks_NoOp) {
@@ -335,8 +326,7 @@ TEST(DerivedEngineTest, Schedule_SecondCallNoNewChunks_NoOp) {
   pj::DatasetId ds = make_dataset(engine);
 
   pj::TopicId src = make_linear_topic(engine, ds, 1.0, 5);
-  pj::NodeId node = *derived.add_siso_transform(src, "d1", ds,
-                                                 std::make_unique<DerivativeTransform>());
+  pj::NodeId node = *derived.add_siso_transform(src, "d1", ds, std::make_unique<DerivativeTransform>());
   notify(derived, {src});
   ASSERT_TRUE(derived.schedule().has_value());
 
@@ -357,10 +347,8 @@ TEST(DerivedEngineTest, Schedule_Lazy_SkipsInactiveNode) {
   pj::TopicId src1 = make_linear_topic(engine, ds, 1.0, 5);
   pj::TopicId src2 = make_linear_topic(engine, ds, 2.0, 5);
 
-  pj::NodeId a = *derived.add_siso_transform(src1, "da", ds,
-                                              std::make_unique<DerivativeTransform>());
-  pj::NodeId b = *derived.add_siso_transform(src2, "db", ds,
-                                              std::make_unique<DerivativeTransform>());
+  pj::NodeId a = *derived.add_siso_transform(src1, "da", ds, std::make_unique<DerivativeTransform>());
+  pj::NodeId b = *derived.add_siso_transform(src2, "db", ds, std::make_unique<DerivativeTransform>());
 
   notify(derived, {src1, src2});
   // Only process node A
@@ -369,8 +357,8 @@ TEST(DerivedEngineTest, Schedule_Lazy_SkipsInactiveNode) {
   auto a_vals = collect_values(engine, derived.output_topics(a)[0]);
   auto b_vals = collect_values(engine, derived.output_topics(b)[0]);
 
-  EXPECT_FALSE(a_vals.empty());   // A was processed
-  EXPECT_TRUE(b_vals.empty());    // B was skipped
+  EXPECT_FALSE(a_vals.empty());  // A was processed
+  EXPECT_TRUE(b_vals.empty());   // B was skipped
 }
 
 TEST(DerivedEngineTest, Schedule_Chain_BothNodesRun) {
@@ -379,11 +367,9 @@ TEST(DerivedEngineTest, Schedule_Chain_BothNodesRun) {
   pj::DatasetId ds = make_dataset(engine);
 
   pj::TopicId src = make_linear_topic(engine, ds, 1.0, 12);
-  pj::NodeId a = *derived.add_siso_transform(src, "d1", ds,
-                                              std::make_unique<DerivativeTransform>());
+  pj::NodeId a = *derived.add_siso_transform(src, "d1", ds, std::make_unique<DerivativeTransform>());
   pj::TopicId a_out = derived.output_topics(a)[0];
-  pj::NodeId b = *derived.add_siso_transform(a_out, "d2", ds,
-                                              std::make_unique<DerivativeTransform>());
+  pj::NodeId b = *derived.add_siso_transform(a_out, "d2", ds, std::make_unique<DerivativeTransform>());
 
   notify(derived, {src});
   ASSERT_TRUE(derived.schedule().has_value());
@@ -395,7 +381,9 @@ TEST(DerivedEngineTest, Schedule_Chain_BothNodesRun) {
   // B: derivative of constant → all zero (10 rows, first suppressed)
   auto b_vals = collect_values(engine, derived.output_topics(b)[0]);
   EXPECT_EQ(b_vals.size(), 10u);
-  for (double v : b_vals) EXPECT_NEAR(v, 0.0, 1e-6);
+  for (double v : b_vals) {
+    EXPECT_NEAR(v, 0.0, 1e-6);
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -408,8 +396,7 @@ TEST(DerivedEngineTest, RecomputeBatch_ClearsAndRegenerates) {
   pj::DatasetId ds = make_dataset(engine);
 
   pj::TopicId src = make_linear_topic(engine, ds, 1.0, 6);
-  pj::NodeId node = *derived.add_siso_transform(src, "d1", ds,
-                                                 std::make_unique<DerivativeTransform>());
+  pj::NodeId node = *derived.add_siso_transform(src, "d1", ds, std::make_unique<DerivativeTransform>());
   notify(derived, {src});
   ASSERT_TRUE(derived.schedule().has_value());
 
@@ -436,8 +423,7 @@ TEST(DerivedEngineTest, Parity_SingleChunk) {
   pj::DatasetId ds = make_dataset(engine);
 
   pj::TopicId src = make_linear_topic(engine, ds, 3.0, 11);
-  pj::NodeId node = *derived.add_siso_transform(src, "d1", ds,
-                                                 std::make_unique<DerivativeTransform>());
+  pj::NodeId node = *derived.add_siso_transform(src, "d1", ds, std::make_unique<DerivativeTransform>());
   notify(derived, {src});
   ASSERT_TRUE(derived.schedule().has_value());
   auto incremental = collect_values(engine, derived.output_topics(node)[0]);
@@ -461,8 +447,7 @@ TEST(DerivedEngineTest, Parity_TwoChunks_CrossBoundary) {
   // Chunk 1: 20 rows (forces auto-chunk at 1024 capacity — but step_ns large enough
   // that all rows stay in one chunk unless we push more)
   pj::TopicId src = make_linear_topic(engine, ds, 2.0, 20);
-  pj::NodeId node = *derived.add_siso_transform(src, "d1", ds,
-                                                 std::make_unique<DerivativeTransform>());
+  pj::NodeId node = *derived.add_siso_transform(src, "d1", ds, std::make_unique<DerivativeTransform>());
   notify(derived, {src});
   ASSERT_TRUE(derived.schedule().has_value());
 
@@ -489,8 +474,7 @@ TEST(DerivedEngineTest, Parity_ThreeChunks) {
   pj::DatasetId ds = make_dataset(engine);
 
   pj::TopicId src = make_linear_topic(engine, ds, 5.0, 10);
-  pj::NodeId node = *derived.add_siso_transform(src, "d1", ds,
-                                                 std::make_unique<DerivativeTransform>());
+  pj::NodeId node = *derived.add_siso_transform(src, "d1", ds, std::make_unique<DerivativeTransform>());
   notify(derived, {src});
   ASSERT_TRUE(derived.schedule().has_value());
 
@@ -511,6 +495,30 @@ TEST(DerivedEngineTest, Parity_ThreeChunks) {
   for (std::size_t i = 0; i < batch.size(); ++i) {
     EXPECT_NEAR(incremental[i], batch[i], 1e-9) << "mismatch at row " << i;
   }
+}
+
+// Regression: add_siso_transform must work on a series created via
+// register_scalar_series even when no chunk has been committed yet
+// (fewer rows than max_chunk_rows, or no flush/commit called at all).
+TEST(DerivedEngineTest, AddTransform_NoCommittedChunks_Succeeds) {
+  DataEngine engine;
+  DerivedEngine derived(engine);
+  pj::DatasetId ds = make_dataset(engine);
+
+  // Create a topic with a few rows but do NOT commit any chunks.
+  DataWriter writer = engine.create_writer();
+  auto handle = *writer.register_scalar_series(ds, "tiny_series", pj::NumericType::kFloat64);
+  pj::TopicId src = handle.topic_id;
+
+  // Write 3 rows (well below default max_chunk_rows=1024) — no commit.
+  for (int i = 0; i < 3; ++i) {
+    writer.append_scalar(handle, static_cast<pj::Timestamp>(i) * 1'000'000'000LL, static_cast<double>(i));
+  }
+  // Deliberately skip flush / commit_chunks.
+
+  // add_siso_transform must succeed without any committed chunks in storage.
+  auto result = derived.add_siso_transform(src, "d_tiny", ds, std::make_unique<DerivativeTransform>());
+  EXPECT_TRUE(result.has_value()) << "Expected success, got: " << (result.has_value() ? "" : result.error());
 }
 
 }  // namespace
