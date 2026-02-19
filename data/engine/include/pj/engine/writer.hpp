@@ -161,6 +161,15 @@ class DataWriter {
   /// Append one scalar sample.
   void append_scalar(const ScalarSeriesHandle& handle, pj::Timestamp t, pj::NumericValue value);
 
+  // ---- Dynamic column addition ----
+  /// Ensure a column with `field_path` and `type` exists for `topic_id`.
+  /// - No-op if a column with this exact path already exists; returns its FieldId.
+  /// - If new: seals any pending builder, appends a ColumnDescriptor, persists layout.
+  /// - Returns error if called while a row is in progress (between begin_row / finish_row).
+  /// Works for both typed (schema_id != 0) and schemaless (schema_id == 0) topics.
+  [[nodiscard]] pj::Expected<pj::FieldId> ensure_column(pj::TopicId topic_id, std::string_view field_path,
+                                                         pj::PrimitiveType type);
+
   // ---- Variable-length array expansion ----
   /// Ensure the variable-length array at `array_field_path` has at least `new_length`
   /// element columns. Must be called OUTSIDE a begin_row/finish_row block.
@@ -168,9 +177,11 @@ class DataWriter {
   /// - new_length > array_expansion_limit: clamps to limit, records truncation.
   /// - Otherwise: seals current builder, adds new ColumnDescriptors, updates TopicStorage.
   /// Returns actual expansion count (may be less than new_length if clamped).
-  [[nodiscard]] pj::Expected<uint32_t> expand_array(pj::TopicId topic_id,
-                                                     std::string_view array_field_path,
-                                                     uint32_t new_length);
+  /// For typed topics (schema_id != 0): validates field against schema; element_type ignored.
+  /// For schemaless topics (schema_id == 0): any field path accepted; uses element_type.
+  [[nodiscard]] pj::Expected<uint32_t> expand_array(
+      pj::TopicId topic_id, std::string_view array_field_path, uint32_t new_length,
+      pj::PrimitiveType element_type = pj::PrimitiveType::kFloat64);
 
   // ---- Flush ----
   /// Seal and return pending chunks for one topic.
@@ -188,6 +199,9 @@ class DataWriter {
   absl::flat_hash_map<pj::TopicId, std::vector<ColumnDescriptor>> topic_columns_;
 
   TopicChunkBuilder& get_or_create_builder(pj::TopicId topic_id);
+
+  // Populate topic_columns_[topic_id] from TopicStorage if not already cached.
+  void ensure_cols_loaded(pj::TopicId topic_id, const TopicStorage& storage);
 
   // Build column descriptors from a type tree
   static std::vector<ColumnDescriptor> build_column_descriptors(const pj::TypeTreeNode& root);

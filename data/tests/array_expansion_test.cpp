@@ -858,4 +858,351 @@ TEST(ArrayExpansionTest, TwoDistinctArrayFields_ExpandBoth_CorrectLayout) {
   EXPECT_TRUE(visited);
 }
 
+// ─────────────────────────────────────────────────────────────────
+// Group A: schemaless ensure_column
+// ─────────────────────────────────────────────────────────────────
+
+TEST(ArrayExpansionTest, Schemaless_EnsureColumn_AddsColumn) {
+  DataEngine engine;
+  DatasetId ds = *engine.create_dataset(pj::DatasetDescriptor{.source_name = "t"});
+  DataWriter writer = engine.create_writer();
+
+  TopicDescriptor desc;
+  desc.name = "sl_ec_add";
+  desc.schema_id = 0;
+  auto topic_id = *writer.register_topic(ds, desc);
+
+  auto fid = writer.ensure_column(topic_id, "value", pj::PrimitiveType::kFloat64);
+  ASSERT_TRUE(fid.has_value()) << fid.error();
+  EXPECT_EQ(*fid, 0u);
+
+  auto handle = *writer.bind_topic_writer(topic_id);
+  ASSERT_EQ(handle.field_ids.size(), 1u);
+
+  ASSERT_TRUE(writer.begin_row(topic_id, 1000).has_value());
+  writer.set_float64(topic_id, 0, 42.0);
+  ASSERT_TRUE(writer.finish_row(topic_id).has_value());
+  engine.commit_chunks(writer.flush_all());
+
+  DataReader reader = engine.create_reader();
+  auto cursor = *reader.range_query(QueryRange{.topic_id = topic_id, .t_min = 0, .t_max = 2000});
+  bool visited = false;
+  cursor.for_each([&](const SampleRow& row) {
+    EXPECT_NEAR(row.chunk->read_numeric_as_double(0, row.row_index), 42.0, 1e-9);
+    visited = true;
+  });
+  EXPECT_TRUE(visited);
+}
+
+TEST(ArrayExpansionTest, Schemaless_EnsureColumn_Idempotent) {
+  DataEngine engine;
+  DatasetId ds = *engine.create_dataset(pj::DatasetDescriptor{.source_name = "t"});
+  DataWriter writer = engine.create_writer();
+
+  TopicDescriptor desc;
+  desc.name = "sl_ec_idem";
+  desc.schema_id = 0;
+  auto topic_id = *writer.register_topic(ds, desc);
+
+  auto fid1 = writer.ensure_column(topic_id, "x", pj::PrimitiveType::kFloat64);
+  ASSERT_TRUE(fid1.has_value());
+  EXPECT_EQ(*fid1, 0u);
+
+  auto fid2 = writer.ensure_column(topic_id, "x", pj::PrimitiveType::kFloat64);
+  ASSERT_TRUE(fid2.has_value());
+  EXPECT_EQ(*fid2, 0u);  // same field id — idempotent
+
+  auto handle = *writer.bind_topic_writer(topic_id);
+  EXPECT_EQ(handle.field_ids.size(), 1u);  // no duplicate
+}
+
+TEST(ArrayExpansionTest, Schemaless_EnsureColumn_MultipleColumns_WriteAndRead) {
+  DataEngine engine;
+  DatasetId ds = *engine.create_dataset(pj::DatasetDescriptor{.source_name = "t"});
+  DataWriter writer = engine.create_writer();
+
+  TopicDescriptor desc;
+  desc.name = "sl_ec_multi";
+  desc.schema_id = 0;
+  auto topic_id = *writer.register_topic(ds, desc);
+
+  EXPECT_EQ(*writer.ensure_column(topic_id, "x", pj::PrimitiveType::kFloat64), 0u);
+  EXPECT_EQ(*writer.ensure_column(topic_id, "y", pj::PrimitiveType::kFloat64), 1u);
+  EXPECT_EQ(*writer.ensure_column(topic_id, "z", pj::PrimitiveType::kFloat32), 2u);
+
+  auto handle = *writer.bind_topic_writer(topic_id);
+  ASSERT_EQ(handle.field_ids.size(), 3u);
+
+  ASSERT_TRUE(writer.begin_row(topic_id, 1000).has_value());
+  writer.set_float64(topic_id, 0, 1.0);
+  writer.set_float64(topic_id, 1, 2.0);
+  writer.set_float32(topic_id, 2, 3.0f);
+  ASSERT_TRUE(writer.finish_row(topic_id).has_value());
+  engine.commit_chunks(writer.flush_all());
+
+  DataReader reader = engine.create_reader();
+  auto cursor = *reader.range_query(QueryRange{.topic_id = topic_id, .t_min = 0, .t_max = 2000});
+  bool visited = false;
+  cursor.for_each([&](const SampleRow& row) {
+    EXPECT_NEAR(row.chunk->read_numeric_as_double(0, row.row_index), 1.0, 1e-9);
+    EXPECT_NEAR(row.chunk->read_numeric_as_double(1, row.row_index), 2.0, 1e-9);
+    EXPECT_NEAR(row.chunk->read_numeric_as_double(2, row.row_index), 3.0, 1e-4);
+    visited = true;
+  });
+  EXPECT_TRUE(visited);
+}
+
+TEST(ArrayExpansionTest, Schemaless_EnsureColumn_SecondWriter_PicksUpLayout) {
+  DataEngine engine;
+  DatasetId ds = *engine.create_dataset(pj::DatasetDescriptor{.source_name = "t"});
+  DataWriter writerA = engine.create_writer();
+
+  TopicDescriptor desc;
+  desc.name = "sl_ec_second_writer";
+  desc.schema_id = 0;
+  auto topic_id = *writerA.register_topic(ds, desc);
+
+  ASSERT_TRUE(writerA.ensure_column(topic_id, "v", pj::PrimitiveType::kFloat64).has_value());
+  ASSERT_TRUE(writerA.begin_row(topic_id, 1000).has_value());
+  writerA.set_float64(topic_id, 0, 99.0);
+  ASSERT_TRUE(writerA.finish_row(topic_id).has_value());
+  engine.commit_chunks(writerA.flush_all());
+
+  DataWriter writerB = engine.create_writer();
+  auto handle = writerB.bind_topic_writer(topic_id);
+  ASSERT_TRUE(handle.has_value()) << handle.error();
+  ASSERT_EQ(handle->field_ids.size(), 1u);
+  EXPECT_EQ(*writerB.resolve_field(topic_id, "v"), 0u);
+}
+
+TEST(ArrayExpansionTest, Schemaless_EnsureColumn_WhileRowInProgress_ReturnsError) {
+  DataEngine engine;
+  DatasetId ds = *engine.create_dataset(pj::DatasetDescriptor{.source_name = "t"});
+  DataWriter writer = engine.create_writer();
+
+  TopicDescriptor desc;
+  desc.name = "sl_ec_row_progress";
+  desc.schema_id = 0;
+  auto topic_id = *writer.register_topic(ds, desc);
+
+  ASSERT_TRUE(writer.ensure_column(topic_id, "x", pj::PrimitiveType::kFloat64).has_value());
+  ASSERT_TRUE(writer.begin_row(topic_id, 1000).has_value());
+
+  auto result = writer.ensure_column(topic_id, "y", pj::PrimitiveType::kFloat64);
+  EXPECT_FALSE(result.has_value()) << "ensure_column must fail while a row is in progress";
+
+  ASSERT_TRUE(writer.finish_row(topic_id).has_value());
+
+  // After finishing the row, ensure_column should succeed
+  auto result2 = writer.ensure_column(topic_id, "y", pj::PrimitiveType::kFloat64);
+  EXPECT_TRUE(result2.has_value());
+}
+
+// ─────────────────────────────────────────────────────────────────
+// Group B: schemaless expand_array
+// ─────────────────────────────────────────────────────────────────
+
+TEST(ArrayExpansionTest, Schemaless_ExpandArray_AddsColumns) {
+  DataEngine engine;
+  DatasetId ds = *engine.create_dataset(pj::DatasetDescriptor{.source_name = "t"});
+  DataWriter writer = engine.create_writer();
+
+  TopicDescriptor desc;
+  desc.name = "sl_ea_add";
+  desc.schema_id = 0;
+  auto topic_id = *writer.register_topic(ds, desc);
+
+  auto result = writer.expand_array(topic_id, "data", 3u, pj::PrimitiveType::kFloat64);
+  ASSERT_TRUE(result.has_value()) << result.error();
+  EXPECT_EQ(*result, 3u);
+
+  auto handle = *writer.bind_topic_writer(topic_id);
+  ASSERT_EQ(handle.field_ids.size(), 3u);
+  EXPECT_EQ(*writer.resolve_field(topic_id, "data[0]"), 0u);
+  EXPECT_EQ(*writer.resolve_field(topic_id, "data[1]"), 1u);
+  EXPECT_EQ(*writer.resolve_field(topic_id, "data[2]"), 2u);
+}
+
+TEST(ArrayExpansionTest, Schemaless_ExpandArray_IncrementalExpansion) {
+  DataEngine engine;
+  DatasetId ds = *engine.create_dataset(pj::DatasetDescriptor{.source_name = "t"});
+  DataWriter writer = engine.create_writer();
+
+  TopicDescriptor desc;
+  desc.name = "sl_ea_incremental";
+  desc.schema_id = 0;
+  auto topic_id = *writer.register_topic(ds, desc);
+
+  auto r1 = writer.expand_array(topic_id, "data", 2u, pj::PrimitiveType::kFloat64);
+  ASSERT_TRUE(r1.has_value()) << r1.error();
+  EXPECT_EQ(*r1, 2u);
+
+  ASSERT_TRUE(writer.begin_row(topic_id, 1000).has_value());
+  writer.set_float64(topic_id, 0, 1.0);
+  writer.set_float64(topic_id, 1, 2.0);
+  ASSERT_TRUE(writer.finish_row(topic_id).has_value());
+  engine.commit_chunks(writer.flush_all());
+
+  auto r2 = writer.expand_array(topic_id, "data", 5u, pj::PrimitiveType::kFloat64);
+  ASSERT_TRUE(r2.has_value()) << r2.error();
+  EXPECT_EQ(*r2, 5u);
+
+  ASSERT_TRUE(writer.begin_row(topic_id, 2000).has_value());
+  writer.set_float64(topic_id, 0, 10.0);
+  writer.set_float64(topic_id, 1, 20.0);
+  writer.set_float64(topic_id, 2, 30.0);
+  writer.set_float64(topic_id, 3, 40.0);
+  writer.set_float64(topic_id, 4, 50.0);
+  ASSERT_TRUE(writer.finish_row(topic_id).has_value());
+  engine.commit_chunks(writer.flush_all());
+
+  const TopicStorage* storage = engine.get_topic_storage(topic_id);
+  ASSERT_NE(storage, nullptr);
+  ASSERT_GE(storage->sealed_chunks().size(), 2u);
+  EXPECT_EQ(storage->sealed_chunks().back().column_descriptors.size(), 5u);
+}
+
+TEST(ArrayExpansionTest, Schemaless_ExpandArray_Idempotent_ShrinkIsNoop) {
+  DataEngine engine;
+  DatasetId ds = *engine.create_dataset(pj::DatasetDescriptor{.source_name = "t"});
+  DataWriter writer = engine.create_writer();
+
+  TopicDescriptor desc;
+  desc.name = "sl_ea_idem";
+  desc.schema_id = 0;
+  auto topic_id = *writer.register_topic(ds, desc);
+
+  EXPECT_EQ(*writer.expand_array(topic_id, "data", 3u, pj::PrimitiveType::kFloat64), 3u);
+  EXPECT_EQ(*writer.expand_array(topic_id, "data", 3u, pj::PrimitiveType::kFloat64), 3u);
+  EXPECT_EQ(*writer.expand_array(topic_id, "data", 1u, pj::PrimitiveType::kFloat64), 3u);
+
+  EXPECT_EQ(writer.bind_topic_writer(topic_id)->field_ids.size(), 3u);
+}
+
+TEST(ArrayExpansionTest, Schemaless_ExpandArray_DefaultType_IsFloat64) {
+  DataEngine engine;
+  DatasetId ds = *engine.create_dataset(pj::DatasetDescriptor{.source_name = "t"});
+  DataWriter writer = engine.create_writer();
+
+  TopicDescriptor desc;
+  desc.name = "sl_ea_default_type";
+  desc.schema_id = 0;
+  auto topic_id = *writer.register_topic(ds, desc);
+
+  // No element_type arg — default is kFloat64
+  auto result = writer.expand_array(topic_id, "data", 2u);
+  ASSERT_TRUE(result.has_value()) << result.error();
+
+  const TopicStorage* storage = engine.get_topic_storage(topic_id);
+  ASSERT_NE(storage, nullptr);
+  const auto& cols = storage->column_descriptors();
+  ASSERT_EQ(cols.size(), 2u);
+  EXPECT_EQ(cols[0].logical_type, pj::PrimitiveType::kFloat64);
+  EXPECT_EQ(cols[1].logical_type, pj::PrimitiveType::kFloat64);
+}
+
+// ─────────────────────────────────────────────────────────────────
+// Group C: mixed usage
+// ─────────────────────────────────────────────────────────────────
+
+TEST(ArrayExpansionTest, Mixed_EnsureColumnThenExpandArray_NoConflict) {
+  DataEngine engine;
+  DatasetId ds = *engine.create_dataset(pj::DatasetDescriptor{.source_name = "t"});
+  DataWriter writer = engine.create_writer();
+
+  TopicDescriptor desc;
+  desc.name = "mixed_ec_ea";
+  desc.schema_id = 0;
+  auto topic_id = *writer.register_topic(ds, desc);
+
+  // Pre-add data[0] via ensure_column
+  auto fid0 = writer.ensure_column(topic_id, "data[0]", pj::PrimitiveType::kFloat64);
+  ASSERT_TRUE(fid0.has_value());
+  EXPECT_EQ(*fid0, 0u);
+
+  // expand_array sees data[0] already exists, adds data[1] and data[2]
+  auto result = writer.expand_array(topic_id, "data", 3u, pj::PrimitiveType::kFloat64);
+  ASSERT_TRUE(result.has_value()) << result.error();
+  EXPECT_EQ(*result, 3u);
+
+  auto handle = *writer.bind_topic_writer(topic_id);
+  EXPECT_EQ(handle.field_ids.size(), 3u);  // exactly 3, no duplicates
+  EXPECT_EQ(*writer.resolve_field(topic_id, "data[0]"), 0u);
+  EXPECT_EQ(*writer.resolve_field(topic_id, "data[1]"), 1u);
+  EXPECT_EQ(*writer.resolve_field(topic_id, "data[2]"), 2u);
+}
+
+TEST(ArrayExpansionTest, Mixed_ExpandArrayThenEnsureColumn_NoConflict) {
+  DataEngine engine;
+  DatasetId ds = *engine.create_dataset(pj::DatasetDescriptor{.source_name = "t"});
+  DataWriter writer = engine.create_writer();
+
+  TopicDescriptor desc;
+  desc.name = "mixed_ea_ec";
+  desc.schema_id = 0;
+  auto topic_id = *writer.register_topic(ds, desc);
+
+  auto r = writer.expand_array(topic_id, "data", 2u, pj::PrimitiveType::kFloat64);
+  ASSERT_TRUE(r.has_value()) << r.error();
+  EXPECT_EQ(*r, 2u);
+
+  // data[0] already exists — should be no-op, returns existing field id
+  auto fid0 = writer.ensure_column(topic_id, "data[0]", pj::PrimitiveType::kFloat64);
+  ASSERT_TRUE(fid0.has_value());
+  EXPECT_EQ(*fid0, 0u);
+
+  // extra column not part of array
+  auto fid_extra = writer.ensure_column(topic_id, "extra", pj::PrimitiveType::kFloat32);
+  ASSERT_TRUE(fid_extra.has_value());
+  EXPECT_EQ(*fid_extra, 2u);  // new column at index 2
+
+  auto handle = *writer.bind_topic_writer(topic_id);
+  EXPECT_EQ(handle.field_ids.size(), 3u);  // data[0], data[1], extra
+}
+
+// ─────────────────────────────────────────────────────────────────
+// Group D: typed topic with ensure_column
+// ─────────────────────────────────────────────────────────────────
+
+TEST(ArrayExpansionTest, Typed_EnsureColumn_AddsColumnOutsideSchema) {
+  DataEngine engine;
+  DatasetId ds = *engine.create_dataset(pj::DatasetDescriptor{.source_name = "t"});
+  DataWriter writer = engine.create_writer();
+
+  auto root = pj::make_struct("msg", {pj::make_primitive("x", pj::PrimitiveType::kFloat64)});
+  auto sid = *writer.register_schema("typed_ensure", root);
+
+  TopicDescriptor desc;
+  desc.name = "typed_ensure_topic";
+  desc.schema_id = sid;
+  auto topic_id = *writer.register_topic(ds, desc);
+
+  // Schema gives field "x" at id=0
+  EXPECT_EQ(*writer.resolve_field(topic_id, "x"), 0u);
+
+  // Add an extra column outside the schema
+  auto fid = writer.ensure_column(topic_id, "debug_extra", pj::PrimitiveType::kFloat64);
+  ASSERT_TRUE(fid.has_value()) << fid.error();
+  EXPECT_EQ(*fid, 1u);
+
+  auto handle = *writer.bind_topic_writer(topic_id);
+  ASSERT_EQ(handle.field_ids.size(), 2u);
+
+  ASSERT_TRUE(writer.begin_row(topic_id, 1000).has_value());
+  writer.set_float64(topic_id, 0, 1.0);
+  writer.set_float64(topic_id, 1, 2.0);
+  ASSERT_TRUE(writer.finish_row(topic_id).has_value());
+  engine.commit_chunks(writer.flush_all());
+
+  DataReader reader = engine.create_reader();
+  auto cursor = *reader.range_query(QueryRange{.topic_id = topic_id, .t_min = 0, .t_max = 2000});
+  bool visited = false;
+  cursor.for_each([&](const SampleRow& row) {
+    EXPECT_NEAR(row.chunk->read_numeric_as_double(0, row.row_index), 1.0, 1e-9);
+    EXPECT_NEAR(row.chunk->read_numeric_as_double(1, row.row_index), 2.0, 1e-9);
+    visited = true;
+  });
+  EXPECT_TRUE(visited);
+}
+
 }  // namespace
