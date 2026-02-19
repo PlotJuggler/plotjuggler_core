@@ -28,12 +28,13 @@ std::shared_ptr<TypeTreeNode> make_robot_pose() {
       .name = "rotation",
       .kind = TypeKind::kStruct,
       .semantic_tags = {"quaternion"},
-      .children = {
-          make_primitive("w", PrimitiveType::kFloat32),
-          make_primitive("x", PrimitiveType::kFloat32),
-          make_primitive("y", PrimitiveType::kFloat32),
-          make_primitive("z", PrimitiveType::kFloat32),
-      },
+      .children =
+          {
+              make_primitive("w", PrimitiveType::kFloat32),
+              make_primitive("x", PrimitiveType::kFloat32),
+              make_primitive("y", PrimitiveType::kFloat32),
+              make_primitive("z", PrimitiveType::kFloat32),
+          },
   });
 
   return make_struct(

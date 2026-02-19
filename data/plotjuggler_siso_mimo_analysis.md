@@ -220,4 +220,3 @@ In short: PlotJuggler's core is MIMO-capable, but its two Lua paths target diffe
 
 - Custom Function Editor: convenient MISO derivations.
 - Reactive Script Editor: dynamic multi-series orchestration (MIMO-style behavior).
-

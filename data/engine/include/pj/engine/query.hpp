@@ -83,7 +83,6 @@ class RangeCursor {
 [[nodiscard]] std::optional<SampleRow> latest_at(const std::deque<TopicChunk>& chunks, pj::Timestamp t);
 
 // Create a range cursor
-[[nodiscard]] RangeCursor range_query(
-    const std::deque<TopicChunk>& chunks, pj::Timestamp t_min, pj::Timestamp t_max);
+[[nodiscard]] RangeCursor range_query(const std::deque<TopicChunk>& chunks, pj::Timestamp t_min, pj::Timestamp t_max);
 
 }  // namespace pj::engine

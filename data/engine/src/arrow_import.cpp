@@ -10,11 +10,11 @@
 #include <vector>
 
 #include "absl/strings/str_cat.h"
-#include "pj/base/expected.hpp"
-#include "pj/base/span.hpp"
 #include "nanoarrow/nanoarrow.h"
 #include "nanoarrow/nanoarrow.hpp"
 #include "nanoarrow/nanoarrow_ipc.h"
+#include "pj/base/expected.hpp"
+#include "pj/base/span.hpp"
 #include "pj/base/type_tree.hpp"
 #include "pj/base/types.hpp"
 #include "pj/engine/column_buffer.hpp"
@@ -378,8 +378,7 @@ pj::Status import_ipc_stream(
 
     for (const auto& mapping : mappings) {
       if (mapping.arrow_column_index >= static_cast<int>(array_view->n_children)) {
-        return pj::unexpected(
-            absl::StrCat("Arrow column index ", mapping.arrow_column_index, " out of range"));
+        return pj::unexpected(absl::StrCat("Arrow column index ", mapping.arrow_column_index, " out of range"));
       }
       col_buffers.push_back(
           make_column_data_nanoarrow(array_view->children[mapping.arrow_column_index], mapping, num_rows));

@@ -3,8 +3,8 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
-#include <type_traits>
 #include <span>
+#include <type_traits>
 #include <vector>
 
 #include "pj/base/assert.hpp"

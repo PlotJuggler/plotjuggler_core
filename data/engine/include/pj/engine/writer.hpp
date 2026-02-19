@@ -56,7 +56,7 @@ struct ColumnData {
       pj::Span<const int64_t>,   // kInt64
       pj::Span<const uint64_t>,  // kUint64
       pj::Span<const uint8_t>,   // kBool (one byte per bool)
-      StringData                  // kString
+      StringData                 // kString
       >;
 
   Data data;
@@ -90,8 +90,7 @@ struct ColumnData {
     return {col, Data{values}, validity};
   }
   static ColumnData String(
-      std::size_t col, pj::Span<const uint32_t> offsets, pj::Span<const char> str_data,
-      pj::BitSpan validity = {}) {
+      std::size_t col, pj::Span<const uint32_t> offsets, pj::Span<const char> str_data, pj::BitSpan validity = {}) {
     return {col, Data{StringData{offsets, str_data}}, validity};
   }
 };

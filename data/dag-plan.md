@@ -16,7 +16,7 @@ Typycal function that we want to implement:
 **MIMO (Multi input, multi output)**:
 
 1. Quaternion -> RPY, has 4 input and 3 outputs
-2. Copy value based on State variable: 2 inputs , one with value and the other a string or enum. 
+2. Copy value based on State variable: 2 inputs , one with value and the other a string or enum.
    Value goes into the output only if the state is equal to a reference.
 
 We need the concept of InputRow and OutputRow, being both potentially sparse.

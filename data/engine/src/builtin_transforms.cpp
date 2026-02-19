@@ -16,16 +16,18 @@ StorageKind DerivativeTransform::output_kind(StorageKind /*input_kind*/) const {
   return StorageKind::kFloat64;
 }
 
-bool DerivativeTransform::calculate(pj::Timestamp time, const VarValue& input,
-                                     pj::Timestamp& out_time, VarValue& out_value) {
+bool DerivativeTransform::calculate(
+    pj::Timestamp time, const VarValue& input, pj::Timestamp& out_time, VarValue& out_value) {
   // Input is decoded as VarValue{double} because output_kind() → kFloat64 and
   // the engine widens all numeric inputs to double for float64 output columns.
   double v = std::visit(
       [](const auto& val) -> double {
         using T = std::decay_t<decltype(val)>;
-        if constexpr (std::is_same_v<T, std::string>) return 0.0;
-        else
+        if constexpr (std::is_same_v<T, std::string>) {
+          return 0.0;
+        } else {
           return static_cast<double>(val);
+        }
       },
       input);
 
