@@ -563,5 +563,379 @@ TEST(DerivedEngineTest, AddTransform_NoCommittedChunks_Succeeds) {
   EXPECT_TRUE(result.has_value()) << "Expected success, got: " << (result.has_value() ? "" : result.error());
 }
 
+// ---------------------------------------------------------------------------
+// MIMO transform helpers
+// ---------------------------------------------------------------------------
+
+// SumMimoTransform: N inputs → 1 output (sum of all inputs as double).
+class SumMimoTransform : public IMIMOTransform {
+ public:
+  std::vector<StorageKind> output_kinds(pj::Span<const StorageKind> /*input_kinds*/) const override {
+    return {StorageKind::kFloat64};
+  }
+
+  bool calculate(pj::Timestamp time, pj::Span<const VarValue> inputs, pj::Timestamp& out_time,
+                 std::vector<VarValue>& output) override {
+    out_time = time;
+    double sum = 0.0;
+    for (const auto& v : inputs) {
+      sum += std::get<double>(v);
+    }
+    output[0] = sum;
+    return true;
+  }
+};
+
+// DiffMimoTransform: 2 inputs → 1 output (inputs[0] - inputs[1]).
+class DiffMimoTransform : public IMIMOTransform {
+ public:
+  std::vector<StorageKind> output_kinds(pj::Span<const StorageKind> /*input_kinds*/) const override {
+    return {StorageKind::kFloat64};
+  }
+
+  bool calculate(pj::Timestamp time, pj::Span<const VarValue> inputs, pj::Timestamp& out_time,
+                 std::vector<VarValue>& output) override {
+    out_time = time;
+    output[0] = std::get<double>(inputs[0]) - std::get<double>(inputs[1]);
+    return true;
+  }
+};
+
+// Collect (timestamp, value) pairs for a given column index.
+static std::vector<std::pair<pj::Timestamp, double>> collect_rows_col(
+    DataEngine& engine, pj::TopicId topic_id, std::size_t col = 0) {
+  const TopicStorage* storage = engine.get_topic_storage(topic_id);
+  if (!storage) return {};
+  std::vector<std::pair<pj::Timestamp, double>> out;
+  auto cursor = range_query(storage->sealed_chunks(), 0, std::numeric_limits<pj::Timestamp>::max());
+  cursor.for_each([&](const SampleRow& row) {
+    out.emplace_back(row.timestamp, row.chunk->read_numeric_as_double(col, row.row_index));
+  });
+  return out;
+}
+
+// ---------------------------------------------------------------------------
+// MIMO — add_mimo_transform: basic registration
+// ---------------------------------------------------------------------------
+
+TEST(MimoTransformTest, AddMimo_CreatesOutputTopic) {
+  DataEngine engine;
+  DerivedEngine derived(engine);
+  pj::DatasetId ds = make_dataset(engine);
+
+  pj::TopicId t1 = make_linear_topic(engine, ds, 1.0, 5);
+  pj::TopicId t2 = make_linear_topic(engine, ds, 2.0, 5);
+
+  auto node_or = derived.add_mimo_transform({t1, t2}, {"sum_out"}, ds, std::make_unique<SumMimoTransform>());
+  ASSERT_TRUE(node_or.has_value()) << node_or.error();
+
+  pj::NodeId node = *node_or;
+  EXPECT_TRUE(derived.has_node(node));
+  auto outs = derived.output_topics(node);
+  ASSERT_EQ(outs.size(), 1u);
+  EXPECT_NE(engine.get_topic_storage(outs[0]), nullptr);
+}
+
+TEST(MimoTransformTest, AddMimo_UnknownInputTopic_Fails) {
+  DataEngine engine;
+  DerivedEngine derived(engine);
+  pj::DatasetId ds = make_dataset(engine);
+
+  auto r = derived.add_mimo_transform({9999u}, {"out"}, ds, std::make_unique<SumMimoTransform>());
+  EXPECT_FALSE(r.has_value());
+}
+
+TEST(MimoTransformTest, AddMimo_DuplicateOutputName_Fails) {
+  DataEngine engine;
+  DerivedEngine derived(engine);
+  pj::DatasetId ds = make_dataset(engine);
+
+  pj::TopicId t1 = make_linear_topic(engine, ds, 1.0, 5);
+  pj::TopicId t2 = make_linear_topic(engine, ds, 2.0, 5);
+
+  ASSERT_TRUE(derived.add_mimo_transform({t1, t2}, {"dup"}, ds, std::make_unique<SumMimoTransform>()).has_value());
+  // Same output name in same dataset must fail.
+  auto r = derived.add_mimo_transform({t1, t2}, {"dup"}, ds, std::make_unique<SumMimoTransform>());
+  EXPECT_FALSE(r.has_value());
+}
+
+TEST(MimoTransformTest, AddMimo_MultipleOutputTopics) {
+  DataEngine engine;
+  DerivedEngine derived(engine);
+  pj::DatasetId ds = make_dataset(engine);
+
+  pj::TopicId t1 = make_linear_topic(engine, ds, 1.0, 5);
+  pj::TopicId t2 = make_linear_topic(engine, ds, 2.0, 5);
+
+  // DiffMimoTransform produces 1 output; use two separate nodes for two outputs.
+  auto node_or = derived.add_mimo_transform({t1, t2}, {"diff_out"}, ds, std::make_unique<DiffMimoTransform>());
+  ASSERT_TRUE(node_or.has_value()) << node_or.error();
+  ASSERT_EQ(derived.output_topics(*node_or).size(), 1u);
+}
+
+// ---------------------------------------------------------------------------
+// MIMO — join semantics (inner join on exact timestamps)
+// ---------------------------------------------------------------------------
+
+TEST(MimoTransformTest, JoinSemantics_OnlyMatchingTimestamps) {
+  // Topic A: t=0,1,2,3,4 s (all 5 timestamps)
+  // Topic B: t=0,2,4 s     (3 timestamps, a subset)
+  // Sum at t=0: 0+0=0, t=2: 2+4=6, t=4: 4+8=12
+  // t=1 and t=3 are in A but not B → no output row.
+  DataEngine engine;
+  DerivedEngine derived(engine);
+  pj::DatasetId ds = make_dataset(engine);
+
+  // Topic A: t = 0,1,2,3,4 s, value = i seconds
+  pj::TopicId ta;
+  {
+    DataWriter w = engine.create_writer();
+    auto h = *w.register_scalar_series(ds, "a", pj::NumericType::kFloat64);
+    ta = h.topic_id;
+    for (int i = 0; i < 5; ++i) {
+      w.append_scalar(h, static_cast<pj::Timestamp>(i) * 1'000'000'000LL, static_cast<double>(i));
+    }
+    engine.commit_chunks(w.flush_all());
+  }
+
+  // Topic B: t = 0,2,4 s, value = 0,4,8
+  pj::TopicId tb;
+  {
+    DataWriter w = engine.create_writer();
+    auto h = *w.register_scalar_series(ds, "b", pj::NumericType::kFloat64);
+    tb = h.topic_id;
+    for (int i = 0; i < 3; ++i) {
+      w.append_scalar(h, static_cast<pj::Timestamp>(i * 2) * 1'000'000'000LL, static_cast<double>(i * 2 * 2));
+    }
+    engine.commit_chunks(w.flush_all());
+  }
+
+  auto node_or = derived.add_mimo_transform({ta, tb}, {"sum"}, ds, std::make_unique<SumMimoTransform>());
+  ASSERT_TRUE(node_or.has_value()) << node_or.error();
+
+  notify(derived, {ta, tb});
+  ASSERT_TRUE(derived.schedule().has_value());
+
+  auto rows = collect_rows_col(engine, derived.output_topics(*node_or)[0]);
+  ASSERT_EQ(rows.size(), 3u);  // only t=0,2,4 produce output
+  EXPECT_NEAR(rows[0].second, 0.0, 1e-9);   // 0+0
+  EXPECT_NEAR(rows[1].second, 6.0, 1e-9);   // 2+4
+  EXPECT_NEAR(rows[2].second, 12.0, 1e-9);  // 4+8
+}
+
+TEST(MimoTransformTest, JoinSemantics_NoCommonTimestamps_NoOutput) {
+  // A: t=0,1 s;  B: t=2,3 s → no overlap → no output rows
+  DataEngine engine;
+  DerivedEngine derived(engine);
+  pj::DatasetId ds = make_dataset(engine);
+
+  pj::TopicId ta;
+  {
+    DataWriter w = engine.create_writer();
+    auto h = *w.register_scalar_series(ds, "a2", pj::NumericType::kFloat64);
+    ta = h.topic_id;
+    for (int i = 0; i < 2; ++i) {
+      w.append_scalar(h, static_cast<pj::Timestamp>(i) * 1'000'000'000LL, static_cast<double>(i));
+    }
+    engine.commit_chunks(w.flush_all());
+  }
+  pj::TopicId tb;
+  {
+    DataWriter w = engine.create_writer();
+    auto h = *w.register_scalar_series(ds, "b2", pj::NumericType::kFloat64);
+    tb = h.topic_id;
+    for (int i = 2; i < 4; ++i) {
+      w.append_scalar(h, static_cast<pj::Timestamp>(i) * 1'000'000'000LL, static_cast<double>(i));
+    }
+    engine.commit_chunks(w.flush_all());
+  }
+
+  auto node_or = derived.add_mimo_transform({ta, tb}, {"sum"}, ds, std::make_unique<SumMimoTransform>());
+  ASSERT_TRUE(node_or.has_value()) << node_or.error();
+  notify(derived, {ta, tb});
+  ASSERT_TRUE(derived.schedule().has_value());
+
+  EXPECT_TRUE(collect_values(engine, derived.output_topics(*node_or)[0]).empty());
+}
+
+// ---------------------------------------------------------------------------
+// MIMO — schedule (incremental)
+// ---------------------------------------------------------------------------
+
+TEST(MimoTransformTest, Schedule_ProducesCorrectSum) {
+  // Two topics with the same timestamps (0,1,2,...,9 seconds).
+  // A[i] = 1.0 * i, B[i] = 2.0 * i. Sum[i] = 3.0 * i.
+  DataEngine engine;
+  DerivedEngine derived(engine);
+  pj::DatasetId ds = make_dataset(engine);
+
+  pj::TopicId t1 = make_linear_topic(engine, ds, 1.0, 10);
+  pj::TopicId t2 = make_linear_topic(engine, ds, 2.0, 10);
+
+  auto node_or = derived.add_mimo_transform({t1, t2}, {"sum"}, ds, std::make_unique<SumMimoTransform>());
+  ASSERT_TRUE(node_or.has_value()) << node_or.error();
+  pj::TopicId out = derived.output_topics(*node_or)[0];
+
+  notify(derived, {t1, t2});
+  ASSERT_TRUE(derived.schedule().has_value());
+
+  auto rows = collect_rows_col(engine, out);
+  ASSERT_EQ(rows.size(), 10u);
+  for (int i = 0; i < 10; ++i) {
+    double expected = 3.0 * static_cast<double>(i);  // (1.0 + 2.0) * i
+    EXPECT_NEAR(rows[i].second, expected, 1e-9) << "row " << i;
+  }
+}
+
+TEST(MimoTransformTest, Schedule_IncrementalTwoChunks) {
+  DataEngine engine;
+  DerivedEngine derived(engine);
+  pj::DatasetId ds = make_dataset(engine);
+
+  pj::TopicId t1 = make_linear_topic(engine, ds, 1.0, 10);
+  pj::TopicId t2 = make_linear_topic(engine, ds, 2.0, 10);
+
+  auto node_or = derived.add_mimo_transform({t1, t2}, {"sum"}, ds, std::make_unique<SumMimoTransform>());
+  ASSERT_TRUE(node_or.has_value()) << node_or.error();
+  pj::TopicId out = derived.output_topics(*node_or)[0];
+
+  notify(derived, {t1, t2});
+  ASSERT_TRUE(derived.schedule().has_value());
+  std::size_t after_first = collect_values(engine, out).size();
+  EXPECT_EQ(after_first, 10u);
+
+  // Second batch of data
+  append_linear_rows(engine, t1, 1.0, 10, 10);
+  append_linear_rows(engine, t2, 2.0, 10, 10);
+  notify(derived, {t1, t2});
+  ASSERT_TRUE(derived.schedule().has_value());
+
+  std::size_t after_second = collect_values(engine, out).size();
+  EXPECT_EQ(after_second, 20u);
+}
+
+// ---------------------------------------------------------------------------
+// MIMO — recompute_batch + parity
+// ---------------------------------------------------------------------------
+
+TEST(MimoTransformTest, Parity_IncrementalMatchesBatch_SingleChunk) {
+  DataEngine engine;
+  DerivedEngine derived(engine);
+  pj::DatasetId ds = make_dataset(engine);
+
+  pj::TopicId t1 = make_linear_topic(engine, ds, 1.0, 10);
+  pj::TopicId t2 = make_linear_topic(engine, ds, 3.0, 10);
+
+  auto node_or = derived.add_mimo_transform({t1, t2}, {"sum"}, ds, std::make_unique<SumMimoTransform>());
+  ASSERT_TRUE(node_or.has_value()) << node_or.error();
+  pj::NodeId node = *node_or;
+  pj::TopicId out = derived.output_topics(node)[0];
+
+  notify(derived, {t1, t2});
+  ASSERT_TRUE(derived.schedule().has_value());
+  auto incremental = collect_values(engine, out);
+
+  ASSERT_TRUE(derived.recompute_batch(node).has_value());
+  auto batch = collect_values(engine, out);
+
+  ASSERT_EQ(incremental.size(), batch.size());
+  for (std::size_t i = 0; i < batch.size(); ++i) {
+    EXPECT_NEAR(incremental[i], batch[i], 1e-9) << "mismatch at row " << i;
+  }
+}
+
+TEST(MimoTransformTest, Parity_IncrementalMatchesBatch_MultipleChunks) {
+  DataEngine engine;
+  DerivedEngine derived(engine);
+  pj::DatasetId ds = make_dataset(engine);
+
+  pj::TopicId t1 = make_linear_topic(engine, ds, 1.0, 10);
+  pj::TopicId t2 = make_linear_topic(engine, ds, 2.0, 10);
+
+  auto node_or = derived.add_mimo_transform({t1, t2}, {"sum"}, ds, std::make_unique<SumMimoTransform>());
+  ASSERT_TRUE(node_or.has_value()) << node_or.error();
+  pj::NodeId node = *node_or;
+  pj::TopicId out = derived.output_topics(node)[0];
+
+  notify(derived, {t1, t2});
+  ASSERT_TRUE(derived.schedule().has_value());
+
+  append_linear_rows(engine, t1, 1.0, 10, 10);
+  append_linear_rows(engine, t2, 2.0, 10, 10);
+  notify(derived, {t1, t2});
+  ASSERT_TRUE(derived.schedule().has_value());
+
+  auto incremental = collect_values(engine, out);
+
+  ASSERT_TRUE(derived.recompute_batch(node).has_value());
+  auto batch = collect_values(engine, out);
+
+  ASSERT_EQ(incremental.size(), batch.size());
+  for (std::size_t i = 0; i < batch.size(); ++i) {
+    EXPECT_NEAR(incremental[i], batch[i], 1e-9) << "mismatch at row " << i;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// MIMO — chained with SISO
+// ---------------------------------------------------------------------------
+
+TEST(MimoTransformTest, ChainedSisoThenMimo) {
+  // Compute derivative of two source series (SISO), then sum the derivatives (MIMO).
+  // src1: y = 2*t → dy/dt = 2.0
+  // src2: y = 3*t → dy/dt = 3.0
+  // MIMO sum = 5.0 for each output row.
+  DataEngine engine;
+  DerivedEngine derived(engine);
+  pj::DatasetId ds = make_dataset(engine);
+
+  pj::TopicId src1 = make_linear_topic(engine, ds, 2.0, 11);
+  pj::TopicId src2 = make_linear_topic(engine, ds, 3.0, 11);
+
+  pj::NodeId n1 = *derived.add_siso_transform(src1, "d1", ds, std::make_unique<DerivativeTransform>());
+  pj::NodeId n2 = *derived.add_siso_transform(src2, "d2", ds, std::make_unique<DerivativeTransform>());
+  pj::TopicId d1_out = derived.output_topics(n1)[0];
+  pj::TopicId d2_out = derived.output_topics(n2)[0];
+
+  auto node_or =
+      derived.add_mimo_transform({d1_out, d2_out}, {"sum_deriv"}, ds, std::make_unique<SumMimoTransform>());
+  ASSERT_TRUE(node_or.has_value()) << node_or.error();
+  pj::TopicId sum_out = derived.output_topics(*node_or)[0];
+
+  notify(derived, {src1, src2});
+  ASSERT_TRUE(derived.schedule().has_value());
+
+  auto vals = collect_values(engine, sum_out);
+  EXPECT_FALSE(vals.empty());
+  for (double v : vals) {
+    EXPECT_NEAR(v, 5.0, 1e-6);
+  }
+}
+
+TEST(MimoTransformTest, TopologicalOrder_MimoComesAfterSiso) {
+  // n1: src→d1, n2: src→d2, n_mimo: (d1,d2)→sum. Order: n1,n2 before n_mimo.
+  DataEngine engine;
+  DerivedEngine derived(engine);
+  pj::DatasetId ds = make_dataset(engine);
+
+  pj::TopicId src = make_linear_topic(engine, ds, 1.0, 5);
+  pj::NodeId n1 = *derived.add_siso_transform(src, "d1", ds, std::make_unique<DerivativeTransform>());
+  pj::NodeId n2 = *derived.add_siso_transform(src, "d2", ds, std::make_unique<DerivativeTransform>());
+  pj::TopicId d1_out = derived.output_topics(n1)[0];
+  pj::TopicId d2_out = derived.output_topics(n2)[0];
+
+  pj::NodeId n_mimo =
+      *derived.add_mimo_transform({d1_out, d2_out}, {"sum"}, ds, std::make_unique<SumMimoTransform>());
+
+  auto order = derived.topological_order();
+  ASSERT_EQ(order.size(), 3u);
+
+  auto pos = [&](pj::NodeId id) {
+    return static_cast<std::size_t>(std::find(order.begin(), order.end(), id) - order.begin());
+  };
+  EXPECT_LT(pos(n1), pos(n_mimo));
+  EXPECT_LT(pos(n2), pos(n_mimo));
+}
+
 }  // namespace
 }  // namespace pj::engine

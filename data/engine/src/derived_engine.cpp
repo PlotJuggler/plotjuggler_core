@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cassert>
+#include <limits>
 #include <queue>
 #include <string>
 #include <vector>
@@ -153,7 +154,8 @@ struct DerivedNode {
   std::vector<pj::TopicId> all_input_topic_ids;  // unified input list for all types
   std::vector<pj::TopicId> output_topic_ids;     // 1 for SISO, M for MIMO
   bool dirty = true;
-  pj::ChunkId last_processed_chunk_id = 0;  // 0 = never processed
+  pj::ChunkId last_processed_chunk_id = 0;                              // SISO: chunk watermark
+  pj::Timestamp mimo_last_ts = std::numeric_limits<pj::Timestamp>::min();  // MIMO: timestamp watermark
 
   // Reusable decode buffers (avoid per-row allocation)
   VarValue in_val_buf = 0.0;           // SISO input
@@ -358,13 +360,166 @@ pj::Expected<pj::NodeId> DerivedEngine::add_siso_transform(
 }
 
 // ---------------------------------------------------------------------------
-// add_mimo_transform (Phase 3 stub — validates inputs, returns unimplemented)
+// add_mimo_transform
 // ---------------------------------------------------------------------------
 
 pj::Expected<pj::NodeId> DerivedEngine::add_mimo_transform(
-    std::vector<pj::TopicId> /*input_topic_ids*/, std::vector<std::string> /*output_topic_names*/,
-    pj::DatasetId /*output_dataset_id*/, std::unique_ptr<IMIMOTransform> /*op*/) {
-  return pj::unexpected(std::string("add_mimo_transform: Phase 3 not yet implemented"));
+    std::vector<pj::TopicId> input_topic_ids, std::vector<std::string> output_topic_names,
+    pj::DatasetId output_dataset_id, std::unique_ptr<IMIMOTransform> op) {
+  if (input_topic_ids.empty()) {
+    return pj::unexpected(std::string("add_mimo_transform: requires at least one input topic"));
+  }
+  if (output_topic_names.empty()) {
+    return pj::unexpected(std::string("add_mimo_transform: requires at least one output topic name"));
+  }
+  if (!op) {
+    return pj::unexpected(std::string("add_mimo_transform: null transform op"));
+  }
+
+  // 1. Validate all inputs and determine their StorageKinds.
+  //    Same 3-tier fallback as add_siso_transform: type_registry → stored
+  //    column_descriptors → first sealed chunk.
+  std::vector<StorageKind> input_kinds;
+  input_kinds.reserve(input_topic_ids.size());
+
+  for (pj::TopicId tid : input_topic_ids) {
+    const TopicStorage* storage = engine_.get_topic_storage(tid);
+    if (!storage) {
+      return pj::unexpected(absl::StrCat("add_mimo_transform: input topic ", tid, " not found"));
+    }
+
+    pj::SchemaId schema_id = storage->descriptor().schema_id;
+    std::size_t num_cols = 0;
+    std::optional<pj::PrimitiveType> leaf_primitive;
+
+    if (schema_id != 0) {
+      const pj::TypeTreeNode* root = engine_.type_registry().lookup(schema_id);
+      if (root) {
+        num_cols = pj::count_leaf_fields(*root);
+        leaf_primitive = find_first_leaf(*root);
+      }
+    }
+    if (num_cols == 0) {
+      const auto& stored = storage->column_descriptors();
+      if (!stored.empty()) {
+        num_cols = stored.size();
+        leaf_primitive = stored[0].logical_type;
+      }
+    }
+    if (num_cols == 0) {
+      const auto& chunks = storage->sealed_chunks();
+      if (!chunks.empty() && !chunks[0].column_descriptors.empty()) {
+        num_cols = chunks[0].column_descriptors.size();
+        leaf_primitive = chunks[0].column_descriptors[0].logical_type;
+      }
+    }
+
+    if (num_cols == 0) {
+      return pj::unexpected(absl::StrCat(
+          "add_mimo_transform: cannot determine column layout for input topic ", tid));
+    }
+    if (num_cols != 1) {
+      return pj::unexpected(absl::StrCat(
+          "add_mimo_transform: MIMO requires single-column inputs; topic ", tid, " has ", num_cols, " columns"));
+    }
+    if (!leaf_primitive) {
+      return pj::unexpected(
+          absl::StrCat("add_mimo_transform: cannot determine primitive type for input topic ", tid));
+    }
+    input_kinds.push_back(storage_kind_of(*leaf_primitive));
+  }
+
+  // 2. Check output name uniqueness within dataset.
+  for (const auto& name : output_topic_names) {
+    auto key = std::make_pair(output_dataset_id, name);
+    if (impl_->registered_output_names.contains(key)) {
+      return pj::unexpected(absl::StrCat(
+          "add_mimo_transform: output topic '", name, "' already registered in dataset ", output_dataset_id));
+    }
+  }
+
+  // 3. Cycle detection.
+  {
+    std::string cycle_err = check_cycle(*impl_, input_topic_ids, {});
+    if (!cycle_err.empty()) {
+      return pj::unexpected(cycle_err);
+    }
+  }
+
+  // 4. Query output StorageKinds from the transform.
+  std::vector<StorageKind> output_kinds = op->output_kinds(pj::Span<const StorageKind>(input_kinds));
+  if (output_kinds.size() != output_topic_names.size()) {
+    return pj::unexpected(absl::StrCat(
+        "add_mimo_transform: op->output_kinds() returned ", output_kinds.size(), " kinds but ",
+        output_topic_names.size(), " output names provided"));
+  }
+
+  // 5. Create output schema (single "value" column) and topic for each output.
+  pj::NodeId node_id = next_node_id_++;
+  std::vector<pj::TopicId> out_topic_ids;
+  out_topic_ids.reserve(output_topic_names.size());
+
+  for (std::size_t k = 0; k < output_topic_names.size(); ++k) {
+    pj::PrimitiveType out_primitive = storage_kind_to_primitive(output_kinds[k]);
+    std::string schema_name = absl::StrCat("derived_mimo_", node_id, "_", k);
+    auto out_type_tree = pj::make_primitive("value", out_primitive);
+    auto out_schema_or = engine_.type_registry().register_or_get(schema_name, out_type_tree);
+    if (!out_schema_or.has_value()) {
+      return pj::unexpected(out_schema_or.error());
+    }
+    auto out_topic_or = engine_.create_topic(
+        output_dataset_id,
+        TopicDescriptor{
+            .name = output_topic_names[k], .schema_id = *out_schema_or, .dataset_id = output_dataset_id});
+    if (!out_topic_or.has_value()) {
+      return pj::unexpected(out_topic_or.error());
+    }
+    out_topic_ids.push_back(*out_topic_or);
+  }
+
+  // 6. Build and register the node.
+  DerivedNode node;
+  node.id = node_id;
+  node.is_mimo = true;
+  node.mimo_input_topic_ids = input_topic_ids;
+  node.mimo_input_kinds = std::move(input_kinds);
+  node.mimo_output_kinds = std::move(output_kinds);
+  node.mimo_op = std::move(op);
+  node.mimo_last_ts = std::numeric_limits<pj::Timestamp>::min();
+  node.all_input_topic_ids = std::move(input_topic_ids);
+  node.output_topic_ids = std::move(out_topic_ids);
+  node.dirty = true;
+
+  // Register output names for uniqueness enforcement.
+  for (std::size_t k = 0; k < output_topic_names.size(); ++k) {
+    impl_->registered_output_names[std::make_pair(output_dataset_id, output_topic_names[k])] =
+        node.output_topic_ids[k];
+  }
+
+  // Map input topics to this node (for dirty propagation via on_source_committed).
+  for (pj::TopicId in_tid : node.all_input_topic_ids) {
+    impl_->topic_to_nodes[in_tid].push_back(node_id);
+  }
+
+  // Map output topics to this node (for cycle detection of downstream nodes).
+  for (pj::TopicId out_tid : node.output_topic_ids) {
+    impl_->output_topic_to_node[out_tid] = node_id;
+  }
+
+  // Update downstream_of: if any input is produced by another derived node,
+  // record that node_id depends on the producer (deduplicated for multi-input).
+  for (pj::TopicId in_tid : node.all_input_topic_ids) {
+    auto prod_it = impl_->output_topic_to_node.find(in_tid);
+    if (prod_it != impl_->output_topic_to_node.end()) {
+      auto& list = impl_->downstream_of[prod_it->second];
+      if (std::find(list.begin(), list.end(), node_id) == list.end()) {
+        list.push_back(node_id);
+      }
+    }
+  }
+
+  impl_->nodes[node_id] = std::move(node);
+  return node_id;
 }
 
 // ---------------------------------------------------------------------------
@@ -551,6 +706,123 @@ static pj::Status run_siso_incremental(DerivedEngineImpl& /*impl*/, DataEngine& 
 }
 
 // ---------------------------------------------------------------------------
+// run_mimo_incremental
+// ---------------------------------------------------------------------------
+
+static pj::Status run_mimo_incremental(DerivedEngineImpl& /*impl*/, DataEngine& engine, DerivedNode& node) {
+  const std::size_t num_inputs = node.mimo_input_topic_ids.size();
+  if (num_inputs == 0) {
+    return pj::ok_status();
+  }
+
+  // 1. Collect (timestamp, chunk*, row_index) for each input topic,
+  //    only for rows strictly newer than the watermark.
+  struct SampleLoc {
+    pj::Timestamp ts;
+    const TopicChunk* chunk;
+    uint32_t row;
+  };
+  std::vector<std::vector<SampleLoc>> per_topic(num_inputs);
+
+  for (std::size_t i = 0; i < num_inputs; ++i) {
+    const TopicStorage* storage = engine.get_topic_storage(node.mimo_input_topic_ids[i]);
+    if (!storage) {
+      return pj::unexpected(
+          absl::StrCat("run_mimo_incremental: input topic ", node.mimo_input_topic_ids[i], " not found"));
+    }
+    for (const TopicChunk& chunk : storage->sealed_chunks()) {
+      if (chunk.stats.t_max <= node.mimo_last_ts) {
+        continue;  // entire chunk already processed
+      }
+      for (uint32_t r = 0; r < chunk.stats.row_count; ++r) {
+        pj::Timestamp ts = chunk.timestamps[r];
+        if (ts <= node.mimo_last_ts) {
+          continue;
+        }
+        per_topic[i].push_back({ts, &chunk, r});
+      }
+    }
+    // Early exit: if any topic has no new data, no join is possible.
+    if (per_topic[i].empty()) {
+      return pj::ok_status();
+    }
+  }
+
+  // 2. N-way timestamp intersection: find timestamps present in ALL input topics.
+  //    Start from topic 0's sorted timestamps, remove any not in subsequent topics.
+  std::vector<pj::Timestamp> joined_ts;
+  joined_ts.reserve(per_topic[0].size());
+  for (const auto& s : per_topic[0]) {
+    joined_ts.push_back(s.ts);
+  }
+
+  for (std::size_t i = 1; i < num_inputs; ++i) {
+    absl::flat_hash_set<pj::Timestamp> topic_set;
+    topic_set.reserve(per_topic[i].size());
+    for (const auto& s : per_topic[i]) {
+      topic_set.insert(s.ts);
+    }
+    auto new_end = std::remove_if(joined_ts.begin(), joined_ts.end(),
+                                   [&](pj::Timestamp t) { return !topic_set.contains(t); });
+    joined_ts.erase(new_end, joined_ts.end());
+    if (joined_ts.empty()) {
+      return pj::ok_status();
+    }
+  }
+
+  // 3. Build per-topic lookup: timestamp → (chunk*, row_index).
+  std::vector<absl::flat_hash_map<pj::Timestamp, std::pair<const TopicChunk*, uint32_t>>> lookups(num_inputs);
+  for (std::size_t i = 0; i < num_inputs; ++i) {
+    lookups[i].reserve(per_topic[i].size());
+    for (const auto& s : per_topic[i]) {
+      lookups[i].emplace(s.ts, std::make_pair(s.chunk, s.row));
+    }
+  }
+
+  // 4. Process each joined timestamp: decode, call transform, emit output.
+  const std::size_t num_outputs = node.output_topic_ids.size();
+  node.mimo_in_buf.resize(num_inputs);
+  node.mimo_out_buf.resize(num_outputs);
+
+  DataWriter writer = engine.create_writer();
+  bool wrote_any = false;
+
+  for (pj::Timestamp ts : joined_ts) {
+    for (std::size_t i = 0; i < num_inputs; ++i) {
+      const auto& [chp, row] = lookups[i].at(ts);
+      node.mimo_in_buf[i] = decode_as_varvalue(*chp, 0, row, node.mimo_input_kinds[i]);
+    }
+
+    pj::Timestamp out_ts = ts;
+    if (node.mimo_op->calculate(ts, node.mimo_in_buf, out_ts, node.mimo_out_buf)) {
+      for (std::size_t k = 0; k < num_outputs; ++k) {
+        auto s = writer.begin_row(node.output_topic_ids[k], out_ts);
+        if (!s.has_value()) {
+          return s;
+        }
+        write_varvalue(writer, node.output_topic_ids[k], 0, node.mimo_out_buf[k], node.mimo_output_kinds[k]);
+        s = writer.finish_row(node.output_topic_ids[k]);
+        if (!s.has_value()) {
+          return s;
+        }
+      }
+      wrote_any = true;
+    }
+  }
+
+  if (wrote_any) {
+    engine.commit_chunks(writer.flush_all());
+  }
+
+  // Advance watermark to the last joined input timestamp.
+  // Data is monotonically increasing, so timestamps ≤ joined_ts.back() won't
+  // produce new joins in the future even if not all of them generated output.
+  node.mimo_last_ts = joined_ts.back();
+
+  return pj::ok_status();
+}
+
+// ---------------------------------------------------------------------------
 // schedule
 // ---------------------------------------------------------------------------
 
@@ -600,8 +872,9 @@ pj::Status DerivedEngine::schedule(const std::unordered_set<pj::NodeId>& active_
     pj::Status s = pj::ok_status();
     if (!node.is_mimo) {
       s = run_siso_incremental(*impl_, engine_, node);
+    } else {
+      s = run_mimo_incremental(*impl_, engine_, node);
     }
-    // MIMO path: Phase 3
 
     if (!s.has_value()) {
       return s;
@@ -656,11 +929,16 @@ pj::Status DerivedEngine::recompute_batch(pj::NodeId node_id) {
 
   // 3. Reset processed chunk watermark
   node.last_processed_chunk_id = 0;
+  if (node.is_mimo) {
+    node.mimo_last_ts = std::numeric_limits<pj::Timestamp>::min();
+  }
 
   // 4. Full replay
   pj::Status s = pj::ok_status();
   if (!node.is_mimo) {
     s = run_siso_incremental(*impl_, engine_, node);
+  } else {
+    s = run_mimo_incremental(*impl_, engine_, node);
   }
 
   if (!s.has_value()) {
