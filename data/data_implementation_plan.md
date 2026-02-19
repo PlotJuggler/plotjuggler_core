@@ -324,7 +324,7 @@ chunk (pop front of the chunk deque). Eviction never removes from the middle
 from the front of the deque. `DataEngine::enforce_retention()` iterates all
 topics and calls evict. Tested in `topic_storage_test.cpp`.
 
-### 5.4 Variable-Length Arrays ❌
+### 5.4 Variable-Length Arrays ✅
 
 For types like `vector<Pose> poses`, the primary access pattern is
 "plot `poses[3].position.x` over time" (fixed index over time).
@@ -338,9 +338,11 @@ When a longer array is first seen, new columns are added dynamically.
 Validity bitmaps track which indices exist at each timestamp (sparse table).
 This reuses the additive schema evolution mechanism.
 
-> **Implementation note:** The type tree supports array nodes
-> (`make_array()`), but the writer does not yet handle dynamic array
-> expansion at ingest time. The validity bitmap infrastructure is in place.
+**Implementation:** `flatten_columns_impl` in `writer.cpp` now correctly handles `kArray` nodes:
+- Fixed-size arrays (`make_array(..., N)`) expand fully at schema registration time (e.g., `float32[3]` → `accel[0]`, `accel[1]`, `accel[2]`)
+- Variable-length arrays (`make_array(..., std::nullopt)`) start with 0 columns; callers use `DataWriter::expand_array(topic_id, field_path, new_length)` to add element columns dynamically
+- `expand_array()` seals the current builder, appends new `ColumnDescriptor` entries (using `generate_array_element_columns`), and persists the layout in `TopicStorage`; old chunks retain their original column count (cross-chunk column count handled via per-chunk `column_descriptors`)
+- Struct element arrays supported recursively (e.g., `Pose[]` → `poses[0].x`, `poses[0].y`, ...)
 
 #### Column explosion guard
 
@@ -968,9 +970,9 @@ Notes:
 3. ✅ **Derived scheduling**: Batched lazy on main thread (once per frame) as
    default. Batch recompute available on demand as correctness oracle.
    *Implemented in `DerivedEngine::schedule()` and `recompute_batch()`.*
-4. ❌ **Variable-length arrays**: Expand to indexed columns at ingest, with
+4. ✅ **Variable-length arrays**: Expand to indexed columns at ingest, with
    configurable max expansion limit. Viewer may additionally filter.
-   *Type tree supports arrays; writer expansion not implemented.*
+   *Implemented: `flatten_columns_impl` + `DataWriter::expand_array()` with limit guard and metadata tracking.*
 5. ✅ **Update semantics**: Column-by-column write APIs are allowed, but row
    commit semantics are full-row in v1. No implicit field-level carry-forward
    from prior rows.
