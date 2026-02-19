@@ -75,8 +75,10 @@ Five concrete modules, each independently testable:
 3. ✅ **engine-derived**: Owns transform DAG, scheduler, dirty propagation.
    Depends on engine-core interfaces only.
    *Implemented as `DerivedEngine` in the `plotjuggler_engine` library.
-   SISO DAG with topological sort, cycle detection, incremental chunk-aligned
-   scheduling, and batch recompute. One built-in transform: `DerivativeTransform`.*
+   Full SISO and MIMO DAG with topological sort, cycle detection, incremental
+   scheduling, and batch recompute. SISO uses chunk-ID watermarks; MIMO uses
+   timestamp watermarks with N-way inner join. One built-in transform:
+   `DerivativeTransform`.*
 4. ⚠️ **engine-time**: Owns time-domain registry and mapping functions for
    display.
    *Time domain creation and display offset are implemented in `DataEngine`.
@@ -583,7 +585,7 @@ public:
                            pj::Timestamp& out_time, VarValue& out_value) = 0;
 };
 
-// Multi-input / multi-output transform (Phase 3: not yet used by scheduler).
+// Multi-input / multi-output transform. Inner join on exact timestamps.
 class IMIMOTransform {
 public:
     virtual std::vector<StorageKind> output_kinds(Span<const StorageKind> input_kinds) const = 0;
@@ -603,8 +605,11 @@ recompute, and `calculate()` is called in ascending timestamp order across
 all chunks.
 
 SISO transforms (derivative, filter, integral) take one series, produce one.
-MIMO transforms (quaternion-to-RPY) take a group of series (identified by
-type in the type tree), produce a group. MIMO scheduling is deferred to Phase 3.
+MIMO transforms (quaternion-to-RPY) take N single-column series, produce M
+single-column series. MIMO joins on exact timestamps: a row is emitted only
+when ALL input topics have a sample at the exact same timestamp (inner join
+semantics). Duplicate timestamps within one input topic use last-write-wins
+and are deduplicated before joining.
 
 Built-in transforms: `DerivativeTransform` (in `pj/engine/builtin_transforms.hpp`).
 - Computes `(v[i] - v[i-1]) / dt` where dt is in seconds.
@@ -1025,15 +1030,19 @@ Notes:
 
 - ✅ Node / edge model with topological sort (Kahn's algorithm)
 - ✅ Cycle detection on registration (DFS)
-- ✅ Incremental chunk-aligned scheduling (watermark per node)
-- ✅ Batch recompute path (correctness oracle)
+- ✅ Incremental SISO scheduling: chunk-ID watermark per node
+- ✅ Incremental MIMO scheduling: timestamp watermark per node, N-way inner
+  join on exact timestamps; duplicate input timestamps deduplicated (last-wins)
+- ✅ Batch recompute path (correctness oracle) for both SISO and MIMO
 - ✅ Correctness parity tests (incremental == batch within 1e-9)
 - ✅ SISO interface (`ISISOTransform`) with sequential `calculate()` contract
-- ✅ MIMO interface (`IMIMOTransform`) declared; MIMO scheduling is Phase 3
+- ✅ MIMO interface (`IMIMOTransform`) with N-input / M-output scheduling
 - ✅ Built-in: `DerivativeTransform`
 - ✅ `on_source_committed()` dirty propagation hook
 - ✅ `TopicStorage::set_column_descriptors()` — schema_id==0 topics require
-  no committed chunks before `add_siso_transform` registration
+  no committed chunks before transform registration
+- ✅ `DataEngine::commit_chunks()` returns changed topic IDs for one-liner
+  frame loop: `derived.on_source_committed(engine.commit_chunks(writer.flush_all()))`
 
 ### Phase 3: Time domains + UI integration (engine-time) -- ⚠️ PARTIALLY STARTED
 
