@@ -582,7 +582,8 @@ Expected<FieldId> DataWriter::ensure_column(TopicId topic_id, std::string_view f
   // Guard: no row in progress
   auto builder_it = builders_.find(topic_id);
   if (builder_it != builders_.end() && builder_it->second.is_row_in_progress()) {
-    return pj::unexpected(absl::StrCat("ensure_column: topic ", topic_id, " has a row in progress"));
+    return pj::unexpected(absl::StrCat("ensure_column: topic ", topic_id,
+                                        " has a row in progress; call finish_row() before adding new columns"));
   }
 
   // Seal builder if it has completed rows
@@ -593,7 +594,9 @@ Expected<FieldId> DataWriter::ensure_column(TopicId topic_id, std::string_view f
     builders_.erase(builder_it);
   }
 
-  // Append new column
+  // Append new column (field ids are always dense starting at 0 — assert the invariant)
+  PJ_ASSERT(cols.empty() || cols.back().field_id == static_cast<FieldId>(cols.size() - 1),
+            "ensure_column: field_id invariant broken — non-dense column ids detected");
   FieldId new_id = static_cast<FieldId>(cols.size());
   ColumnDescriptor desc;
   desc.field_id = new_id;
@@ -677,6 +680,8 @@ pj::Expected<uint32_t> DataWriter::expand_array(pj::TopicId topic_id, std::strin
 
   if (!type_tree) {
     // Schemaless path: any field path is accepted; use element_type for new columns.
+    PJ_ASSERT(cols.empty() || cols.back().field_id == static_cast<FieldId>(cols.size() - 1),
+              "expand_array: field_id invariant broken — non-dense column ids detected");
     FieldId next_field_id = static_cast<FieldId>(cols.size());
     for (uint32_t i = current; i < actual; ++i) {
       std::string elem_path = absl::StrCat(array_field_path, "[", i, "]");
@@ -700,6 +705,8 @@ pj::Expected<uint32_t> DataWriter::expand_array(pj::TopicId topic_id, std::strin
     // Typed path: generate columns from the schema element type.
     // Use a per-index existence check (same as schemaless) so that columns
     // manually added via ensure_column are not duplicated.
+    PJ_ASSERT(cols.empty() || cols.back().field_id == static_cast<FieldId>(cols.size() - 1),
+              "expand_array: field_id invariant broken — non-dense column ids detected");
     FieldId next_field_id = static_cast<FieldId>(cols.size());
     for (uint32_t i = current; i < actual; ++i) {
       std::string elem_prefix = absl::StrCat(array_field_path, "[", i, "]");
