@@ -4,3 +4,4 @@ data/CMakeUserPresets.json
 data/test_data/
 data/benchmark_reports/
 .vscode/
+.worktrees/
