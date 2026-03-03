@@ -12,10 +12,13 @@ TopicStorage::TopicStorage(TopicId topic_id, TopicDescriptor descriptor)
     : topic_id_(topic_id), descriptor_(std::move(descriptor)) {}
 
 PJ::Status TopicStorage::appendSealedChunk(TopicChunk chunk) {
-  if (!sealed_chunks_.empty() && chunk.stats.t_min < sealed_chunks_.back().stats.t_min) {
-    return PJ::unexpected(
-        absl::StrCat(
-            "Out-of-order chunk: new t_min=", chunk.stats.t_min, " < last t_min=", sealed_chunks_.back().stats.t_min));
+  if (!sealed_chunks_.empty() &&
+      chunk.stats.t_min < sealed_chunks_.back().stats.t_max) {
+    // Reject any chunk whose t_min overlaps with the previous chunk's time range.
+    // Using t_max (not t_min) as the boundary: a new chunk starting exactly at
+    // the previous t_max is allowed (equal-boundary chunks from normal chunking).
+    return PJ::unexpected(absl::StrCat("Overlapping chunk: new t_min=", chunk.stats.t_min,
+                                       " < last t_max=", sealed_chunks_.back().stats.t_max));
   }
   sealed_chunks_.push_back(std::move(chunk));
   return PJ::okStatus();

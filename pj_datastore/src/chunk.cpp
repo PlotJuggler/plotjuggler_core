@@ -74,8 +74,8 @@ void TopicChunkBuilder::beginRow(Timestamp timestamp) {
   row_in_progress_ = true;
   current_timestamp_ = timestamp;
   last_timestamp_ = timestamp;
-  stats_.t_min = std::min(stats_.t_min, timestamp);
-  stats_.t_max = std::max(stats_.t_max, timestamp);
+  // stats_.t_min and stats_.t_max are updated in finishRow() once the row is committed,
+  // so that flush() called mid-row does not produce a chunk with a corrupted time range.
 }
 
 // ---------------------------------------------------------------------------
@@ -165,6 +165,8 @@ void TopicChunkBuilder::finishRow() {
   }
 
   timestamps_.push_back(current_timestamp_);
+  stats_.t_min = std::min(stats_.t_min, current_timestamp_);
+  stats_.t_max = std::max(stats_.t_max, current_timestamp_);
   stats_.row_count++;
   row_in_progress_ = false;
 }
@@ -246,6 +248,9 @@ void TopicChunkBuilder::finishBulkAppend() {
 
   // Compute stats for all columns, now that both data and validity are set.
   for (std::size_t col = 0; col < columns_.size(); ++col) {
+    PJ_ASSERT(columns_[col].rowCount() >= count,
+              "finishBulkAppend: column has fewer rows than bulk_pending_rows_ — "
+              "appendColumn*() must be called with exactly bulk_pending_rows_ values");
     const std::size_t first_row = columns_[col].rowCount() - count;
     const auto kind = storageKindOf(column_descriptors_[col].logical_type);
 

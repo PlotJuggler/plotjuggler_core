@@ -51,6 +51,7 @@ set(PJ_DATASTORE_TESTS
   tests/engine_integration_test.cpp
   tests/derived_engine_test.cpp
   tests/array_expansion_test.cpp
+  tests/regression_test.cpp
 )
 
 foreach(test_src ${PJ_DATASTORE_TESTS})

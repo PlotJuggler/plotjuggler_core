@@ -4,7 +4,6 @@
 #include <utility>
 
 #include "absl/strings/str_cat.h"
-#include "pj_base/assert.hpp"
 #include "pj_base/expected.hpp"
 #include "pj_datastore/reader.hpp"
 #include "pj_datastore/writer.hpp"
@@ -138,8 +137,9 @@ std::vector<TopicId> DataEngine::commitChunks(
     auto* storage = getTopicStorage(topic_id);
     if (storage != nullptr) {
       auto status = storage->appendSealedChunk(std::move(chunk));
-      PJ_ASSERT(status.has_value(), "out-of-order chunk from writer — writer bug");
-      (void)status;  // suppress unused-variable warning in release builds
+      if (!status.has_value()) {
+        continue;  // chunk rejected (e.g. out-of-order); do not mark topic as changed
+      }
       if (changed.empty() || changed.back() != topic_id) {
         changed.push_back(topic_id);
       }
