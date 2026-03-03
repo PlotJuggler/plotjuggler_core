@@ -102,6 +102,7 @@ struct ColumnDataWithBuffer {
   ColumnData col_data;
   std::vector<int64_t> int64_buf;
   std::vector<uint64_t> uint64_buf;
+  std::vector<uint32_t> offset_buf;
 };
 
 ColumnDataWithBuffer make_column_data_nanoarrow(
@@ -200,10 +201,14 @@ ColumnDataWithBuffer make_column_data_nanoarrow(
       break;
     }
     case StorageKind::kString: {
-      // STRING: int32_t offsets in buffer_views[1], char data in buffer_views[2]
+      // STRING: Arrow uses int32_t offsets; PJ uses uint32_t. Copy with cast to avoid UB.
       const auto* offsets_ptr = child->buffer_views[1].data.as_int32 + child->offset;
+      result.offset_buf.resize(n + 1);
+      for (std::size_t i = 0; i <= n; ++i) {
+        result.offset_buf[i] = static_cast<uint32_t>(offsets_ptr[i]);
+      }
       result.col_data = ColumnData::String(
-          mapping.pj_column_index, Span<const uint32_t>(reinterpret_cast<const uint32_t*>(offsets_ptr), n + 1),
+          mapping.pj_column_index, Span<const uint32_t>(result.offset_buf.data(), n + 1),
           Span<const char>(
               child->buffer_views[2].data.as_char, static_cast<std::size_t>(child->buffer_views[2].size_bytes)),
           validity_view);

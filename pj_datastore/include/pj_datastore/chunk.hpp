@@ -63,7 +63,9 @@ struct TopicChunk {
   /// One timestamp per row.
   std::vector<Timestamp> timestamps;
 
-  // Per-column encoded data
+  // Per-column encoded data (parallel vectors, indexed by col_index).
+  // Intentionally SoA rather than AoS: the chunk is immutable after seal(),
+  // so misalignment is impossible, and SoA is cache-friendly for column scans.
   /// Raw bytes for kRaw columns.
   std::vector<RawBuffer> encoded_columns;  // Raw typed data for numeric cols
   /// Encoding kind for each column.

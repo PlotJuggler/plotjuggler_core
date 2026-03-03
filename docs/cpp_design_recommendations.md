@@ -261,9 +261,11 @@ Avoid template metaprogramming when `concepts` + `constexpr if` suffices.
 
 Abseil is a project dependency. Prefer `absl::` types where they outperform or extend the standard library. Use `std::` where the standard equivalent is equal or superior.
 
-### Containers (prefer over std:: equivalents)
+### Containers (prefer over std:: equivalents in `.cpp` files)
 
-| Need | Use | Why |
+**Important:** `absl::` containers must only be used in implementation files (`.cpp`). Public headers (`.hpp`) must use `std::` equivalents (e.g., `std::unordered_map`). If `absl::` container performance is critical for a header-visible member, hide it behind Pimpl.
+
+| Need | Use (in `.cpp`) | Why |
 |---|---|---|
 | Hash map (default) | `absl::flat_hash_map` | Swiss Tables: SIMD-accelerated, flat layout, faster and less memory than `std::unordered_map` |
 | Hash set (default) | `absl::flat_hash_set` | Same Swiss Tables advantages |
@@ -548,7 +550,7 @@ When reviewing code, classify issues by severity:
 - `bool` parameter where `enum class` would be clearer
 - Function with > 3 parameters that could use a struct
 - Missing `constexpr` on a function that could be constexpr
-- Using `std::unordered_map` where `absl::flat_hash_map` would be better
+- Using `std::unordered_map` in `.cpp` files where `absl::flat_hash_map` would be better
 
 ### Suggestion (optional improvement)
 - Opportunity to use ranges for cleaner pipeline
