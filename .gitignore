@@ -1,8 +1,9 @@
-data/.cache/*
-data/build/*
-data/CMakeUserPresets.json
-data/test_data/
-data/benchmark_reports/
+build/
+.qt/
+CMakeUserPresets.json
+pj_datastore/.cache/
+pj_datastore/test_data/
+pj_datastore/benchmark_reports/
+pj_plugins/dialog_protocol/build*
 .vscode/
 .worktrees/
-/plugins/dialog_protocol/build*

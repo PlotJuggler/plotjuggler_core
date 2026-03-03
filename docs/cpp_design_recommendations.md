@@ -178,7 +178,7 @@ Pick one strategy per API layer. Never mix exceptions, error codes, and global e
 | **Public API headers (`.hpp`)** | `PJ::Expected<T>` (value or string error), `PJ::Status` (no-value error), `PJ::Span<T>` (non-owning view) |
 | **Implementation files (`.cpp`)** | `absl::StatusOr<T>`, `absl::Status`, `absl::StrCat`, `absl::flat_hash_map`, etc. — all OK |
 
-Public headers must not expose `absl::` types at API boundaries. This keeps the `plotjuggler_base` library dependency-free and avoids leaking Abseil into downstream consumers.
+Public headers must not expose `absl::` types at API boundaries. This keeps the `pj_base` library dependency-free and avoids leaking Abseil into downstream consumers.
 
 ### Situation → mechanism
 
