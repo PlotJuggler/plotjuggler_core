@@ -28,7 +28,7 @@ jobs:
       - name: Configure
         run: >
           cmake -S . -B build
-          -DCMAKE_TOOLCHAIN_FILE=build/conan_toolchain.cmake
+          -DCMAKE_TOOLCHAIN_FILE=${{ github.workspace }}/build/conan_toolchain.cmake
           -DPJ_BUILD_PARQUET_IMPORT_EXAMPLE=OFF
 
       - name: Build
