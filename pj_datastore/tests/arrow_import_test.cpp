@@ -137,7 +137,7 @@ TEST(ArrowImportTest, SchemaFromIpc) {
 
   auto ipc_bytes = serialize_to_ipc(schema.get(), array.get());
 
-  auto result_or = schema_from_ipc(PJ::Span<const uint8_t>(ipc_bytes.data(), ipc_bytes.size()));
+  auto result_or = schemaFromIpc(PJ::Span<const uint8_t>(ipc_bytes.data(), ipc_bytes.size()));
   ASSERT_TRUE(result_or.has_value()) << result_or.error();
 
   const auto& [type_tree, mappings] = *result_or;
@@ -165,10 +165,10 @@ TEST(ArrowImportTest, SchemaFromIpc) {
 
 TEST(ArrowImportTest, ImportFloat32) {
   DataEngine engine;
-  auto ds_or = engine.create_dataset(DatasetDescriptor{.source_name = "test", .time_domain_id = 0});
+  auto ds_or = engine.createDataset(DatasetDescriptor{.source_name = "test", .time_domain_id = 0});
   ASSERT_TRUE(ds_or.has_value());
 
-  DataWriter writer = engine.create_writer();
+  DataWriter writer = engine.createWriter();
 
   // Build schema: struct { float32 "x", float32 "y" }
   nanoarrow::UniqueSchema schema;
@@ -208,29 +208,29 @@ TEST(ArrowImportTest, ImportFloat32) {
   auto ipc_bytes = serialize_to_ipc(schema.get(), array.get());
 
   // Parse schema and register
-  auto [type_tree, mappings] = *schema_from_ipc(PJ::Span<const uint8_t>(ipc_bytes.data(), ipc_bytes.size()));
-  auto schema_id = *writer.register_schema("test_schema", type_tree);
+  auto [type_tree, mappings] = *schemaFromIpc(PJ::Span<const uint8_t>(ipc_bytes.data(), ipc_bytes.size()));
+  auto schema_id = *writer.registerSchema("test_schema", type_tree);
 
   TopicDescriptor desc;
   desc.name = "test_topic";
   desc.schema_id = schema_id;
-  auto topic_id = *writer.register_topic(*ds_or, desc);
+  auto topic_id = *writer.registerTopic(*ds_or, desc);
 
   // Import
   auto status =
-      import_ipc_stream(writer, topic_id, PJ::Span<const uint8_t>(ipc_bytes.data(), ipc_bytes.size()), mappings);
+      importIpcStream(writer, topic_id, PJ::Span<const uint8_t>(ipc_bytes.data(), ipc_bytes.size()), mappings);
   ASSERT_TRUE(status.has_value()) << status.error();
 
-  auto flushed = writer.flush_all();
-  engine.commit_chunks(std::move(flushed));
+  auto flushed = writer.flushAll();
+  engine.commitChunks(std::move(flushed));
 
   // Verify round-trip
-  DataReader reader = engine.create_reader();
+  DataReader reader = engine.createReader();
   std::size_t count = 0;
-  auto cursor_or = reader.range_query(QueryRange{.topic_id = topic_id, .t_min = 0, .t_max = N - 1});
+  auto cursor_or = reader.rangeQuery(QueryRange{.topic_id = topic_id, .t_min = 0, .t_max = N - 1});
   ASSERT_TRUE(cursor_or.has_value()) << cursor_or.error();
-  cursor_or->for_each([&](const SampleRow& row) {
-    auto x = static_cast<float>(row.chunk->read_numeric_as_double(0, row.row_index));
+  cursor_or->forEach([&](const SampleRow& row) {
+    auto x = static_cast<float>(row.chunk->readNumericAsDouble(0, row.row_index));
     EXPECT_FLOAT_EQ(x, x_vals[count]);
     ++count;
   });
@@ -243,10 +243,10 @@ TEST(ArrowImportTest, ImportFloat32) {
 
 TEST(ArrowImportTest, ImportWithTimestampColumn) {
   DataEngine engine;
-  auto ds_or = engine.create_dataset(DatasetDescriptor{.source_name = "test", .time_domain_id = 0});
+  auto ds_or = engine.createDataset(DatasetDescriptor{.source_name = "test", .time_domain_id = 0});
   ASSERT_TRUE(ds_or.has_value());
 
-  DataWriter writer = engine.create_writer();
+  DataWriter writer = engine.createWriter();
 
   // Build schema: struct { int64 "timestamp", float64 "value" }
   nanoarrow::UniqueSchema schema;
@@ -284,28 +284,28 @@ TEST(ArrowImportTest, ImportWithTimestampColumn) {
       .field_name = "value",
   }};
 
-  auto val_tree = make_primitive("value", PrimitiveType::kFloat64);
-  auto sid = *writer.register_schema("ts_schema", val_tree);
+  auto val_tree = makePrimitive("value", PrimitiveType::kFloat64);
+  auto sid = *writer.registerSchema("ts_schema", val_tree);
   TopicDescriptor desc;
   desc.name = "ts_topic";
   desc.schema_id = sid;
-  auto tid = *writer.register_topic(*ds_or, desc);
+  auto tid = *writer.registerTopic(*ds_or, desc);
 
   // Import with timestamp_column=0
   auto status =
-      import_ipc_stream(writer, tid, PJ::Span<const uint8_t>(ipc_bytes.data(), ipc_bytes.size()), mappings, 0);
+      importIpcStream(writer, tid, PJ::Span<const uint8_t>(ipc_bytes.data(), ipc_bytes.size()), mappings, 0);
   ASSERT_TRUE(status.has_value()) << status.error();
 
-  auto flushed = writer.flush_all();
-  engine.commit_chunks(std::move(flushed));
+  auto flushed = writer.flushAll();
+  engine.commitChunks(std::move(flushed));
 
   // Verify timestamps
-  DataReader reader = engine.create_reader();
-  auto latest_or = reader.latest_at(QueryPoint{.topic_id = tid, .t = 25000});
+  DataReader reader = engine.createReader();
+  auto latest_or = reader.latestAt(QueryPoint{.topic_id = tid, .t = 25000});
   ASSERT_TRUE(latest_or.has_value()) << latest_or.error();
   ASSERT_TRUE(latest_or->has_value());
   EXPECT_EQ((*latest_or)->timestamp, 25000);
-  EXPECT_DOUBLE_EQ((*latest_or)->chunk->read_numeric_as_double(0, (*latest_or)->row_index), 25.0 * 0.5);
+  EXPECT_DOUBLE_EQ((*latest_or)->chunk->readNumericAsDouble(0, (*latest_or)->row_index), 25.0 * 0.5);
 }
 
 // ===========================================================================
@@ -314,10 +314,10 @@ TEST(ArrowImportTest, ImportWithTimestampColumn) {
 
 TEST(ArrowImportTest, ImportStrings) {
   DataEngine engine;
-  auto ds_or = engine.create_dataset(DatasetDescriptor{.source_name = "test", .time_domain_id = 0});
+  auto ds_or = engine.createDataset(DatasetDescriptor{.source_name = "test", .time_domain_id = 0});
   ASSERT_TRUE(ds_or.has_value());
 
-  DataWriter writer = engine.create_writer();
+  DataWriter writer = engine.createWriter();
 
   // Build schema: struct { utf8 "name" }
   nanoarrow::UniqueSchema schema;
@@ -350,26 +350,26 @@ TEST(ArrowImportTest, ImportStrings) {
 
   auto ipc_bytes = serialize_to_ipc(schema.get(), array.get());
 
-  auto [type_tree, mappings] = *schema_from_ipc(PJ::Span<const uint8_t>(ipc_bytes.data(), ipc_bytes.size()));
-  auto sid = *writer.register_schema("str_schema", type_tree);
+  auto [type_tree, mappings] = *schemaFromIpc(PJ::Span<const uint8_t>(ipc_bytes.data(), ipc_bytes.size()));
+  auto sid = *writer.registerSchema("str_schema", type_tree);
   TopicDescriptor desc;
   desc.name = "str_topic";
   desc.schema_id = sid;
-  auto tid = *writer.register_topic(*ds_or, desc);
+  auto tid = *writer.registerTopic(*ds_or, desc);
 
-  auto status = import_ipc_stream(writer, tid, PJ::Span<const uint8_t>(ipc_bytes.data(), ipc_bytes.size()), mappings);
+  auto status = importIpcStream(writer, tid, PJ::Span<const uint8_t>(ipc_bytes.data(), ipc_bytes.size()), mappings);
   ASSERT_TRUE(status.has_value()) << status.error();
 
-  auto flushed = writer.flush_all();
-  engine.commit_chunks(std::move(flushed));
+  auto flushed = writer.flushAll();
+  engine.commitChunks(std::move(flushed));
 
   // Verify strings
-  DataReader reader = engine.create_reader();
+  DataReader reader = engine.createReader();
   std::vector<std::string> read_strings;
-  auto cursor_or = reader.range_query(QueryRange{.topic_id = tid, .t_min = 0, .t_max = 10});
+  auto cursor_or = reader.rangeQuery(QueryRange{.topic_id = tid, .t_min = 0, .t_max = 10});
   ASSERT_TRUE(cursor_or.has_value());
-  cursor_or->for_each(
-      [&](const SampleRow& row) { read_strings.emplace_back(row.chunk->read_string(0, row.row_index)); });
+  cursor_or->forEach(
+      [&](const SampleRow& row) { read_strings.emplace_back(row.chunk->readString(0, row.row_index)); });
   ASSERT_EQ(read_strings.size(), 3u);
   EXPECT_EQ(read_strings[0], "alpha");
   EXPECT_EQ(read_strings[1], "bravo");
@@ -382,10 +382,10 @@ TEST(ArrowImportTest, ImportStrings) {
 
 TEST(ArrowImportTest, ImportNarrowIntegerWidening) {
   DataEngine engine;
-  auto ds_or = engine.create_dataset(DatasetDescriptor{.source_name = "test", .time_domain_id = 0});
+  auto ds_or = engine.createDataset(DatasetDescriptor{.source_name = "test", .time_domain_id = 0});
   ASSERT_TRUE(ds_or.has_value());
 
-  DataWriter writer = engine.create_writer();
+  DataWriter writer = engine.createWriter();
 
   // Build schema: struct { int8 "val" }
   nanoarrow::UniqueSchema schema;
@@ -411,25 +411,25 @@ TEST(ArrowImportTest, ImportNarrowIntegerWidening) {
 
   auto ipc_bytes = serialize_to_ipc(schema.get(), array.get());
 
-  auto [type_tree, mappings] = *schema_from_ipc(PJ::Span<const uint8_t>(ipc_bytes.data(), ipc_bytes.size()));
-  auto sid = *writer.register_schema("i8_schema", type_tree);
+  auto [type_tree, mappings] = *schemaFromIpc(PJ::Span<const uint8_t>(ipc_bytes.data(), ipc_bytes.size()));
+  auto sid = *writer.registerSchema("i8_schema", type_tree);
   TopicDescriptor desc;
   desc.name = "i8_topic";
   desc.schema_id = sid;
-  auto tid = *writer.register_topic(*ds_or, desc);
+  auto tid = *writer.registerTopic(*ds_or, desc);
 
-  auto status = import_ipc_stream(writer, tid, PJ::Span<const uint8_t>(ipc_bytes.data(), ipc_bytes.size()), mappings);
+  auto status = importIpcStream(writer, tid, PJ::Span<const uint8_t>(ipc_bytes.data(), ipc_bytes.size()), mappings);
   ASSERT_TRUE(status.has_value()) << status.error();
 
-  auto flushed = writer.flush_all();
-  engine.commit_chunks(std::move(flushed));
+  auto flushed = writer.flushAll();
+  engine.commitChunks(std::move(flushed));
 
-  DataReader reader = engine.create_reader();
+  DataReader reader = engine.createReader();
   std::vector<double> values;
-  auto cursor_or = reader.range_query(QueryRange{.topic_id = tid, .t_min = 0, .t_max = 10});
+  auto cursor_or = reader.rangeQuery(QueryRange{.topic_id = tid, .t_min = 0, .t_max = 10});
   ASSERT_TRUE(cursor_or.has_value());
-  cursor_or->for_each(
-      [&](const SampleRow& row) { values.push_back(row.chunk->read_numeric_as_double(0, row.row_index)); });
+  cursor_or->forEach(
+      [&](const SampleRow& row) { values.push_back(row.chunk->readNumericAsDouble(0, row.row_index)); });
   ASSERT_EQ(values.size(), 3u);
   EXPECT_DOUBLE_EQ(values[0], 10.0);
   EXPECT_DOUBLE_EQ(values[1], -20.0);
@@ -442,10 +442,10 @@ TEST(ArrowImportTest, ImportNarrowIntegerWidening) {
 
 TEST(ArrowImportTest, ImportLargeDataset) {
   DataEngine engine;
-  auto ds_or = engine.create_dataset(DatasetDescriptor{.source_name = "test", .time_domain_id = 0});
+  auto ds_or = engine.createDataset(DatasetDescriptor{.source_name = "test", .time_domain_id = 0});
   ASSERT_TRUE(ds_or.has_value());
 
-  DataWriter writer = engine.create_writer();
+  DataWriter writer = engine.createWriter();
 
   // Build schema: struct { float64 "value" }
   nanoarrow::UniqueSchema schema;
@@ -470,25 +470,25 @@ TEST(ArrowImportTest, ImportLargeDataset) {
 
   auto ipc_bytes = serialize_to_ipc(schema.get(), array.get());
 
-  auto [type_tree, mappings] = *schema_from_ipc(PJ::Span<const uint8_t>(ipc_bytes.data(), ipc_bytes.size()));
-  auto sid = *writer.register_schema("tbl_schema", type_tree);
+  auto [type_tree, mappings] = *schemaFromIpc(PJ::Span<const uint8_t>(ipc_bytes.data(), ipc_bytes.size()));
+  auto sid = *writer.registerSchema("tbl_schema", type_tree);
   TopicDescriptor desc;
   desc.name = "tbl_topic";
   desc.schema_id = sid;
   desc.max_chunk_rows = 128;
-  auto tid = *writer.register_topic(*ds_or, desc);
+  auto tid = *writer.registerTopic(*ds_or, desc);
 
-  auto status = import_ipc_stream(writer, tid, PJ::Span<const uint8_t>(ipc_bytes.data(), ipc_bytes.size()), mappings);
+  auto status = importIpcStream(writer, tid, PJ::Span<const uint8_t>(ipc_bytes.data(), ipc_bytes.size()), mappings);
   ASSERT_TRUE(status.has_value()) << status.error();
 
-  auto flushed = writer.flush_all();
-  engine.commit_chunks(std::move(flushed));
+  auto flushed = writer.flushAll();
+  engine.commitChunks(std::move(flushed));
 
-  DataReader reader = engine.create_reader();
+  DataReader reader = engine.createReader();
   std::size_t count = 0;
-  auto cursor_or = reader.range_query(QueryRange{.topic_id = tid, .t_min = 0, .t_max = N - 1});
+  auto cursor_or = reader.rangeQuery(QueryRange{.topic_id = tid, .t_min = 0, .t_max = N - 1});
   ASSERT_TRUE(cursor_or.has_value());
-  cursor_or->for_each([&](const SampleRow&) { ++count; });
+  cursor_or->forEach([&](const SampleRow&) { ++count; });
   EXPECT_EQ(count, static_cast<std::size_t>(N));
 }
 
@@ -498,10 +498,10 @@ TEST(ArrowImportTest, ImportLargeDataset) {
 
 TEST(ArrowImportTest, ImportWithNulls) {
   DataEngine engine;
-  auto ds_or = engine.create_dataset(DatasetDescriptor{.source_name = "test", .time_domain_id = 0});
+  auto ds_or = engine.createDataset(DatasetDescriptor{.source_name = "test", .time_domain_id = 0});
   ASSERT_TRUE(ds_or.has_value());
 
-  DataWriter writer = engine.create_writer();
+  DataWriter writer = engine.createWriter();
 
   // Build schema: struct { float32 "val" }
   nanoarrow::UniqueSchema schema;
@@ -532,34 +532,34 @@ TEST(ArrowImportTest, ImportWithNulls) {
 
   auto ipc_bytes = serialize_to_ipc(schema.get(), array.get());
 
-  auto [type_tree, mappings] = *schema_from_ipc(PJ::Span<const uint8_t>(ipc_bytes.data(), ipc_bytes.size()));
-  auto sid = *writer.register_schema("null_schema", type_tree);
+  auto [type_tree, mappings] = *schemaFromIpc(PJ::Span<const uint8_t>(ipc_bytes.data(), ipc_bytes.size()));
+  auto sid = *writer.registerSchema("null_schema", type_tree);
   TopicDescriptor desc;
   desc.name = "null_topic";
   desc.schema_id = sid;
-  auto tid = *writer.register_topic(*ds_or, desc);
+  auto tid = *writer.registerTopic(*ds_or, desc);
 
-  auto status = import_ipc_stream(writer, tid, PJ::Span<const uint8_t>(ipc_bytes.data(), ipc_bytes.size()), mappings);
+  auto status = importIpcStream(writer, tid, PJ::Span<const uint8_t>(ipc_bytes.data(), ipc_bytes.size()), mappings);
   ASSERT_TRUE(status.has_value()) << status.error();
 
-  auto flushed = writer.flush_all();
-  engine.commit_chunks(std::move(flushed));
+  auto flushed = writer.flushAll();
+  engine.commitChunks(std::move(flushed));
 
-  DataReader reader = engine.create_reader();
-  auto cursor_or = reader.range_query(QueryRange{.topic_id = tid, .t_min = 0, .t_max = 10});
+  DataReader reader = engine.createReader();
+  auto cursor_or = reader.rangeQuery(QueryRange{.topic_id = tid, .t_min = 0, .t_max = 10});
   ASSERT_TRUE(cursor_or.has_value());
   std::size_t row = 0;
-  cursor_or->for_each([&](const SampleRow& r) {
+  cursor_or->forEach([&](const SampleRow& r) {
     if (row == 0) {
-      EXPECT_FALSE(r.chunk->is_null(0, r.row_index));
-      EXPECT_FLOAT_EQ(static_cast<float>(r.chunk->read_numeric_as_double(0, r.row_index)), 1.0F);
+      EXPECT_FALSE(r.chunk->isNull(0, r.row_index));
+      EXPECT_FLOAT_EQ(static_cast<float>(r.chunk->readNumericAsDouble(0, r.row_index)), 1.0F);
     } else if (row == 1) {
-      EXPECT_TRUE(r.chunk->is_null(0, r.row_index));
+      EXPECT_TRUE(r.chunk->isNull(0, r.row_index));
     } else if (row == 2) {
-      EXPECT_FALSE(r.chunk->is_null(0, r.row_index));
-      EXPECT_FLOAT_EQ(static_cast<float>(r.chunk->read_numeric_as_double(0, r.row_index)), 3.0F);
+      EXPECT_FALSE(r.chunk->isNull(0, r.row_index));
+      EXPECT_FLOAT_EQ(static_cast<float>(r.chunk->readNumericAsDouble(0, r.row_index)), 3.0F);
     } else if (row == 3) {
-      EXPECT_TRUE(r.chunk->is_null(0, r.row_index));
+      EXPECT_TRUE(r.chunk->isNull(0, r.row_index));
     }
     ++row;
   });

@@ -68,9 +68,9 @@ void BM_Builder_RowAtATime_Float32(benchmark::State& state) {
   for (auto _ : state) {
     TopicChunkBuilder builder(1, 1, cols, kRowCount);
     for (int i = 0; i < kRowCount; ++i) {
-      builder.begin_row(data.timestamps[static_cast<std::size_t>(i)]);
-      builder.set_float32(0, data.floats[static_cast<std::size_t>(i)]);
-      builder.finish_row();
+      builder.beginRow(data.timestamps[static_cast<std::size_t>(i)]);
+      builder.setFloat32(0, data.floats[static_cast<std::size_t>(i)]);
+      builder.finishRow();
     }
     auto chunk = builder.seal();
     benchmark::DoNotOptimize(chunk);
@@ -85,9 +85,9 @@ void BM_Builder_Bulk_Float32(benchmark::State& state) {
 
   for (auto _ : state) {
     TopicChunkBuilder builder(1, 1, cols, kRowCount);
-    builder.append_timestamps(data.timestamps);
-    builder.append_column_float32(0, data.floats);
-    builder.finish_bulk_append();
+    builder.appendTimestamps(data.timestamps);
+    builder.appendColumnFloat32(0, data.floats);
+    builder.finishBulkAppend();
     auto chunk = builder.seal();
     benchmark::DoNotOptimize(chunk);
     benchmark::ClobberMemory();
@@ -109,9 +109,9 @@ void BM_Builder_RowAtATime_Int64(benchmark::State& state) {
   for (auto _ : state) {
     TopicChunkBuilder builder(1, 1, cols, kRowCount);
     for (int i = 0; i < kRowCount; ++i) {
-      builder.begin_row(data.timestamps[static_cast<std::size_t>(i)]);
-      builder.set_int64(0, data.int64s[static_cast<std::size_t>(i)]);
-      builder.finish_row();
+      builder.beginRow(data.timestamps[static_cast<std::size_t>(i)]);
+      builder.setInt64(0, data.int64s[static_cast<std::size_t>(i)]);
+      builder.finishRow();
     }
     auto chunk = builder.seal();
     benchmark::DoNotOptimize(chunk);
@@ -126,9 +126,9 @@ void BM_Builder_Bulk_Int64(benchmark::State& state) {
 
   for (auto _ : state) {
     TopicChunkBuilder builder(1, 1, cols, kRowCount);
-    builder.append_timestamps(data.timestamps);
-    builder.append_column_int64(0, data.int64s);
-    builder.finish_bulk_append();
+    builder.appendTimestamps(data.timestamps);
+    builder.appendColumnInt64(0, data.int64s);
+    builder.finishBulkAppend();
     auto chunk = builder.seal();
     benchmark::DoNotOptimize(chunk);
     benchmark::ClobberMemory();
@@ -155,11 +155,11 @@ void BM_Builder_RowAtATime_MultiCol(benchmark::State& state) {
   for (auto _ : state) {
     TopicChunkBuilder builder(1, 1, cols, kRowCount);
     for (int i = 0; i < kRowCount; ++i) {
-      builder.begin_row(data.timestamps[static_cast<std::size_t>(i)]);
+      builder.beginRow(data.timestamps[static_cast<std::size_t>(i)]);
       for (int c = 0; c < kMultiColCount; ++c) {
-        builder.set_float32(static_cast<std::size_t>(c), data.floats[static_cast<std::size_t>(i)]);
+        builder.setFloat32(static_cast<std::size_t>(c), data.floats[static_cast<std::size_t>(i)]);
       }
-      builder.finish_row();
+      builder.finishRow();
     }
     auto chunk = builder.seal();
     benchmark::DoNotOptimize(chunk);
@@ -177,11 +177,11 @@ void BM_Builder_Bulk_MultiCol(benchmark::State& state) {
 
   for (auto _ : state) {
     TopicChunkBuilder builder(1, 1, cols, kRowCount);
-    builder.append_timestamps(data.timestamps);
+    builder.appendTimestamps(data.timestamps);
     for (int c = 0; c < kMultiColCount; ++c) {
-      builder.append_column_float32(static_cast<std::size_t>(c), data.floats);
+      builder.appendColumnFloat32(static_cast<std::size_t>(c), data.floats);
     }
-    builder.finish_bulk_append();
+    builder.finishBulkAppend();
     auto chunk = builder.seal();
     benchmark::DoNotOptimize(chunk);
     benchmark::ClobberMemory();
@@ -193,30 +193,30 @@ BENCHMARK(BM_Builder_RowAtATime_MultiCol);
 BENCHMARK(BM_Builder_Bulk_MultiCol);
 
 // ===========================================================================
-// DataWriter: row-at-a-time vs append_columns (end-to-end through engine)
+// DataWriter: row-at-a-time vs appendColumns (end-to-end through engine)
 // ===========================================================================
 
 void BM_Writer_RowAtATime_Float32(benchmark::State& state) {
   const auto& data = get_test_data();
 
   // Build type tree once outside the loop (structure is cheap, reusable)
-  auto value_field = make_primitive("value", PrimitiveType::kFloat32);
-  auto root = make_struct("data", {value_field});
+  auto value_field = makePrimitive("value", PrimitiveType::kFloat32);
+  auto root = makeStruct("data", {value_field});
 
   for (auto _ : state) {
     DataEngine engine;
-    auto ds_id = *engine.create_dataset(DatasetDescriptor{.source_name = "bench", .time_domain_id = 0});
-    auto writer = engine.create_writer();
-    auto schema_id = *writer.register_schema("bench_schema", root);
+    auto ds_id = *engine.createDataset(DatasetDescriptor{.source_name = "bench", .time_domain_id = 0});
+    auto writer = engine.createWriter();
+    auto schema_id = *writer.registerSchema("bench_schema", root);
     TopicDescriptor desc;
     desc.name = "bench_topic";
     desc.schema_id = schema_id;
-    auto topic_id = *writer.register_topic(ds_id, desc);
+    auto topic_id = *writer.registerTopic(ds_id, desc);
 
     for (int i = 0; i < kRowCount; ++i) {
-      (void)writer.begin_row(topic_id, data.timestamps[static_cast<std::size_t>(i)]);
-      writer.set_float32(topic_id, 0, data.floats[static_cast<std::size_t>(i)]);
-      (void)writer.finish_row(topic_id);
+      (void)writer.beginRow(topic_id, data.timestamps[static_cast<std::size_t>(i)]);
+      writer.setFloat32(topic_id, 0, data.floats[static_cast<std::size_t>(i)]);
+      (void)writer.finishRow(topic_id);
     }
     auto chunks = writer.flush(topic_id);
     benchmark::DoNotOptimize(chunks);
@@ -228,21 +228,21 @@ void BM_Writer_RowAtATime_Float32(benchmark::State& state) {
 void BM_Writer_AppendColumns_Float32(benchmark::State& state) {
   const auto& data = get_test_data();
 
-  auto value_field = make_primitive("value", PrimitiveType::kFloat32);
-  auto root = make_struct("data", {value_field});
+  auto value_field = makePrimitive("value", PrimitiveType::kFloat32);
+  auto root = makeStruct("data", {value_field});
 
   for (auto _ : state) {
     DataEngine engine;
-    auto ds_id = *engine.create_dataset(DatasetDescriptor{.source_name = "bench", .time_domain_id = 0});
-    auto writer = engine.create_writer();
-    auto schema_id = *writer.register_schema("bench_schema", root);
+    auto ds_id = *engine.createDataset(DatasetDescriptor{.source_name = "bench", .time_domain_id = 0});
+    auto writer = engine.createWriter();
+    auto schema_id = *writer.registerSchema("bench_schema", root);
     TopicDescriptor desc;
     desc.name = "bench_topic";
     desc.schema_id = schema_id;
-    auto topic_id = *writer.register_topic(ds_id, desc);
+    auto topic_id = *writer.registerTopic(ds_id, desc);
 
     std::vector<ColumnData> columns = {ColumnData::Float32(0, data.floats)};
-    (void)writer.append_columns(topic_id, data.timestamps, columns);
+    (void)writer.appendColumns(topic_id, data.timestamps, columns);
     auto chunks = writer.flush(topic_id);
     benchmark::DoNotOptimize(chunks);
     benchmark::ClobberMemory();

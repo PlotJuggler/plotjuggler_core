@@ -35,15 +35,15 @@ TEST(ChunkTest, BuildAndSealFloat32Chunk) {
   // Add 5 rows
   for (uint32_t i = 0; i < 5; ++i) {
     Timestamp ts = 1000 + static_cast<Timestamp>(i) * 100;
-    builder.begin_row(ts);
-    builder.set_float32(0, static_cast<float>(i) * 1.0F);
-    builder.set_float32(1, static_cast<float>(i) * 2.0F);
-    builder.set_float32(2, static_cast<float>(i) * 3.0F);
-    builder.finish_row();
+    builder.beginRow(ts);
+    builder.setFloat32(0, static_cast<float>(i) * 1.0F);
+    builder.setFloat32(1, static_cast<float>(i) * 2.0F);
+    builder.setFloat32(2, static_cast<float>(i) * 3.0F);
+    builder.finishRow();
   }
 
-  EXPECT_EQ(builder.row_count(), 5U);
-  EXPECT_FALSE(builder.is_full());
+  EXPECT_EQ(builder.rowCount(), 5U);
+  EXPECT_FALSE(builder.isFull());
 
   const auto& stats = builder.stats();
   EXPECT_EQ(stats.t_min, 1000);
@@ -91,33 +91,33 @@ TEST(ChunkTest, ReadBackSealedValues) {
   int32_t z_vals[] = {-1, 0, 1, 2, 3};
 
   for (int i = 0; i < 5; ++i) {
-    builder.begin_row(timestamps[i]);
-    builder.set_float32(0, x_vals[i]);
-    builder.set_float64(1, y_vals[i]);
-    builder.set_int32(2, z_vals[i]);
-    builder.finish_row();
+    builder.beginRow(timestamps[i]);
+    builder.setFloat32(0, x_vals[i]);
+    builder.setFloat64(1, y_vals[i]);
+    builder.setInt32(2, z_vals[i]);
+    builder.finishRow();
   }
 
   TopicChunk chunk = builder.seal();
 
   // Read back timestamps
   for (std::size_t i = 0; i < 5; ++i) {
-    EXPECT_EQ(chunk.read_timestamp(i), timestamps[i]) << "row " << i;
+    EXPECT_EQ(chunk.readTimestamp(i), timestamps[i]) << "row " << i;
   }
 
   // Read back float32 column as double
   for (std::size_t i = 0; i < 5; ++i) {
-    EXPECT_FLOAT_EQ(static_cast<float>(chunk.read_numeric_as_double(0, i)), x_vals[i]) << "row " << i;
+    EXPECT_FLOAT_EQ(static_cast<float>(chunk.readNumericAsDouble(0, i)), x_vals[i]) << "row " << i;
   }
 
   // Read back float64 column
   for (std::size_t i = 0; i < 5; ++i) {
-    EXPECT_DOUBLE_EQ(chunk.read_numeric_as_double(1, i), y_vals[i]) << "row " << i;
+    EXPECT_DOUBLE_EQ(chunk.readNumericAsDouble(1, i), y_vals[i]) << "row " << i;
   }
 
   // Read back int32 column as double (may be FOR-encoded since range is small)
   for (std::size_t i = 0; i < 5; ++i) {
-    EXPECT_DOUBLE_EQ(chunk.read_numeric_as_double(2, i), static_cast<double>(z_vals[i])) << "row " << i;
+    EXPECT_DOUBLE_EQ(chunk.readNumericAsDouble(2, i), static_cast<double>(z_vals[i])) << "row " << i;
   }
 }
 
@@ -131,17 +131,17 @@ TEST(ChunkTest, IsFull) {
   };
   TopicChunkBuilder builder(/*topic_id=*/30, /*schema_id=*/1, std::move(cols), /*max_rows=*/3);
 
-  EXPECT_FALSE(builder.is_full());
-  EXPECT_EQ(builder.row_count(), 0U);
+  EXPECT_FALSE(builder.isFull());
+  EXPECT_EQ(builder.rowCount(), 0U);
 
   for (uint32_t i = 0; i < 3; ++i) {
-    builder.begin_row(static_cast<Timestamp>(i));
-    builder.set_float32(0, static_cast<float>(i));
-    builder.finish_row();
+    builder.beginRow(static_cast<Timestamp>(i));
+    builder.setFloat32(0, static_cast<float>(i));
+    builder.finishRow();
   }
 
-  EXPECT_TRUE(builder.is_full());
-  EXPECT_EQ(builder.row_count(), 3U);
+  EXPECT_TRUE(builder.isFull());
+  EXPECT_EQ(builder.rowCount(), 3U);
 }
 
 // ===========================================================================
@@ -156,9 +156,9 @@ TEST(ChunkTest, StringColumn) {
 
   std::string_view strings[] = {"hello", "world", "hello", "world"};
   for (int i = 0; i < 4; ++i) {
-    builder.begin_row(static_cast<Timestamp>(i * 100));
-    builder.set_string(0, strings[i]);
-    builder.finish_row();
+    builder.beginRow(static_cast<Timestamp>(i * 100));
+    builder.setString(0, strings[i]);
+    builder.finishRow();
   }
 
   TopicChunk chunk = builder.seal();
@@ -170,7 +170,7 @@ TEST(ChunkTest, StringColumn) {
 
   // Read back all strings
   for (std::size_t i = 0; i < 4; ++i) {
-    EXPECT_EQ(chunk.read_string(0, i), strings[i]) << "row " << i;
+    EXPECT_EQ(chunk.readString(0, i), strings[i]) << "row " << i;
   }
 }
 
@@ -186,9 +186,9 @@ TEST(ChunkTest, BoolColumn) {
 
   bool bools[] = {true, false, true, true, false};
   for (int i = 0; i < 5; ++i) {
-    builder.begin_row(static_cast<Timestamp>(i));
-    builder.set_bool(0, bools[i]);
-    builder.finish_row();
+    builder.beginRow(static_cast<Timestamp>(i));
+    builder.setBool(0, bools[i]);
+    builder.finishRow();
   }
 
   TopicChunk chunk = builder.seal();
@@ -196,7 +196,7 @@ TEST(ChunkTest, BoolColumn) {
   EXPECT_EQ(chunk.column_encodings[0], EncodingType::kPackedBool);
 
   for (std::size_t i = 0; i < 5; ++i) {
-    EXPECT_EQ(chunk.read_bool(0, i), bools[i]) << "row " << i;
+    EXPECT_EQ(chunk.readBool(0, i), bools[i]) << "row " << i;
   }
 }
 
@@ -211,41 +211,41 @@ TEST(ChunkTest, NullHandling) {
   TopicChunkBuilder builder(/*topic_id=*/60, /*schema_id=*/1, std::move(cols), /*max_rows=*/100);
 
   // Row 0: 10.0, Row 1: null, Row 2: 30.0, Row 3: null, Row 4: 50.0
-  builder.begin_row(100);
-  builder.set_float64(0, 10.0);
-  builder.finish_row();
+  builder.beginRow(100);
+  builder.setFloat64(0, 10.0);
+  builder.finishRow();
 
-  builder.begin_row(200);
-  builder.set_null(0);
-  builder.finish_row();
+  builder.beginRow(200);
+  builder.setNull(0);
+  builder.finishRow();
 
-  builder.begin_row(300);
-  builder.set_float64(0, 30.0);
-  builder.finish_row();
+  builder.beginRow(300);
+  builder.setFloat64(0, 30.0);
+  builder.finishRow();
 
-  builder.begin_row(400);
-  builder.set_null(0);
-  builder.finish_row();
+  builder.beginRow(400);
+  builder.setNull(0);
+  builder.finishRow();
 
-  builder.begin_row(500);
-  builder.set_float64(0, 50.0);
-  builder.finish_row();
+  builder.beginRow(500);
+  builder.setFloat64(0, 50.0);
+  builder.finishRow();
 
   const auto& stats = builder.stats();
   EXPECT_EQ(stats.column_stats[0].null_count, 2U);
 
   TopicChunk chunk = builder.seal();
 
-  EXPECT_FALSE(chunk.is_null(0, 0));
-  EXPECT_TRUE(chunk.is_null(0, 1));
-  EXPECT_FALSE(chunk.is_null(0, 2));
-  EXPECT_TRUE(chunk.is_null(0, 3));
-  EXPECT_FALSE(chunk.is_null(0, 4));
+  EXPECT_FALSE(chunk.isNull(0, 0));
+  EXPECT_TRUE(chunk.isNull(0, 1));
+  EXPECT_FALSE(chunk.isNull(0, 2));
+  EXPECT_TRUE(chunk.isNull(0, 3));
+  EXPECT_FALSE(chunk.isNull(0, 4));
 
   // Non-null values should read back correctly
-  EXPECT_DOUBLE_EQ(chunk.read_numeric_as_double(0, 0), 10.0);
-  EXPECT_DOUBLE_EQ(chunk.read_numeric_as_double(0, 2), 30.0);
-  EXPECT_DOUBLE_EQ(chunk.read_numeric_as_double(0, 4), 50.0);
+  EXPECT_DOUBLE_EQ(chunk.readNumericAsDouble(0, 0), 10.0);
+  EXPECT_DOUBLE_EQ(chunk.readNumericAsDouble(0, 2), 30.0);
+  EXPECT_DOUBLE_EQ(chunk.readNumericAsDouble(0, 4), 50.0);
 }
 
 // ===========================================================================
@@ -260,23 +260,23 @@ TEST(ChunkTest, MixedTypes) {
   };
   TopicChunkBuilder builder(/*topic_id=*/70, /*schema_id=*/1, std::move(cols), /*max_rows=*/100);
 
-  builder.begin_row(1000);
-  builder.set_float32(0, 1.5F);
-  builder.set_string(1, "alpha");
-  builder.set_bool(2, true);
-  builder.finish_row();
+  builder.beginRow(1000);
+  builder.setFloat32(0, 1.5F);
+  builder.setString(1, "alpha");
+  builder.setBool(2, true);
+  builder.finishRow();
 
-  builder.begin_row(2000);
-  builder.set_float32(0, 2.5F);
-  builder.set_string(1, "beta");
-  builder.set_bool(2, false);
-  builder.finish_row();
+  builder.beginRow(2000);
+  builder.setFloat32(0, 2.5F);
+  builder.setString(1, "beta");
+  builder.setBool(2, false);
+  builder.finishRow();
 
-  builder.begin_row(3000);
-  builder.set_float32(0, 3.5F);
-  builder.set_string(1, "alpha");
-  builder.set_bool(2, true);
-  builder.finish_row();
+  builder.beginRow(3000);
+  builder.setFloat32(0, 3.5F);
+  builder.setString(1, "alpha");
+  builder.setBool(2, true);
+  builder.finishRow();
 
   TopicChunk chunk = builder.seal();
 
@@ -286,22 +286,22 @@ TEST(ChunkTest, MixedTypes) {
   EXPECT_EQ(chunk.column_encodings[2], EncodingType::kPackedBool);
 
   // Read back all values
-  EXPECT_FLOAT_EQ(static_cast<float>(chunk.read_numeric_as_double(0, 0)), 1.5F);
-  EXPECT_FLOAT_EQ(static_cast<float>(chunk.read_numeric_as_double(0, 1)), 2.5F);
-  EXPECT_FLOAT_EQ(static_cast<float>(chunk.read_numeric_as_double(0, 2)), 3.5F);
+  EXPECT_FLOAT_EQ(static_cast<float>(chunk.readNumericAsDouble(0, 0)), 1.5F);
+  EXPECT_FLOAT_EQ(static_cast<float>(chunk.readNumericAsDouble(0, 1)), 2.5F);
+  EXPECT_FLOAT_EQ(static_cast<float>(chunk.readNumericAsDouble(0, 2)), 3.5F);
 
-  EXPECT_EQ(chunk.read_string(1, 0), "alpha");
-  EXPECT_EQ(chunk.read_string(1, 1), "beta");
-  EXPECT_EQ(chunk.read_string(1, 2), "alpha");
+  EXPECT_EQ(chunk.readString(1, 0), "alpha");
+  EXPECT_EQ(chunk.readString(1, 1), "beta");
+  EXPECT_EQ(chunk.readString(1, 2), "alpha");
 
-  EXPECT_TRUE(chunk.read_bool(2, 0));
-  EXPECT_FALSE(chunk.read_bool(2, 1));
-  EXPECT_TRUE(chunk.read_bool(2, 2));
+  EXPECT_TRUE(chunk.readBool(2, 0));
+  EXPECT_FALSE(chunk.readBool(2, 1));
+  EXPECT_TRUE(chunk.readBool(2, 2));
 
   // Timestamps
-  EXPECT_EQ(chunk.read_timestamp(0), 1000);
-  EXPECT_EQ(chunk.read_timestamp(1), 2000);
-  EXPECT_EQ(chunk.read_timestamp(2), 3000);
+  EXPECT_EQ(chunk.readTimestamp(0), 1000);
+  EXPECT_EQ(chunk.readTimestamp(1), 2000);
+  EXPECT_EQ(chunk.readTimestamp(2), 3000);
 }
 
 // ===========================================================================
@@ -319,10 +319,10 @@ TEST(ChunkTest, ColumnStatsNumeric) {
   // constant: 42, 42, 42, 42, 42
   double varying[] = {-5.0, 0.0, 10.0, 3.0, 10.0};
   for (int i = 0; i < 5; ++i) {
-    builder.begin_row(static_cast<Timestamp>(i));
-    builder.set_float64(0, varying[i]);
-    builder.set_float64(1, 42.0);
-    builder.finish_row();
+    builder.beginRow(static_cast<Timestamp>(i));
+    builder.setFloat64(0, varying[i]);
+    builder.setFloat64(1, 42.0);
+    builder.finishRow();
   }
 
   const auto& stats = builder.stats();
@@ -351,15 +351,15 @@ TEST(ChunkTest, UniqueChunkIds) {
   };
 
   TopicChunkBuilder builder1(1, 1, cols, 10);
-  builder1.begin_row(100);
-  builder1.set_float32(0, 1.0F);
-  builder1.finish_row();
+  builder1.beginRow(100);
+  builder1.setFloat32(0, 1.0F);
+  builder1.finishRow();
   TopicChunk c1 = builder1.seal();
 
   TopicChunkBuilder builder2(1, 1, cols, 10);
-  builder2.begin_row(200);
-  builder2.set_float32(0, 2.0F);
-  builder2.finish_row();
+  builder2.beginRow(200);
+  builder2.setFloat32(0, 2.0F);
+  builder2.finishRow();
   TopicChunk c2 = builder2.seal();
 
   EXPECT_NE(c1.id, c2.id);
@@ -382,29 +382,29 @@ TEST(ChunkTest, IntegerTypesRoundTrip) {
   };
   TopicChunkBuilder builder(/*topic_id=*/90, /*schema_id=*/1, std::move(cols), /*max_rows=*/100);
 
-  builder.begin_row(1000);
-  builder.set_int64(0, -42);      // int8 → int64 storage
-  builder.set_int64(1, -1000);    // int16 → int64 storage
-  builder.set_int32(2, -999999);  // int32 → int32 storage
-  builder.set_int64(3, 123456789012345LL);
-  builder.set_uint64(4, 255);          // uint8 → uint64 storage
-  builder.set_uint64(5, 65535);        // uint16 → uint64 storage
-  builder.set_uint64(6, 4000000000U);  // uint32 → uint64 storage
-  builder.set_uint64(7, 18000000000000000000ULL);
-  builder.finish_row();
+  builder.beginRow(1000);
+  builder.setInt64(0, -42);      // int8 → int64 storage
+  builder.setInt64(1, -1000);    // int16 → int64 storage
+  builder.setInt32(2, -999999);  // int32 → int32 storage
+  builder.setInt64(3, 123456789012345LL);
+  builder.setUint64(4, 255);          // uint8 → uint64 storage
+  builder.setUint64(5, 65535);        // uint16 → uint64 storage
+  builder.setUint64(6, 4000000000U);  // uint32 → uint64 storage
+  builder.setUint64(7, 18000000000000000000ULL);
+  builder.finishRow();
 
   TopicChunk chunk = builder.seal();
 
   // Single-row chunks will be constant-encoded, but readback should be the same
-  EXPECT_DOUBLE_EQ(chunk.read_numeric_as_double(0, 0), -42.0);
-  EXPECT_DOUBLE_EQ(chunk.read_numeric_as_double(1, 0), -1000.0);
-  EXPECT_DOUBLE_EQ(chunk.read_numeric_as_double(2, 0), -999999.0);
-  EXPECT_DOUBLE_EQ(chunk.read_numeric_as_double(3, 0), 123456789012345.0);
-  EXPECT_DOUBLE_EQ(chunk.read_numeric_as_double(4, 0), 255.0);
-  EXPECT_DOUBLE_EQ(chunk.read_numeric_as_double(5, 0), 65535.0);
-  EXPECT_DOUBLE_EQ(chunk.read_numeric_as_double(6, 0), 4000000000.0);
+  EXPECT_DOUBLE_EQ(chunk.readNumericAsDouble(0, 0), -42.0);
+  EXPECT_DOUBLE_EQ(chunk.readNumericAsDouble(1, 0), -1000.0);
+  EXPECT_DOUBLE_EQ(chunk.readNumericAsDouble(2, 0), -999999.0);
+  EXPECT_DOUBLE_EQ(chunk.readNumericAsDouble(3, 0), 123456789012345.0);
+  EXPECT_DOUBLE_EQ(chunk.readNumericAsDouble(4, 0), 255.0);
+  EXPECT_DOUBLE_EQ(chunk.readNumericAsDouble(5, 0), 65535.0);
+  EXPECT_DOUBLE_EQ(chunk.readNumericAsDouble(6, 0), 4000000000.0);
   // uint64 large values may lose precision in double, so just check close
-  EXPECT_NEAR(chunk.read_numeric_as_double(7, 0), 1.8e19, 1e4);
+  EXPECT_NEAR(chunk.readNumericAsDouble(7, 0), 1.8e19, 1e4);
 }
 
 // ===========================================================================
@@ -418,15 +418,15 @@ TEST(ChunkTest, NoNullsIsNullReturnsFalse) {
   TopicChunkBuilder builder(/*topic_id=*/100, /*schema_id=*/1, std::move(cols), /*max_rows=*/100);
 
   for (int i = 0; i < 3; ++i) {
-    builder.begin_row(static_cast<Timestamp>(i));
-    builder.set_float32(0, static_cast<float>(i));
-    builder.finish_row();
+    builder.beginRow(static_cast<Timestamp>(i));
+    builder.setFloat32(0, static_cast<float>(i));
+    builder.finishRow();
   }
 
   TopicChunk chunk = builder.seal();
 
   for (std::size_t i = 0; i < 3; ++i) {
-    EXPECT_FALSE(chunk.is_null(0, i)) << "row " << i;
+    EXPECT_FALSE(chunk.isNull(0, i)) << "row " << i;
   }
 }
 
@@ -442,9 +442,9 @@ TEST(ChunkTest, StringColumnStats) {
 
   // All same string -> is_constant = true, run_count = 1
   for (int i = 0; i < 4; ++i) {
-    builder.begin_row(static_cast<Timestamp>(i));
-    builder.set_string(0, "same");
-    builder.finish_row();
+    builder.beginRow(static_cast<Timestamp>(i));
+    builder.setString(0, "same");
+    builder.finishRow();
   }
 
   const auto& stats = builder.stats();
@@ -465,8 +465,8 @@ TEST(ChunkTest, EmptyChunk) {
   };
   TopicChunkBuilder builder(/*topic_id=*/120, /*schema_id=*/1, std::move(cols), /*max_rows=*/100);
 
-  EXPECT_EQ(builder.row_count(), 0U);
-  EXPECT_FALSE(builder.is_full());
+  EXPECT_EQ(builder.rowCount(), 0U);
+  EXPECT_FALSE(builder.isFull());
 
   TopicChunk chunk = builder.seal();
   EXPECT_EQ(chunk.stats.row_count, 0U);
@@ -485,23 +485,23 @@ TEST(ChunkTest, BulkReadFloat32) {
 
   constexpr int kRows = 10;
   for (int i = 0; i < kRows; ++i) {
-    builder.begin_row(static_cast<Timestamp>(i * 100));
-    builder.set_float32(0, static_cast<float>(i) * 1.5F);
-    builder.finish_row();
+    builder.beginRow(static_cast<Timestamp>(i * 100));
+    builder.setFloat32(0, static_cast<float>(i) * 1.5F);
+    builder.finishRow();
   }
 
   TopicChunk chunk = builder.seal();
 
   // Read all rows
   std::vector<double> out(kRows);
-  chunk.read_column_as_doubles(0, Span<double>(out), 0);
+  chunk.readColumnAsDoubles(0, Span<double>(out), 0);
   for (int i = 0; i < kRows; ++i) {
     EXPECT_FLOAT_EQ(static_cast<float>(out[static_cast<std::size_t>(i)]), static_cast<float>(i) * 1.5F) << "row " << i;
   }
 
   // Read a sub-range [3, 7)
   std::vector<double> sub(4);
-  chunk.read_column_as_doubles(0, Span<double>(sub), 3);
+  chunk.readColumnAsDoubles(0, Span<double>(sub), 3);
   for (int i = 0; i < 4; ++i) {
     EXPECT_FLOAT_EQ(static_cast<float>(sub[static_cast<std::size_t>(i)]), static_cast<float>(i + 3) * 1.5F)
         << "sub row " << i;
@@ -521,15 +521,15 @@ TEST(ChunkTest, BulkReadInt64) {
   constexpr int kRows = 5;
   int64_t values[] = {-100, 0, 42, 999, -1};
   for (int i = 0; i < kRows; ++i) {
-    builder.begin_row(static_cast<Timestamp>(i));
-    builder.set_int64(0, values[i]);
-    builder.finish_row();
+    builder.beginRow(static_cast<Timestamp>(i));
+    builder.setInt64(0, values[i]);
+    builder.finishRow();
   }
 
   TopicChunk chunk = builder.seal();
 
   std::vector<double> out(kRows);
-  chunk.read_column_as_doubles(0, Span<double>(out), 0);
+  chunk.readColumnAsDoubles(0, Span<double>(out), 0);
   for (int i = 0; i < kRows; ++i) {
     EXPECT_DOUBLE_EQ(out[static_cast<std::size_t>(i)], static_cast<double>(values[i])) << "row " << i;
   }
@@ -546,25 +546,25 @@ TEST(ChunkTest, BulkReadBoolStringReturnsNaN) {
   };
   TopicChunkBuilder builder(/*topic_id=*/150, /*schema_id=*/1, std::move(cols), /*max_rows=*/100);
 
-  builder.begin_row(100);
-  builder.set_bool(0, true);
-  builder.set_string(1, "hello");
-  builder.finish_row();
+  builder.beginRow(100);
+  builder.setBool(0, true);
+  builder.setString(1, "hello");
+  builder.finishRow();
 
-  builder.begin_row(200);
-  builder.set_bool(0, false);
-  builder.set_string(1, "world");
-  builder.finish_row();
+  builder.beginRow(200);
+  builder.setBool(0, false);
+  builder.setString(1, "world");
+  builder.finishRow();
 
   TopicChunk chunk = builder.seal();
 
   std::vector<double> out(2);
 
-  chunk.read_column_as_doubles(0, Span<double>(out.data(), 2), 0);
+  chunk.readColumnAsDoubles(0, Span<double>(out.data(), 2), 0);
   EXPECT_TRUE(std::isnan(out[0]));
   EXPECT_TRUE(std::isnan(out[1]));
 
-  chunk.read_column_as_doubles(1, Span<double>(out.data(), 2), 0);
+  chunk.readColumnAsDoubles(1, Span<double>(out.data(), 2), 0);
   EXPECT_TRUE(std::isnan(out[0]));
   EXPECT_TRUE(std::isnan(out[1]));
 }
@@ -579,15 +579,15 @@ TEST(ChunkTest, BulkReadZeroRows) {
   };
   TopicChunkBuilder builder(/*topic_id=*/160, /*schema_id=*/1, std::move(cols), /*max_rows=*/100);
 
-  builder.begin_row(100);
-  builder.set_float64(0, 1.0);
-  builder.finish_row();
+  builder.beginRow(100);
+  builder.setFloat64(0, 1.0);
+  builder.finishRow();
 
   TopicChunk chunk = builder.seal();
 
   // Should not crash when reading 0 rows
   double dummy = 0.0;
-  chunk.read_column_as_doubles(0, Span<double>(&dummy, 0), 0);
+  chunk.readColumnAsDoubles(0, Span<double>(&dummy, 0), 0);
   EXPECT_DOUBLE_EQ(dummy, 0.0);  // untouched
 }
 
@@ -602,9 +602,9 @@ TEST(ChunkTest, ConstantIntColumnGetsConstantEncoding) {
   TopicChunkBuilder builder(/*topic_id=*/200, /*schema_id=*/1, std::move(cols), /*max_rows=*/1000);
 
   for (int i = 0; i < 100; ++i) {
-    builder.begin_row(static_cast<Timestamp>(i));
-    builder.set_int32(0, 42);
-    builder.finish_row();
+    builder.beginRow(static_cast<Timestamp>(i));
+    builder.setInt32(0, 42);
+    builder.finishRow();
   }
 
   TopicChunk chunk = builder.seal();
@@ -613,12 +613,12 @@ TEST(ChunkTest, ConstantIntColumnGetsConstantEncoding) {
 
   // Read back every row
   for (std::size_t i = 0; i < 100; ++i) {
-    EXPECT_DOUBLE_EQ(chunk.read_numeric_as_double(0, i), 42.0) << "row " << i;
+    EXPECT_DOUBLE_EQ(chunk.readNumericAsDouble(0, i), 42.0) << "row " << i;
   }
 
   // Bulk read
   std::vector<double> out(100);
-  chunk.read_column_as_doubles(0, Span<double>(out), 0);
+  chunk.readColumnAsDoubles(0, Span<double>(out), 0);
   for (std::size_t i = 0; i < 100; ++i) {
     EXPECT_DOUBLE_EQ(out[i], 42.0) << "bulk row " << i;
   }
@@ -635,9 +635,9 @@ TEST(ChunkTest, ConstantFloatColumnGetsConstantEncoding) {
   TopicChunkBuilder builder(/*topic_id=*/201, /*schema_id=*/1, std::move(cols), /*max_rows=*/1000);
 
   for (int i = 0; i < 50; ++i) {
-    builder.begin_row(static_cast<Timestamp>(i));
-    builder.set_float64(0, 3.14);
-    builder.finish_row();
+    builder.beginRow(static_cast<Timestamp>(i));
+    builder.setFloat64(0, 3.14);
+    builder.finishRow();
   }
 
   TopicChunk chunk = builder.seal();
@@ -645,7 +645,7 @@ TEST(ChunkTest, ConstantFloatColumnGetsConstantEncoding) {
   EXPECT_EQ(chunk.column_encodings[0], EncodingType::kConstant);
 
   for (std::size_t i = 0; i < 50; ++i) {
-    EXPECT_DOUBLE_EQ(chunk.read_numeric_as_double(0, i), 3.14) << "row " << i;
+    EXPECT_DOUBLE_EQ(chunk.readNumericAsDouble(0, i), 3.14) << "row " << i;
   }
 }
 
@@ -661,9 +661,9 @@ TEST(ChunkTest, NarrowRangeIntColumnGetsFOR) {
 
   // Values in [1000, 1100] — range=100, fits in uint8 (1 byte vs 4 native)
   for (int i = 0; i < 101; ++i) {
-    builder.begin_row(static_cast<Timestamp>(i));
-    builder.set_int32(0, 1000 + static_cast<int32_t>(i));
-    builder.finish_row();
+    builder.beginRow(static_cast<Timestamp>(i));
+    builder.setInt32(0, 1000 + static_cast<int32_t>(i));
+    builder.finishRow();
   }
 
   TopicChunk chunk = builder.seal();
@@ -675,12 +675,12 @@ TEST(ChunkTest, NarrowRangeIntColumnGetsFOR) {
 
   // Per-row read
   for (std::size_t i = 0; i < 101; ++i) {
-    EXPECT_DOUBLE_EQ(chunk.read_numeric_as_double(0, i), 1000.0 + static_cast<double>(i)) << "row " << i;
+    EXPECT_DOUBLE_EQ(chunk.readNumericAsDouble(0, i), 1000.0 + static_cast<double>(i)) << "row " << i;
   }
 
   // Bulk read
   std::vector<double> out(101);
-  chunk.read_column_as_doubles(0, Span<double>(out), 0);
+  chunk.readColumnAsDoubles(0, Span<double>(out), 0);
   for (std::size_t i = 0; i < 101; ++i) {
     EXPECT_DOUBLE_EQ(out[i], 1000.0 + static_cast<double>(i)) << "bulk row " << i;
   }
@@ -697,20 +697,20 @@ TEST(ChunkTest, WideRangeIntColumnStaysRaw) {
   TopicChunkBuilder builder(/*topic_id=*/203, /*schema_id=*/1, std::move(cols), /*max_rows=*/1000);
 
   // Range that spans full int32 — FOR can't narrow below 4 bytes
-  builder.begin_row(0);
-  builder.set_int32(0, -2000000000);
-  builder.finish_row();
+  builder.beginRow(0);
+  builder.setInt32(0, -2000000000);
+  builder.finishRow();
 
-  builder.begin_row(1);
-  builder.set_int32(0, 2000000000);
-  builder.finish_row();
+  builder.beginRow(1);
+  builder.setInt32(0, 2000000000);
+  builder.finishRow();
 
   TopicChunk chunk = builder.seal();
 
   EXPECT_EQ(chunk.column_encodings[0], EncodingType::kRaw);
 
-  EXPECT_DOUBLE_EQ(chunk.read_numeric_as_double(0, 0), -2000000000.0);
-  EXPECT_DOUBLE_EQ(chunk.read_numeric_as_double(0, 1), 2000000000.0);
+  EXPECT_DOUBLE_EQ(chunk.readNumericAsDouble(0, 0), -2000000000.0);
+  EXPECT_DOUBLE_EQ(chunk.readNumericAsDouble(0, 1), 2000000000.0);
 }
 
 // ===========================================================================
@@ -726,10 +726,10 @@ TEST(ChunkTest, FloatColumnAlwaysStaysRaw) {
 
   // Varying float values
   for (int i = 0; i < 10; ++i) {
-    builder.begin_row(static_cast<Timestamp>(i));
-    builder.set_float32(0, static_cast<float>(i) * 0.1F);
-    builder.set_float64(1, static_cast<double>(i) * 0.1);
-    builder.finish_row();
+    builder.beginRow(static_cast<Timestamp>(i));
+    builder.setFloat32(0, static_cast<float>(i) * 0.1F);
+    builder.setFloat64(1, static_cast<double>(i) * 0.1);
+    builder.finishRow();
   }
 
   TopicChunk chunk = builder.seal();
@@ -749,9 +749,9 @@ TEST(ChunkTest, ConstantBoolGetsConstantEncoding) {
   TopicChunkBuilder builder(/*topic_id=*/205, /*schema_id=*/1, std::move(cols), /*max_rows=*/1000);
 
   for (int i = 0; i < 50; ++i) {
-    builder.begin_row(static_cast<Timestamp>(i));
-    builder.set_bool(0, true);
-    builder.finish_row();
+    builder.beginRow(static_cast<Timestamp>(i));
+    builder.setBool(0, true);
+    builder.finishRow();
   }
 
   TopicChunk chunk = builder.seal();
@@ -759,7 +759,7 @@ TEST(ChunkTest, ConstantBoolGetsConstantEncoding) {
   EXPECT_EQ(chunk.column_encodings[0], EncodingType::kConstant);
 
   for (std::size_t i = 0; i < 50; ++i) {
-    EXPECT_TRUE(chunk.read_bool(0, i)) << "row " << i;
+    EXPECT_TRUE(chunk.readBool(0, i)) << "row " << i;
   }
 }
 
@@ -783,13 +783,13 @@ TEST(ChunkTest, BulkAppendFloat32) {
     y_vals[i] = static_cast<float>(i) * 2.0F;
   }
 
-  builder.append_timestamps(ts);
-  builder.append_column_float32(0, x_vals);
-  builder.append_column_float32(1, y_vals);
-  builder.finish_bulk_append();
+  builder.appendTimestamps(ts);
+  builder.appendColumnFloat32(0, x_vals);
+  builder.appendColumnFloat32(1, y_vals);
+  builder.finishBulkAppend();
 
-  EXPECT_EQ(builder.row_count(), 100U);
-  EXPECT_EQ(builder.last_timestamp(), 990);
+  EXPECT_EQ(builder.rowCount(), 100U);
+  EXPECT_EQ(builder.lastTimestamp(), 990);
 
   TopicChunk chunk = builder.seal();
   EXPECT_EQ(chunk.stats.row_count, 100U);
@@ -798,9 +798,9 @@ TEST(ChunkTest, BulkAppendFloat32) {
 
   // Verify round-trip
   for (std::size_t i = 0; i < N; ++i) {
-    EXPECT_EQ(chunk.read_timestamp(i), static_cast<Timestamp>(i) * 10);
-    EXPECT_FLOAT_EQ(static_cast<float>(chunk.read_numeric_as_double(0, i)), x_vals[i]);
-    EXPECT_FLOAT_EQ(static_cast<float>(chunk.read_numeric_as_double(1, i)), y_vals[i]);
+    EXPECT_EQ(chunk.readTimestamp(i), static_cast<Timestamp>(i) * 10);
+    EXPECT_FLOAT_EQ(static_cast<float>(chunk.readNumericAsDouble(0, i)), x_vals[i]);
+    EXPECT_FLOAT_EQ(static_cast<float>(chunk.readNumericAsDouble(1, i)), y_vals[i]);
   }
 }
 
@@ -817,9 +817,9 @@ TEST(ChunkTest, BulkAppendStats) {
   const double data[] = {3.0, 1.0, 4.0, 1.0, 5.0};
   const Timestamp ts[] = {10, 20, 30, 40, 50};
 
-  builder.append_timestamps(Span<const Timestamp>(ts, 5));
-  builder.append_column_float64(0, Span<const double>(data, 5));
-  builder.finish_bulk_append();
+  builder.appendTimestamps(Span<const Timestamp>(ts, 5));
+  builder.appendColumnFloat64(0, Span<const double>(data, 5));
+  builder.finishBulkAppend();
 
   const auto& cs = builder.stats().column_stats[0];
   EXPECT_DOUBLE_EQ(*cs.min_value, 1.0);
@@ -845,9 +845,9 @@ TEST(ChunkTest, BulkAppendConstantColumn) {
     ts[i] = static_cast<Timestamp>(i);
   }
 
-  builder.append_timestamps(ts);
-  builder.append_column_int32(0, vals);
-  builder.finish_bulk_append();
+  builder.appendTimestamps(ts);
+  builder.appendColumnInt32(0, vals);
+  builder.finishBulkAppend();
 
   const auto& cs = builder.stats().column_stats[0];
   EXPECT_TRUE(cs.is_constant);
@@ -857,7 +857,7 @@ TEST(ChunkTest, BulkAppendConstantColumn) {
   TopicChunk chunk = builder.seal();
   EXPECT_EQ(chunk.column_encodings[0], EncodingType::kConstant);
   for (std::size_t i = 0; i < N; ++i) {
-    EXPECT_DOUBLE_EQ(chunk.read_numeric_as_double(0, i), 42.0);
+    EXPECT_DOUBLE_EQ(chunk.readNumericAsDouble(0, i), 42.0);
   }
 }
 
@@ -875,16 +875,16 @@ TEST(ChunkTest, BulkAppendStrings) {
   const uint32_t offsets[] = {0, 5, 10, 17};
   const Timestamp ts[] = {10, 20, 30};
 
-  builder.append_timestamps(Span<const Timestamp>(ts, 3));
-  builder.append_column_strings(0, Span<const uint32_t>(offsets, 4), Span<const char>(string_data, 17));
-  builder.finish_bulk_append();
+  builder.appendTimestamps(Span<const Timestamp>(ts, 3));
+  builder.appendColumnStrings(0, Span<const uint32_t>(offsets, 4), Span<const char>(string_data, 17));
+  builder.finishBulkAppend();
 
-  EXPECT_EQ(builder.row_count(), 3U);
+  EXPECT_EQ(builder.rowCount(), 3U);
 
   TopicChunk chunk = builder.seal();
-  EXPECT_EQ(chunk.read_string(0, 0), "alpha");
-  EXPECT_EQ(chunk.read_string(0, 1), "Bravo");
-  EXPECT_EQ(chunk.read_string(0, 2), "Charlie");
+  EXPECT_EQ(chunk.readString(0, 0), "alpha");
+  EXPECT_EQ(chunk.readString(0, 1), "Bravo");
+  EXPECT_EQ(chunk.readString(0, 2), "Charlie");
 }
 
 // ===========================================================================
@@ -897,15 +897,15 @@ TEST(ChunkTest, BulkRemainingCapacity) {
   };
   TopicChunkBuilder builder(/*topic_id=*/504, /*schema_id=*/1, std::move(cols), /*max_rows=*/100);
 
-  EXPECT_EQ(builder.remaining_capacity(), 100U);
+  EXPECT_EQ(builder.remainingCapacity(), 100U);
 
   const Timestamp ts[] = {1, 2, 3};
   const float vals[] = {1.0F, 2.0F, 3.0F};
-  builder.append_timestamps(Span<const Timestamp>(ts, 3));
-  builder.append_column_float32(0, Span<const float>(vals, 3));
-  builder.finish_bulk_append();
+  builder.appendTimestamps(Span<const Timestamp>(ts, 3));
+  builder.appendColumnFloat32(0, Span<const float>(vals, 3));
+  builder.finishBulkAppend();
 
-  EXPECT_EQ(builder.remaining_capacity(), 97U);
+  EXPECT_EQ(builder.remainingCapacity(), 97U);
 }
 
 // ===========================================================================
@@ -921,18 +921,18 @@ TEST(ChunkTest, BulkAppendWithValidity) {
   const double data[] = {1.0, 0.0, 3.0, 0.0};
   const Timestamp ts[] = {10, 20, 30, 40};
 
-  builder.append_timestamps(Span<const Timestamp>(ts, 4));
-  builder.append_column_float64(0, Span<const double>(data, 4));
+  builder.appendTimestamps(Span<const Timestamp>(ts, 4));
+  builder.appendColumnFloat64(0, Span<const double>(data, 4));
   // validity: bits [1, 0, 1, 0] = 0b0101 = 0x05
   const uint8_t bitmap[] = {0x05};
-  builder.append_column_validity(0, BitSpan{Span<const uint8_t>(bitmap, 1), 0, 4});
-  builder.finish_bulk_append();
+  builder.appendColumnValidity(0, BitSpan{Span<const uint8_t>(bitmap, 1), 0, 4});
+  builder.finishBulkAppend();
 
   TopicChunk chunk = builder.seal();
-  EXPECT_FALSE(chunk.is_null(0, 0));
-  EXPECT_TRUE(chunk.is_null(0, 1));
-  EXPECT_FALSE(chunk.is_null(0, 2));
-  EXPECT_TRUE(chunk.is_null(0, 3));
+  EXPECT_FALSE(chunk.isNull(0, 0));
+  EXPECT_TRUE(chunk.isNull(0, 1));
+  EXPECT_FALSE(chunk.isNull(0, 2));
+  EXPECT_TRUE(chunk.isNull(0, 3));
   EXPECT_EQ(chunk.stats.column_stats[0].null_count, 2U);
 }
 
@@ -953,19 +953,19 @@ TEST(ChunkTest, BulkAppendMixedTypes) {
   const int64_t i64[] = {10, 20, 30};
   const uint8_t bools[] = {1, 0, 1};
 
-  builder.append_timestamps(Span<const Timestamp>(ts, 3));
-  builder.append_column_float32(0, Span<const float>(f32, 3));
-  builder.append_column_int64(1, Span<const int64_t>(i64, 3));
-  builder.append_column_bool(2, Span<const uint8_t>(bools, 3));
-  builder.finish_bulk_append();
+  builder.appendTimestamps(Span<const Timestamp>(ts, 3));
+  builder.appendColumnFloat32(0, Span<const float>(f32, 3));
+  builder.appendColumnInt64(1, Span<const int64_t>(i64, 3));
+  builder.appendColumnBool(2, Span<const uint8_t>(bools, 3));
+  builder.finishBulkAppend();
 
   TopicChunk chunk = builder.seal();
   EXPECT_EQ(chunk.stats.row_count, 3U);
-  EXPECT_FLOAT_EQ(static_cast<float>(chunk.read_numeric_as_double(0, 1)), 2.0F);
-  EXPECT_DOUBLE_EQ(chunk.read_numeric_as_double(1, 2), 30.0);
-  EXPECT_TRUE(chunk.read_bool(2, 0));
-  EXPECT_FALSE(chunk.read_bool(2, 1));
-  EXPECT_TRUE(chunk.read_bool(2, 2));
+  EXPECT_FLOAT_EQ(static_cast<float>(chunk.readNumericAsDouble(0, 1)), 2.0F);
+  EXPECT_DOUBLE_EQ(chunk.readNumericAsDouble(1, 2), 30.0);
+  EXPECT_TRUE(chunk.readBool(2, 0));
+  EXPECT_FALSE(chunk.readBool(2, 1));
+  EXPECT_TRUE(chunk.readBool(2, 2));
 }
 
 // ===========================================================================
@@ -987,7 +987,7 @@ TEST(ChunkDeathTest, SetWithoutBeginRowAsserts) {
   };
   TopicChunkBuilder builder(/*topic_id=*/300, /*schema_id=*/1, std::move(cols), /*max_rows=*/100);
 
-  PJ_EXPECT_ASSERT_FAIL(builder.set_float32(0, 1.0F), "set_float32 called without begin_row");
+  PJ_EXPECT_ASSERT_FAIL(builder.setFloat32(0, 1.0F), "set_float32 called without begin_row");
 }
 
 TEST(ChunkDeathTest, FinishRowWithoutBeginRowAsserts) {
@@ -996,7 +996,7 @@ TEST(ChunkDeathTest, FinishRowWithoutBeginRowAsserts) {
   };
   TopicChunkBuilder builder(/*topic_id=*/301, /*schema_id=*/1, std::move(cols), /*max_rows=*/100);
 
-  PJ_EXPECT_ASSERT_FAIL(builder.finish_row(), "finish_row called without begin_row");
+  PJ_EXPECT_ASSERT_FAIL(builder.finishRow(), "finish_row called without begin_row");
 }
 
 TEST(ChunkDeathTest, BeginRowWhileRowInProgressAsserts) {
@@ -1005,8 +1005,8 @@ TEST(ChunkDeathTest, BeginRowWhileRowInProgressAsserts) {
   };
   TopicChunkBuilder builder(/*topic_id=*/302, /*schema_id=*/1, std::move(cols), /*max_rows=*/100);
 
-  builder.begin_row(100);
-  PJ_EXPECT_ASSERT_FAIL(builder.begin_row(200), "begin_row called while row already in progress");
+  builder.beginRow(100);
+  PJ_EXPECT_ASSERT_FAIL(builder.beginRow(200), "begin_row called while row already in progress");
 }
 
 TEST(ChunkDeathTest, OutOfBoundsColIndexAsserts) {
@@ -1015,8 +1015,8 @@ TEST(ChunkDeathTest, OutOfBoundsColIndexAsserts) {
   };
   TopicChunkBuilder builder(/*topic_id=*/303, /*schema_id=*/1, std::move(cols), /*max_rows=*/100);
 
-  builder.begin_row(100);
-  PJ_EXPECT_ASSERT_FAIL(builder.set_float32(5, 1.0F), "col_index out of bounds");
+  builder.beginRow(100);
+  PJ_EXPECT_ASSERT_FAIL(builder.setFloat32(5, 1.0F), "col_index out of bounds");
 }
 
 TEST(ChunkDeathTest, OutOfOrderTimestampAsserts) {
@@ -1025,11 +1025,11 @@ TEST(ChunkDeathTest, OutOfOrderTimestampAsserts) {
   };
   TopicChunkBuilder builder(/*topic_id=*/304, /*schema_id=*/1, std::move(cols), /*max_rows=*/100);
 
-  builder.begin_row(200);
-  builder.set_float32(0, 1.0F);
-  builder.finish_row();
+  builder.beginRow(200);
+  builder.setFloat32(0, 1.0F);
+  builder.finishRow();
 
-  PJ_EXPECT_ASSERT_FAIL(builder.begin_row(100), "timestamps must be monotonically non-decreasing");
+  PJ_EXPECT_ASSERT_FAIL(builder.beginRow(100), "timestamps must be monotonically non-decreasing");
 }
 
 #endif  // !defined(NDEBUG) || defined(PJ_ASSERT_THROWS)

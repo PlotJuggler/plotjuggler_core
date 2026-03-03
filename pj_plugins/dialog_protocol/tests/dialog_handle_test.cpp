@@ -99,7 +99,7 @@ TEST_F(DialogHandleTest, WidgetDataIsValidJson) {
 
 TEST_F(DialogHandleTest, SendEventUpdatesState) {
   PJ::DialogHandle h(vt_);
-  bool refresh = h.send_event("host_input", R"({"text": "10.0.0.1"})");
+  bool refresh = h.sendEvent("host_input", R"({"text": "10.0.0.1"})");
   EXPECT_TRUE(refresh);
 
   auto j = nlohmann::json::parse(h.widget_data());
@@ -108,7 +108,7 @@ TEST_F(DialogHandleTest, SendEventUpdatesState) {
 
 TEST_F(DialogHandleTest, SendEventUnknownWidget) {
   PJ::DialogHandle h(vt_);
-  bool refresh = h.send_event("nonexistent", R"({"text": "x"})");
+  bool refresh = h.sendEvent("nonexistent", R"({"text": "x"})");
   EXPECT_FALSE(refresh);
 }
 
@@ -122,7 +122,7 @@ TEST_F(DialogHandleTest, TickInitiallyFalse) {
 TEST_F(DialogHandleTest, TickDiscoverTopics) {
   PJ::DialogHandle h(vt_);
   // Connect
-  (void)h.send_event("connect_btn", R"({"clicked": true})");
+  (void)h.sendEvent("connect_btn", R"({"clicked": true})");
 
   bool refresh = false;
   for (int i = 0; i < 5; ++i) {
@@ -142,8 +142,8 @@ TEST_F(DialogHandleTest, TickDiscoverTopics) {
 
 TEST_F(DialogHandleTest, SaveLoadConfigRoundTrip) {
   PJ::DialogHandle h1(vt_);
-  (void)h1.send_event("host_input", R"({"text": "saved-host"})");
-  (void)h1.send_event("port_input", R"({"value": 5555})");
+  (void)h1.sendEvent("host_input", R"({"text": "saved-host"})");
+  (void)h1.sendEvent("port_input", R"({"value": 5555})");
 
   std::string config = h1.save_config();
   auto cfg = nlohmann::json::parse(config);
@@ -169,20 +169,20 @@ TEST_F(DialogHandleTest, LoadConfigInvalidJson) {
 
 TEST_F(DialogHandleTest, NoErrorInitially) {
   PJ::DialogHandle h(vt_);
-  EXPECT_EQ(h.last_error(), "");
+  EXPECT_EQ(h.lastError(), "");
 }
 
 TEST_F(DialogHandleTest, ErrorAfterTrigger) {
   PJ::DialogHandle h(vt_);
   // Clear host, then try to connect — triggers "Host cannot be empty"
-  (void)h.send_event("host_input", R"({"text": ""})");
-  (void)h.send_event("connect_btn", R"({"clicked": true})");
+  (void)h.sendEvent("host_input", R"({"text": ""})");
+  (void)h.sendEvent("connect_btn", R"({"clicked": true})");
 
-  std::string err = h.last_error();
+  std::string err = h.lastError();
   EXPECT_NE(err.find("empty"), std::string::npos);
 
   // Error should be cleared after reading
-  EXPECT_EQ(h.last_error(), "");
+  EXPECT_EQ(h.lastError(), "");
 }
 
 // --- Accept / Reject ---

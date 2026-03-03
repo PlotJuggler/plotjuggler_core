@@ -166,7 +166,7 @@ class Expected<void, E> {
 using Status = Expected<void, std::string>;
 
 /// Construct a success Status.
-[[nodiscard]] inline Status ok_status() {
+[[nodiscard]] inline Status okStatus() {
   return Status{};
 }
 

@@ -17,7 +17,7 @@ DataEngine::DataEngine() = default;
 // Dataset management
 // ---------------------------------------------------------------------------
 
-Expected<DatasetId> DataEngine::create_dataset(DatasetDescriptor descriptor) {
+Expected<DatasetId> DataEngine::createDataset(DatasetDescriptor descriptor) {
   DatasetId id = next_dataset_id_++;
 
   // Verify time domain exists if specified
@@ -38,7 +38,7 @@ Expected<DatasetId> DataEngine::create_dataset(DatasetDescriptor descriptor) {
   return id;
 }
 
-const DatasetInfo* DataEngine::get_dataset(DatasetId id) const {
+const DatasetInfo* DataEngine::getDataset(DatasetId id) const {
   auto it = datasets_.find(id);
   if (it == datasets_.end()) {
     return nullptr;
@@ -50,7 +50,7 @@ const DatasetInfo* DataEngine::get_dataset(DatasetId id) const {
 // Topic management
 // ---------------------------------------------------------------------------
 
-Expected<TopicId> DataEngine::create_topic(DatasetId dataset_id, TopicDescriptor descriptor) {
+Expected<TopicId> DataEngine::createTopic(DatasetId dataset_id, TopicDescriptor descriptor) {
   auto it = datasets_.find(dataset_id);
   if (it == datasets_.end()) {
     return PJ::unexpected(absl::StrCat("Dataset ", dataset_id, " not found"));
@@ -71,7 +71,7 @@ Expected<TopicId> DataEngine::create_topic(DatasetId dataset_id, TopicDescriptor
   return id;
 }
 
-TopicStorage* DataEngine::get_topic_storage(TopicId id) {
+TopicStorage* DataEngine::getTopicStorage(TopicId id) {
   auto it = topics_.find(id);
   if (it == topics_.end()) {
     return nullptr;
@@ -79,7 +79,7 @@ TopicStorage* DataEngine::get_topic_storage(TopicId id) {
   return &it->second;
 }
 
-const TopicStorage* DataEngine::get_topic_storage(TopicId id) const {
+const TopicStorage* DataEngine::getTopicStorage(TopicId id) const {
   auto it = topics_.find(id);
   if (it == topics_.end()) {
     return nullptr;
@@ -91,11 +91,11 @@ const TopicStorage* DataEngine::get_topic_storage(TopicId id) const {
 // Schema registry
 // ---------------------------------------------------------------------------
 
-TypeRegistry& DataEngine::type_registry() {
+TypeRegistry& DataEngine::typeRegistry() {
   return type_registry_;
 }
 
-const TypeRegistry& DataEngine::type_registry() const {
+const TypeRegistry& DataEngine::typeRegistry() const {
   return type_registry_;
 }
 
@@ -103,7 +103,7 @@ const TypeRegistry& DataEngine::type_registry() const {
 // Time domains
 // ---------------------------------------------------------------------------
 
-Expected<TimeDomainId> DataEngine::create_time_domain(std::string name) {
+Expected<TimeDomainId> DataEngine::createTimeDomain(std::string name) {
   TimeDomainId id = next_time_domain_id_++;
   TimeDomain td;
   td.id = id;
@@ -112,7 +112,7 @@ Expected<TimeDomainId> DataEngine::create_time_domain(std::string name) {
   return id;
 }
 
-const TimeDomain* DataEngine::get_time_domain(TimeDomainId id) const {
+const TimeDomain* DataEngine::getTimeDomain(TimeDomainId id) const {
   auto it = time_domains_.find(id);
   if (it == time_domains_.end()) {
     return nullptr;
@@ -120,7 +120,7 @@ const TimeDomain* DataEngine::get_time_domain(TimeDomainId id) const {
   return &it->second;
 }
 
-void DataEngine::set_display_offset(TimeDomainId id, Timestamp offset) {
+void DataEngine::setDisplayOffset(TimeDomainId id, Timestamp offset) {
   auto it = time_domains_.find(id);
   if (it != time_domains_.end()) {
     it->second.display_offset = offset;
@@ -131,13 +131,13 @@ void DataEngine::set_display_offset(TimeDomainId id, Timestamp offset) {
 // Commit cycle
 // ---------------------------------------------------------------------------
 
-std::vector<TopicId> DataEngine::commit_chunks(
+std::vector<TopicId> DataEngine::commitChunks(
     std::vector<std::pair<TopicId, TopicChunk>> chunks) {  // NOLINT(performance-unnecessary-value-param)
   std::vector<TopicId> changed;
   for (auto& [topic_id, chunk] : chunks) {
-    auto* storage = get_topic_storage(topic_id);
+    auto* storage = getTopicStorage(topic_id);
     if (storage != nullptr) {
-      auto status = storage->append_sealed_chunk(std::move(chunk));
+      auto status = storage->appendSealedChunk(std::move(chunk));
       PJ_ASSERT(status.has_value(), "out-of-order chunk from writer — writer bug");
       (void)status;  // suppress unused-variable warning in release builds
       if (changed.empty() || changed.back() != topic_id) {
@@ -145,17 +145,17 @@ std::vector<TopicId> DataEngine::commit_chunks(
       }
     }
   }
-  // Deduplicate (flush_all() may emit multiple chunks for one topic).
+  // Deduplicate (flushAll() may emit multiple chunks for one topic).
   std::sort(changed.begin(), changed.end());
   changed.erase(std::unique(changed.begin(), changed.end()), changed.end());
   return changed;
 }
 
-void DataEngine::enforce_retention(Timestamp retention_window_ns) {
+void DataEngine::enforceRetention(Timestamp retention_window_ns) {
   for (auto& [topic_id, storage] : topics_) {
     if (!storage.empty()) {
       Timestamp t_max = storage.time_max();
-      storage.evict_before(t_max - retention_window_ns);
+      storage.evictBefore(t_max - retention_window_ns);
     }
   }
 }
@@ -164,7 +164,7 @@ void DataEngine::enforce_retention(Timestamp retention_window_ns) {
 // Listing helpers
 // ---------------------------------------------------------------------------
 
-std::vector<DatasetId> DataEngine::list_datasets() const {
+std::vector<DatasetId> DataEngine::listDatasets() const {
   std::vector<DatasetId> result;
   result.reserve(datasets_.size());
   for (const auto& [id, info] : datasets_) {
@@ -173,7 +173,7 @@ std::vector<DatasetId> DataEngine::list_datasets() const {
   return result;
 }
 
-std::vector<TopicId> DataEngine::list_topics(DatasetId dataset_id) const {
+std::vector<TopicId> DataEngine::listTopics(DatasetId dataset_id) const {
   auto it = datasets_.find(dataset_id);
   if (it == datasets_.end()) {
     return {};
@@ -185,11 +185,11 @@ std::vector<TopicId> DataEngine::list_topics(DatasetId dataset_id) const {
 // Writer/Reader factories
 // ---------------------------------------------------------------------------
 
-DataWriter DataEngine::create_writer() {
+DataWriter DataEngine::createWriter() {
   return DataWriter(*this);
 }
 
-DataReader DataEngine::create_reader() const {
+DataReader DataEngine::createReader() const {
   return DataReader(*this);
 }
 

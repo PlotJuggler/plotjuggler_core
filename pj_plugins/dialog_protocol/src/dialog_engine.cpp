@@ -45,12 +45,12 @@ static void apply_and_diff(
     nlohmann::json diff = compute_diff(prev_data, new_data);
     if (!diff.empty()) {
       PJ::WidgetDataView view(diff.dump());
-      apply_widget_data(root, view);
+      applyWidgetData(root, view);
       ++diff_apply_count;
     }
   } else {
     PJ::WidgetDataView view(raw);
-    apply_widget_data(root, view);
+    applyWidgetData(root, view);
   }
   prev_data = std::move(new_data);
 }
@@ -59,7 +59,7 @@ static void apply_and_diff(
 // show_dialog
 // ---------------------------------------------------------------------------
 
-DialogResult DialogEngine::show_dialog(QWidget* parent) {
+DialogResult DialogEngine::showDialog(QWidget* parent) {
   stats_ = {};
 
   // 1. Load .ui
@@ -100,7 +100,7 @@ DialogResult DialogEngine::show_dialog(QWidget* parent) {
   }
   {
     PJ::WidgetDataView view(initial_raw);
-    apply_widget_data(binding_root, view);
+    applyWidgetData(binding_root, view);
   }
 
   // 4. Handle file picker actions
@@ -109,24 +109,24 @@ DialogResult DialogEngine::show_dialog(QWidget* parent) {
       return;
     }
     PJ::WidgetDataView view(handle_.widget_data());
-    if (!view.is_file_picker(widget_name)) {
+    if (!view.isFilePicker(widget_name)) {
       return;
     }
-    auto filter = view.file_picker_filter(widget_name).value_or("");
-    auto title = view.file_picker_title(widget_name).value_or("Select File");
+    auto filter = view.filePickerFilter(widget_name).value_or("");
+    auto title = view.filePickerTitle(widget_name).value_or("Select File");
     QString path =
         QFileDialog::getOpenFileName(dialog, QString::fromStdString(title), QString(), QString::fromStdString(filter));
     if (!path.isEmpty()) {
-      if (handle_.send_event(widget_name, PJ::WidgetEventBuilder::file_selected(path.toStdString()))) {
+      if (handle_.sendEvent(widget_name, PJ::WidgetEventBuilder::fileSelected(path.toStdString()))) {
         apply_and_diff(binding_root, handle_, prev_data, config_.enable_diff, stats_.diff_apply_count);
       }
     }
   };
 
   // 5. Wire signals
-  connect_widget_signals(binding_root, [&](const std::string& name, const std::string& event_json) {
+  connectWidgetSignals(binding_root, [&](const std::string& name, const std::string& event_json) {
     stats_.event_count++;
-    if (handle_.send_event(name, event_json)) {
+    if (handle_.sendEvent(name, event_json)) {
       apply_and_diff(binding_root, handle_, prev_data, config_.enable_diff, stats_.diff_apply_count);
     }
     maybe_show_file_picker(name);
@@ -164,7 +164,7 @@ DialogResult DialogEngine::show_dialog(QWidget* parent) {
 // run_headless
 // ---------------------------------------------------------------------------
 
-std::string DialogEngine::run_headless(int max_ticks) {
+std::string DialogEngine::runHeadless(int max_ticks) {
   for (int i = 0; i < max_ticks; ++i) {
     (void)handle_.tick();
   }

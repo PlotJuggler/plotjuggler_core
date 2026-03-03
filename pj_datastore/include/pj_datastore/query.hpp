@@ -62,10 +62,10 @@ class RangeCursor {
   [[nodiscard]] SampleRow current() const;
 
   // Iterate all results via callback (per-row)
-  void for_each(std::function<void(const SampleRow&)> callback);
+  void forEach(std::function<void(const SampleRow&)> callback);
 
   // Iterate chunk-at-a-time (bulk path)
-  void for_each_chunk(std::function<void(const ChunkRowRange&)> callback);
+  void forEachChunk(std::function<void(const ChunkRowRange&)> callback);
 
  private:
   const std::deque<TopicChunk>* chunks_;
@@ -74,15 +74,15 @@ class RangeCursor {
   std::size_t chunk_index_ = 0;
   std::size_t row_index_ = 0;
 
-  void find_first_valid();
+  void findFirstValid();
 
-  void skip_to_valid();
+  void skipToValid();
 };
 
 // Find the most recent sample at or before time t; nullopt if none exists.
-[[nodiscard]] std::optional<SampleRow> latest_at(const std::deque<TopicChunk>& chunks, PJ::Timestamp t);
+[[nodiscard]] std::optional<SampleRow> latestAt(const std::deque<TopicChunk>& chunks, PJ::Timestamp t);
 
 // Create a range cursor
-[[nodiscard]] RangeCursor range_query(const std::deque<TopicChunk>& chunks, PJ::Timestamp t_min, PJ::Timestamp t_max);
+[[nodiscard]] RangeCursor rangeQuery(const std::deque<TopicChunk>& chunks, PJ::Timestamp t_min, PJ::Timestamp t_max);
 
 }  // namespace PJ

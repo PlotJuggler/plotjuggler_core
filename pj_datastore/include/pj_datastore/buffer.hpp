@@ -49,36 +49,36 @@ class BitVector {
   BitVector() = default;
 
   /// Required bytes for `num_bits` bits.
-  [[nodiscard]] static constexpr std::size_t bytes_for_bits(std::size_t num_bits) noexcept {
+  [[nodiscard]] static constexpr std::size_t bytesForBits(std::size_t num_bits) noexcept {
     return (num_bits + 7) / 8;
   }
 
   /// Initialize to `num_bits` bits, all set to valid.
-  void init_valid(std::size_t num_bits);
+  void initValid(std::size_t num_bits);
 
   /// Ensure capacity for at least `num_bits` bits.
-  void ensure_size(std::size_t num_bits);
+  void ensureSize(std::size_t num_bits);
 
   /// Mark one bit as valid.
-  void set_valid(std::size_t bit_index);
+  void setValid(std::size_t bit_index);
 
   /// Mark one bit as null.
-  void set_null(std::size_t bit_index);
+  void setNull(std::size_t bit_index);
 
   /// Return true if one bit is valid.
-  [[nodiscard]] bool is_valid(std::size_t bit_index) const;
+  [[nodiscard]] bool isValid(std::size_t bit_index) const;
 
   /// Count null bits in the first `num_bits` bits.
-  [[nodiscard]] std::size_t count_nulls(std::size_t num_bits) const;
+  [[nodiscard]] std::size_t countNulls(std::size_t num_bits) const;
 
   /// Replace bytes from `bytes` and set total bit count.
-  void assign_bytes(Span<const uint8_t> bytes, std::size_t bit_count);
+  void assignBytes(Span<const uint8_t> bytes, std::size_t bit_count);
 
   /// Reset to empty.
   void clear();
 
   /// Return non-owning bit view.
-  [[nodiscard]] PJ::BitSpan bit_span() const noexcept;
+  [[nodiscard]] PJ::BitSpan bitSpan() const noexcept;
 
   /// Return underlying bytes.
   [[nodiscard]] const uint8_t* data() const noexcept;
@@ -87,10 +87,10 @@ class BitVector {
   [[nodiscard]] uint8_t* mutable_data() noexcept;
 
   /// Return byte count of packed storage.
-  [[nodiscard]] std::size_t size_bytes() const noexcept;
+  [[nodiscard]] std::size_t sizeBytes() const noexcept;
 
   /// Return bit count tracked by this vector.
-  [[nodiscard]] std::size_t size_bits() const noexcept;
+  [[nodiscard]] std::size_t sizeBits() const noexcept;
 
   /// Return true when no bits are stored.
   [[nodiscard]] bool empty() const noexcept;

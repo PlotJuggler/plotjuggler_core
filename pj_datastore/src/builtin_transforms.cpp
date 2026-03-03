@@ -12,13 +12,13 @@ void DerivativeTransform::reset() {
   prev_time_ = 0;
 }
 
-StorageKind DerivativeTransform::output_kind(StorageKind /*input_kind*/) const {
+StorageKind DerivativeTransform::outputKind(StorageKind /*input_kind*/) const {
   return StorageKind::kFloat64;
 }
 
 bool DerivativeTransform::calculate(
     PJ::Timestamp time, const VarValue& input, PJ::Timestamp& out_time, VarValue& out_value) {
-  // Input is decoded as VarValue{double} because output_kind() → kFloat64 and
+  // Input is decoded as VarValue{double} because outputKind() → kFloat64 and
   // the engine widens all numeric inputs to double for float64 output columns.
   double v = std::visit(
       [](const auto& val) -> double {

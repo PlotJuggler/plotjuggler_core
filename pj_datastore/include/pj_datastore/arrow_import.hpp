@@ -30,13 +30,13 @@ struct ArrowColumnMapping {
 /// Returns a TypeTreeNode and column mappings for supported types.
 /// Unsupported Arrow types are skipped.
 [[nodiscard]] PJ::Expected<std::pair<std::shared_ptr<PJ::TypeTreeNode>, std::vector<ArrowColumnMapping>>>
-schema_from_ipc(PJ::Span<const uint8_t> ipc_stream);
+schemaFromIpc(PJ::Span<const uint8_t> ipc_stream);
 
 /// Import all record batches from Arrow IPC stream bytes into a DataWriter topic.
 ///
 /// timestamp_column: which Arrow column contains timestamps (as int64).
 ///   If -1, row indices (0, 1, 2, ...) are used as timestamps.
-[[nodiscard]] PJ::Status import_ipc_stream(
+[[nodiscard]] PJ::Status importIpcStream(
     DataWriter& writer, TopicId topic_id, PJ::Span<const uint8_t> ipc_stream,
     const std::vector<ArrowColumnMapping>& mappings, int timestamp_column = -1);
 

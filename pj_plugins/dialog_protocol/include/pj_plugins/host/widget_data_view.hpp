@@ -21,59 +21,59 @@ class WidgetDataView {
 
   // --- QLineEdit ---
   [[nodiscard]] std::optional<std::string> text(std::string_view name) const {
-    return get_string(name, "text");
+    return getString(name, "text");
   }
   [[nodiscard]] std::optional<std::string> placeholder(std::string_view name) const {
-    return get_string(name, "placeholder");
+    return getString(name, "placeholder");
   }
-  [[nodiscard]] std::optional<bool> read_only(std::string_view name) const {
-    return get_bool(name, "read_only");
+  [[nodiscard]] std::optional<bool> readOnly(std::string_view name) const {
+    return getBool(name, "read_only");
   }
 
   // --- QComboBox ---
-  [[nodiscard]] std::optional<int> current_index(std::string_view name) const {
-    return get_int(name, "current_index");
+  [[nodiscard]] std::optional<int> currentIndex(std::string_view name) const {
+    return getInt(name, "current_index");
   }
   [[nodiscard]] std::optional<std::vector<std::string>> items(std::string_view name) const {
-    return get_string_array(name, "items");
+    return getStringArray(name, "items");
   }
 
   // --- QCheckBox, QRadioButton ---
   [[nodiscard]] std::optional<bool> checked(std::string_view name) const {
-    return get_bool(name, "checked");
+    return getBool(name, "checked");
   }
 
   // --- QSpinBox ---
-  [[nodiscard]] std::optional<int> value_int(std::string_view name) const {
-    return get_int(name, "value");
+  [[nodiscard]] std::optional<int> valueInt(std::string_view name) const {
+    return getInt(name, "value");
   }
 
   // --- QDoubleSpinBox ---
-  [[nodiscard]] std::optional<double> value_double(std::string_view name) const {
-    return get_double(name, "value");
+  [[nodiscard]] std::optional<double> valueDouble(std::string_view name) const {
+    return getDouble(name, "value");
   }
 
-  [[nodiscard]] std::optional<int> range_min(std::string_view name) const {
-    return get_int(name, "min");
+  [[nodiscard]] std::optional<int> rangeMin(std::string_view name) const {
+    return getInt(name, "min");
   }
-  [[nodiscard]] std::optional<int> range_max(std::string_view name) const {
-    return get_int(name, "max");
+  [[nodiscard]] std::optional<int> rangeMax(std::string_view name) const {
+    return getInt(name, "max");
   }
 
   // --- QListWidget ---
-  [[nodiscard]] std::optional<std::vector<std::string>> list_items(std::string_view name) const {
-    return get_string_array(name, "list_items");
+  [[nodiscard]] std::optional<std::vector<std::string>> listItems(std::string_view name) const {
+    return getStringArray(name, "list_items");
   }
-  [[nodiscard]] std::optional<std::vector<std::string>> selected_items(std::string_view name) const {
-    return get_string_array(name, "selected_items");
+  [[nodiscard]] std::optional<std::vector<std::string>> selectedItems(std::string_view name) const {
+    return getStringArray(name, "selected_items");
   }
 
   // --- QTableWidget ---
-  [[nodiscard]] std::optional<std::vector<std::string>> table_headers(std::string_view name) const {
-    return get_string_array(name, "headers");
+  [[nodiscard]] std::optional<std::vector<std::string>> tableHeaders(std::string_view name) const {
+    return getStringArray(name, "headers");
   }
 
-  [[nodiscard]] std::optional<std::vector<std::vector<std::string>>> table_rows(std::string_view name) const {
+  [[nodiscard]] std::optional<std::vector<std::vector<std::string>>> tableRows(std::string_view name) const {
     const nlohmann::json* w = widget(name);
     if (!w) {
       return std::nullopt;
@@ -102,16 +102,16 @@ class WidgetDataView {
 
   // --- QLabel ---
   [[nodiscard]] std::optional<std::string> label(std::string_view name) const {
-    return get_string(name, "label");
+    return getString(name, "label");
   }
 
   // --- QPushButton ---
-  [[nodiscard]] std::optional<std::string> button_text(std::string_view name) const {
-    return get_string(name, "button_text");
+  [[nodiscard]] std::optional<std::string> buttonText(std::string_view name) const {
+    return getString(name, "button_text");
   }
 
   // --- File picker ---
-  [[nodiscard]] bool is_file_picker(std::string_view name) const {
+  [[nodiscard]] bool isFilePicker(std::string_view name) const {
     const nlohmann::json* w = widget(name);
     if (!w) {
       return false;
@@ -120,33 +120,33 @@ class WidgetDataView {
     return it != w->end() && it->is_string() && it->get<std::string>() == "file_picker";
   }
 
-  [[nodiscard]] std::optional<std::string> file_picker_filter(std::string_view name) const {
-    return get_string(name, "filter");
+  [[nodiscard]] std::optional<std::string> filePickerFilter(std::string_view name) const {
+    return getString(name, "filter");
   }
-  [[nodiscard]] std::optional<std::string> file_picker_title(std::string_view name) const {
-    return get_string(name, "title");
+  [[nodiscard]] std::optional<std::string> filePickerTitle(std::string_view name) const {
+    return getString(name, "title");
   }
 
   // --- QDialogButtonBox ---
-  [[nodiscard]] std::optional<bool> ok_enabled(std::string_view name) const {
-    return get_bool(name, "ok_enabled");
+  [[nodiscard]] std::optional<bool> okEnabled(std::string_view name) const {
+    return getBool(name, "ok_enabled");
   }
 
   // --- QTabWidget ---
-  [[nodiscard]] std::optional<int> tab_index(std::string_view name) const {
-    return get_int(name, "tab_index");
+  [[nodiscard]] std::optional<int> tabIndex(std::string_view name) const {
+    return getInt(name, "tab_index");
   }
 
   // --- Generic (any widget) ---
   [[nodiscard]] std::optional<bool> enabled(std::string_view name) const {
-    return get_bool(name, "enabled");
+    return getBool(name, "enabled");
   }
   [[nodiscard]] std::optional<bool> visible(std::string_view name) const {
-    return get_bool(name, "visible");
+    return getBool(name, "visible");
   }
 
   // --- Enumeration ---
-  [[nodiscard]] std::vector<std::string> widget_names() const {
+  [[nodiscard]] std::vector<std::string> widgetNames() const {
     std::vector<std::string> names;
     if (data_.is_object()) {
       names.reserve(data_.size());
@@ -157,7 +157,7 @@ class WidgetDataView {
     return names;
   }
 
-  [[nodiscard]] bool has_widget(std::string_view name) const {
+  [[nodiscard]] bool hasWidget(std::string_view name) const {
     return widget(name) != nullptr;
   }
 
@@ -177,7 +177,7 @@ class WidgetDataView {
     return &(*it);
   }
 
-  std::optional<std::string> get_string(std::string_view name, const char* field) const {
+  std::optional<std::string> getString(std::string_view name, const char* field) const {
     const nlohmann::json* w = widget(name);
     if (!w) {
       return std::nullopt;
@@ -189,7 +189,7 @@ class WidgetDataView {
     return it->get<std::string>();
   }
 
-  std::optional<int> get_int(std::string_view name, const char* field) const {
+  std::optional<int> getInt(std::string_view name, const char* field) const {
     const nlohmann::json* w = widget(name);
     if (!w) {
       return std::nullopt;
@@ -201,7 +201,7 @@ class WidgetDataView {
     return it->get<int>();
   }
 
-  std::optional<bool> get_bool(std::string_view name, const char* field) const {
+  std::optional<bool> getBool(std::string_view name, const char* field) const {
     const nlohmann::json* w = widget(name);
     if (!w) {
       return std::nullopt;
@@ -213,7 +213,7 @@ class WidgetDataView {
     return it->get<bool>();
   }
 
-  std::optional<double> get_double(std::string_view name, const char* field) const {
+  std::optional<double> getDouble(std::string_view name, const char* field) const {
     const nlohmann::json* w = widget(name);
     if (!w) {
       return std::nullopt;
@@ -225,7 +225,7 @@ class WidgetDataView {
     return it->get<double>();
   }
 
-  std::optional<std::vector<std::string>> get_string_array(std::string_view name, const char* field) const {
+  std::optional<std::vector<std::string>> getStringArray(std::string_view name, const char* field) const {
     const nlohmann::json* w = widget(name);
     if (!w) {
       return std::nullopt;

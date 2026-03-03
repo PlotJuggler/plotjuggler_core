@@ -22,62 +22,62 @@ class RecordingPlugin : public PJ::DialogPluginTyped {
 
   // --- Recording typed handlers ---
 
-  bool on_text_changed(std::string_view widget_name, std::string_view text) override {
+  bool onTextChanged(std::string_view widget_name, std::string_view text) override {
     last_handler = "text_changed";
     last_widget = std::string(widget_name);
     last_text = std::string(text);
     return true;
   }
 
-  bool on_index_changed(std::string_view widget_name, int index) override {
+  bool onIndexChanged(std::string_view widget_name, int index) override {
     last_handler = "index_changed";
     last_widget = std::string(widget_name);
     last_int = index;
     return true;
   }
 
-  bool on_toggled(std::string_view widget_name, bool checked) override {
+  bool onToggled(std::string_view widget_name, bool checked) override {
     last_handler = "toggled";
     last_widget = std::string(widget_name);
     last_bool = checked;
     return true;
   }
 
-  bool on_value_changed(std::string_view widget_name, int value) override {
+  bool onValueChanged(std::string_view widget_name, int value) override {
     last_handler = "value_int";
     last_widget = std::string(widget_name);
     last_int = value;
     return true;
   }
 
-  bool on_value_changed(std::string_view widget_name, double value) override {
+  bool onValueChanged(std::string_view widget_name, double value) override {
     last_handler = "value_double";
     last_widget = std::string(widget_name);
     last_double = value;
     return true;
   }
 
-  bool on_selection_changed(std::string_view widget_name, const std::vector<std::string>& selected) override {
+  bool onSelectionChanged(std::string_view widget_name, const std::vector<std::string>& selected) override {
     last_handler = "selection_changed";
     last_widget = std::string(widget_name);
     last_strings = selected;
     return true;
   }
 
-  bool on_clicked(std::string_view widget_name) override {
+  bool onClicked(std::string_view widget_name) override {
     last_handler = "clicked";
     last_widget = std::string(widget_name);
     return true;
   }
 
-  bool on_file_selected(std::string_view widget_name, std::string_view path) override {
+  bool onFileSelected(std::string_view widget_name, std::string_view path) override {
     last_handler = "file_selected";
     last_widget = std::string(widget_name);
     last_text = std::string(path);
     return true;
   }
 
-  bool on_tab_changed(std::string_view widget_name, int index) override {
+  bool onTabChanged(std::string_view widget_name, int index) override {
     last_handler = "tab_changed";
     last_widget = std::string(widget_name);
     last_int = index;
@@ -107,7 +107,7 @@ class RecordingPlugin : public PJ::DialogPluginTyped {
 // Helper: call the base class on_widget_event through the public interface.
 // DialogPluginTyped::on_widget_event is final, but we access it via DialogPluginBase ref.
 bool dispatch(PJ::DialogPluginBase& plugin, std::string_view widget, std::string_view json) {
-  return plugin.on_widget_event(widget, json);
+  return plugin.onWidgetEvent(widget, json);
 }
 
 }  // namespace

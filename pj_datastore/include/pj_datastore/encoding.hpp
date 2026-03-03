@@ -59,10 +59,10 @@ struct DictionaryEncoded {
 
 // Encode a string column into dictionary form.
 // Takes raw string data (offsets buffer + value buffer from TypedColumnBuffer).
-[[nodiscard]] DictionaryEncoded dictionary_encode_strings(
+[[nodiscard]] DictionaryEncoded dictionaryEncodeStrings(
     PJ::Span<const uint8_t> offsets_data, PJ::Span<const uint8_t> values_data, std::size_t row_count);
 
-[[nodiscard]] std::string_view dictionary_lookup(const DictionaryEncoded& encoded, std::size_t row);
+[[nodiscard]] std::string_view dictionaryLookup(const DictionaryEncoded& encoded, std::size_t row);
 
 // ---------------------------------------------------------------------------
 // Packed bitfield for bools (1 bit per value, LSB first like Arrow validity bitmaps)
@@ -76,10 +76,10 @@ struct PackedBools {
 
 // Pack bool values (stored as uint8_t 0/1) into a bitfield
 /// Pack bool bytes into a compact bitfield.
-[[nodiscard]] PackedBools pack_bools(PJ::Span<const uint8_t> values);
+[[nodiscard]] PackedBools packBools(PJ::Span<const uint8_t> values);
 
 /// Read one bool from a packed bitfield.
-[[nodiscard]] bool unpack_bool(const PackedBools& packed, std::size_t index);
+[[nodiscard]] bool unpackBool(const PackedBools& packed, std::size_t index);
 
 // ---------------------------------------------------------------------------
 // Unified per-column encoding data variant
@@ -92,28 +92,28 @@ using ColumnEncodingData = std::variant<
 // Constant encoding functions
 // ---------------------------------------------------------------------------
 /// Build constant encoding from one repeated storage-kind value.
-[[nodiscard]] ConstantEncoded constant_encode(PJ::Span<const uint8_t> data, StorageKind kind, std::size_t count);
+[[nodiscard]] ConstantEncoded constantEncode(PJ::Span<const uint8_t> data, StorageKind kind, std::size_t count);
 
 /// Decode constant numeric value as double.
-[[nodiscard]] double constant_decode_as_double(const ConstantEncoded& enc);
+[[nodiscard]] double constantDecodeAsDouble(const ConstantEncoded& enc);
 
 // ---------------------------------------------------------------------------
 // Frame of Reference encoding functions
 // Data must be kInt32 or kInt64 values.
 // ---------------------------------------------------------------------------
 /// Encode signed integers as offsets from `min_val`.
-[[nodiscard]] FrameOfReferenceEncoded for_encode(
+[[nodiscard]] FrameOfReferenceEncoded forEncode(
     PJ::Span<const uint8_t> data, StorageKind kind, std::size_t count, int64_t min_val, int64_t max_val);
 /// Decode one FOR value as double.
-[[nodiscard]] double for_decode_one_as_double(const FrameOfReferenceEncoded& enc, std::size_t row);
+[[nodiscard]] double forDecodeOneAsDouble(const FrameOfReferenceEncoded& enc, std::size_t row);
 
 /// Decode a contiguous FOR range into `out`.
-void for_decode_range_as_doubles(const FrameOfReferenceEncoded& enc, PJ::Span<double> out, std::size_t row_start);
+void forDecodeRangeAsDoubles(const FrameOfReferenceEncoded& enc, PJ::Span<double> out, std::size_t row_start);
 
 // ---------------------------------------------------------------------------
 // Byte-width helpers
 // ---------------------------------------------------------------------------
-[[nodiscard]] constexpr uint8_t index_bytes_for(std::size_t dict_size) noexcept {
+[[nodiscard]] constexpr uint8_t indexBytesFor(std::size_t dict_size) noexcept {
   if (dict_size <= 256) {
     return 1;
   }
@@ -123,7 +123,7 @@ void for_decode_range_as_doubles(const FrameOfReferenceEncoded& enc, PJ::Span<do
   return 4;
 }
 
-[[nodiscard]] constexpr uint8_t offset_bytes_for(uint64_t range) noexcept {
+[[nodiscard]] constexpr uint8_t offsetBytesFor(uint64_t range) noexcept {
   if (range < 256) {
     return 1;
   }

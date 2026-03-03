@@ -51,7 +51,7 @@ class ISISOTransform {
   /// Declare the StorageKind of the output column. Called once at registration.
   /// Default: kFloat64 (suitable for most numeric filters).
   /// Override to preserve integer types or produce strings.
-  virtual StorageKind output_kind(StorageKind input_kind) const {
+  virtual StorageKind outputKind(StorageKind input_kind) const {
     (void)input_kind;
     return StorageKind::kFloat64;
   }
@@ -87,7 +87,7 @@ class IMIMOTransform {
   /// Declare output StorageKind for each output topic.
   /// Called once at registration with the input kinds (one per input topic).
   /// Return one StorageKind per output topic name passed to add_mimo_transform.
-  virtual std::vector<StorageKind> output_kinds(PJ::Span<const StorageKind> input_kinds) const = 0;
+  virtual std::vector<StorageKind> outputKinds(PJ::Span<const StorageKind> input_kinds) const = 0;
 
   /// Process one joined sample. Called in strictly ascending timestamp order,
   /// only when ALL input topics have a sample at exactly `time`.
@@ -114,45 +114,45 @@ class DerivedEngine {
   DerivedEngine& operator=(const DerivedEngine&) = delete;
 
   // ---- SISO ----------------------------------------------------------------
-  // Creates one scalar output topic (StorageKind from op->output_kind()).
+  // Creates one scalar output topic (StorageKind from op->outputKind()).
   // Returns error if:
   //   - input_topic_id does not exist
   //   - input topic has more than one column
   //   - output_topic_name already registered within output_dataset_id
   //
-  // Topics created via DataWriter::register_scalar_series (schema_id == 0)
+  // Topics created via DataWriter::registerScalarSeries (schema_id == 0)
   // are supported even before any data has been committed: the column layout
   // is stored in TopicStorage at registration time. Topics created via
   // DataWriter::register_topic with schema_id != 0 are always supported.
   // Returns error if the column layout cannot be determined (e.g. a topic
   // created with schema_id==0 via the low-level register_topic API with no
   // committed chunks and no stored column descriptors).
-  [[nodiscard]] PJ::Expected<PJ::NodeId> add_siso_transform(
+  [[nodiscard]] PJ::Expected<PJ::NodeId> addSisoTransform(
       PJ::TopicId input_topic_id, std::string output_topic_name, PJ::DatasetId output_dataset_id,
       std::unique_ptr<ISISOTransform> op);
 
   // ---- MIMO (Phase 3) -------------------------------------------------------
   // All input topics must be single-column (scalar).
   // A row is emitted only when ALL input topics share the exact same timestamp.
-  // Creates output_topic_names.size() new topics (kinds from op->output_kinds()).
-  [[nodiscard]] PJ::Expected<PJ::NodeId> add_mimo_transform(
+  // Creates output_topic_names.size() new topics (kinds from op->outputKinds()).
+  [[nodiscard]] PJ::Expected<PJ::NodeId> addMimoTransform(
       std::vector<PJ::TopicId> input_topic_ids, std::vector<std::string> output_topic_names,
       PJ::DatasetId output_dataset_id, std::unique_ptr<IMIMOTransform> op);
 
   // ---- Node management -----------------------------------------------------
-  PJ::Status remove_node(PJ::NodeId id);
-  [[nodiscard]] bool has_node(PJ::NodeId id) const noexcept;
+  PJ::Status removeNode(PJ::NodeId id);
+  [[nodiscard]] bool hasNode(PJ::NodeId id) const noexcept;
 
   // Returns output topic IDs: 1 for SISO, M for MIMO.
-  [[nodiscard]] std::vector<PJ::TopicId> output_topics(PJ::NodeId id) const;
+  [[nodiscard]] std::vector<PJ::TopicId> outputTopics(PJ::NodeId id) const;
 
   // Kahn's topological order (upstream → downstream).
-  [[nodiscard]] std::vector<PJ::NodeId> topological_order() const;
+  [[nodiscard]] std::vector<PJ::NodeId> topologicalOrder() const;
 
   // ---- Commit-cycle hook ---------------------------------------------------
-  // Call after DataEngine::commit_chunks() with the set of changed topic IDs.
+  // Call after DataEngine::commitChunks() with the set of changed topic IDs.
   // Marks directly dependent nodes dirty.
-  void on_source_committed(PJ::Span<const PJ::TopicId> changed_topics);
+  void onSourceCommitted(PJ::Span<const PJ::TopicId> changed_topics);
 
   // ---- Scheduling ----------------------------------------------------------
   // Process all dirty nodes in topological order (incremental path).

@@ -13,76 +13,76 @@ namespace PJ {
 /// Plugin authors override only the typed methods they need (all default to returning false).
 class DialogPluginTyped : public DialogPluginBase {
  public:
-  // --- Override these instead of on_widget_event() ---
+  // --- Override these instead of onWidgetEvent() ---
 
-  virtual bool on_text_changed(std::string_view /*widget_name*/, std::string_view /*text*/) {
+  virtual bool onTextChanged(std::string_view /*widget_name*/, std::string_view /*text*/) {
     return false;
   }
 
-  virtual bool on_index_changed(std::string_view /*widget_name*/, int /*index*/) {
+  virtual bool onIndexChanged(std::string_view /*widget_name*/, int /*index*/) {
     return false;
   }
 
-  virtual bool on_toggled(std::string_view /*widget_name*/, bool /*checked*/) {
+  virtual bool onToggled(std::string_view /*widget_name*/, bool /*checked*/) {
     return false;
   }
 
-  virtual bool on_value_changed(std::string_view /*widget_name*/, int /*value*/) {
+  virtual bool onValueChanged(std::string_view /*widget_name*/, int /*value*/) {
     return false;
   }
 
-  virtual bool on_value_changed(std::string_view /*widget_name*/, double /*value*/) {
+  virtual bool onValueChanged(std::string_view /*widget_name*/, double /*value*/) {
     return false;
   }
 
-  virtual bool on_selection_changed(std::string_view /*widget_name*/, const std::vector<std::string>& /*selected*/) {
+  virtual bool onSelectionChanged(std::string_view /*widget_name*/, const std::vector<std::string>& /*selected*/) {
     return false;
   }
 
-  virtual bool on_clicked(std::string_view /*widget_name*/) {
+  virtual bool onClicked(std::string_view /*widget_name*/) {
     return false;
   }
 
-  virtual bool on_file_selected(std::string_view /*widget_name*/, std::string_view /*path*/) {
+  virtual bool onFileSelected(std::string_view /*widget_name*/, std::string_view /*path*/) {
     return false;
   }
 
-  virtual bool on_tab_changed(std::string_view /*widget_name*/, int /*index*/) {
+  virtual bool onTabChanged(std::string_view /*widget_name*/, int /*index*/) {
     return false;
   }
 
  private:
   /// Parses event_json and dispatches to the appropriate typed virtual above.
-  bool on_widget_event(std::string_view widget_name, std::string_view event_json) final {
+  bool onWidgetEvent(std::string_view widget_name, std::string_view event_json) final {
     WidgetEvent event(event_json);
 
     if (auto v = event.text()) {
-      return on_text_changed(widget_name, *v);
+      return onTextChanged(widget_name, *v);
     }
-    if (auto v = event.current_index()) {
-      return on_index_changed(widget_name, *v);
+    if (auto v = event.currentIndex()) {
+      return onIndexChanged(widget_name, *v);
     }
     if (auto v = event.checked()) {
-      return on_toggled(widget_name, *v);
+      return onToggled(widget_name, *v);
     }
-    if (auto v = event.file_selected()) {
-      return on_file_selected(widget_name, *v);
+    if (auto v = event.fileSelected()) {
+      return onFileSelected(widget_name, *v);
     }
     if (event.clicked()) {
-      return on_clicked(widget_name);
+      return onClicked(widget_name);
     }
-    if (auto v = event.selected_items()) {
-      return on_selection_changed(widget_name, *v);
+    if (auto v = event.selectedItems()) {
+      return onSelectionChanged(widget_name, *v);
     }
-    if (auto v = event.tab_index()) {
-      return on_tab_changed(widget_name, *v);
+    if (auto v = event.tabIndex()) {
+      return onTabChanged(widget_name, *v);
     }
     // value: try int first, then double
-    if (auto v = event.value_int()) {
-      return on_value_changed(widget_name, *v);
+    if (auto v = event.valueInt()) {
+      return onValueChanged(widget_name, *v);
     }
-    if (auto v = event.value_double()) {
-      return on_value_changed(widget_name, *v);
+    if (auto v = event.valueDouble()) {
+      return onValueChanged(widget_name, *v);
     }
 
     return false;

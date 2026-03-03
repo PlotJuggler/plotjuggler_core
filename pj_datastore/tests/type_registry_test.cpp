@@ -14,20 +14,20 @@ namespace {
 
 // Helper: build a simple struct with two float64 fields (x, y)
 std::shared_ptr<TypeTreeNode> make_point_schema() {
-  return make_struct(
+  return makeStruct(
       "Point", {
-                   make_primitive("x", PrimitiveType::kFloat64),
-                   make_primitive("y", PrimitiveType::kFloat64),
+                   makePrimitive("x", PrimitiveType::kFloat64),
+                   makePrimitive("y", PrimitiveType::kFloat64),
                });
 }
 
 // Helper: build a struct with three float64 fields (x, y, z)
 std::shared_ptr<TypeTreeNode> make_point3d_schema() {
-  return make_struct(
+  return makeStruct(
       "Point3D", {
-                     make_primitive("x", PrimitiveType::kFloat64),
-                     make_primitive("y", PrimitiveType::kFloat64),
-                     make_primitive("z", PrimitiveType::kFloat64),
+                     makePrimitive("x", PrimitiveType::kFloat64),
+                     makePrimitive("y", PrimitiveType::kFloat64),
+                     makePrimitive("z", PrimitiveType::kFloat64),
                  });
 }
 
@@ -37,7 +37,7 @@ TEST(TypeRegistryTest, RegisterAndLookupById) {
   auto tree = make_point_schema();
   auto* raw_ptr = tree.get();
 
-  auto result = registry.register_schema("Point", tree);
+  auto result = registry.registerSchema("Point", tree);
   ASSERT_TRUE(result.has_value()) << result.error();
 
   const TypeTreeNode* looked_up = registry.lookup(*result);
@@ -53,10 +53,10 @@ TEST(TypeRegistryTest, RegisterAndFindByName) {
   TypeRegistry registry;
   auto tree = make_point_schema();
 
-  auto result = registry.register_schema("Point", tree);
+  auto result = registry.registerSchema("Point", tree);
   ASSERT_TRUE(result.has_value()) << result.error();
 
-  auto found = registry.find_by_name("Point");
+  auto found = registry.findByName("Point");
   ASSERT_TRUE(found.has_value());
   EXPECT_EQ(*found, *result);
 }
@@ -65,10 +65,10 @@ TEST(TypeRegistryTest, RegisterAndFindByName) {
 TEST(TypeRegistryTest, RegisterDuplicateNameFails) {
   TypeRegistry registry;
 
-  auto result1 = registry.register_schema("Point", make_point_schema());
+  auto result1 = registry.registerSchema("Point", make_point_schema());
   ASSERT_TRUE(result1.has_value()) << result1.error();
 
-  auto result2 = registry.register_schema("Point", make_point_schema());
+  auto result2 = registry.registerSchema("Point", make_point_schema());
   ASSERT_FALSE(result2.has_value());
 }
 
@@ -76,11 +76,11 @@ TEST(TypeRegistryTest, RegisterDuplicateNameFails) {
 TEST(TypeRegistryTest, RegisterOrGetNewName) {
   TypeRegistry registry;
 
-  auto result = registry.register_or_get("Point", make_point_schema());
+  auto result = registry.registerOrGet("Point", make_point_schema());
   ASSERT_TRUE(result.has_value()) << result.error();
 
   // Verify it was actually registered
-  auto found = registry.find_by_name("Point");
+  auto found = registry.findByName("Point");
   ASSERT_TRUE(found.has_value());
   EXPECT_EQ(*found, *result);
 
@@ -93,11 +93,11 @@ TEST(TypeRegistryTest, RegisterOrGetNewName) {
 TEST(TypeRegistryTest, RegisterOrGetExistingName) {
   TypeRegistry registry;
 
-  auto result1 = registry.register_schema("Point", make_point_schema());
+  auto result1 = registry.registerSchema("Point", make_point_schema());
   ASSERT_TRUE(result1.has_value()) << result1.error();
 
   // register_or_get should return the same ID, ignoring the new tree
-  auto result2 = registry.register_or_get("Point", make_point3d_schema());
+  auto result2 = registry.registerOrGet("Point", make_point3d_schema());
   ASSERT_TRUE(result2.has_value()) << result2.error();
   EXPECT_EQ(*result1, *result2);
 
@@ -116,7 +116,7 @@ TEST(TypeRegistryTest, LookupUnknownIdReturnsNullptr) {
 // 7. find_by_name with unknown name: returns nullopt
 TEST(TypeRegistryTest, FindByNameUnknownReturnsNullopt) {
   TypeRegistry registry;
-  auto found = registry.find_by_name("NonExistent");
+  auto found = registry.findByName("NonExistent");
   EXPECT_FALSE(found.has_value());
 }
 
@@ -125,14 +125,14 @@ TEST(TypeRegistryTest, EvolveSchemaAdditiveChange) {
   TypeRegistry registry;
 
   auto original = make_point_schema();
-  auto result = registry.register_schema("Point", original);
+  auto result = registry.registerSchema("Point", original);
   ASSERT_TRUE(result.has_value()) << result.error();
   SchemaId id = *result;
 
   // Evolve: add a z field
   auto evolved = make_point3d_schema();
   auto* evolved_ptr = evolved.get();
-  PJ::Status status = registry.evolve_schema(id, evolved);
+  PJ::Status status = registry.evolveSchema(id, evolved);
   ASSERT_TRUE(status.has_value()) << status.error();
 
   // lookup should now return the evolved tree
@@ -148,12 +148,12 @@ TEST(TypeRegistryTest, EvolveSchemaRemovedFieldFails) {
 
   // Start with 3 fields
   auto original = make_point3d_schema();
-  auto result = registry.register_schema("Point3D", original);
+  auto result = registry.registerSchema("Point3D", original);
   ASSERT_TRUE(result.has_value()) << result.error();
 
   // Try to evolve to 2 fields (removing z)
   auto reduced = make_point_schema();
-  PJ::Status status = registry.evolve_schema(*result, reduced);
+  PJ::Status status = registry.evolveSchema(*result, reduced);
   ASSERT_FALSE(status.has_value());
 }
 
@@ -162,17 +162,17 @@ TEST(TypeRegistryTest, EvolveSchemaTypeChangeFails) {
   TypeRegistry registry;
 
   auto original = make_point_schema();  // x: float64, y: float64
-  auto result = registry.register_schema("Point", original);
+  auto result = registry.registerSchema("Point", original);
   ASSERT_TRUE(result.has_value()) << result.error();
 
   // Try to evolve: change x from float64 to int32
-  auto changed = make_struct(
+  auto changed = makeStruct(
       "Point", {
-                   make_primitive("x", PrimitiveType::kInt32),  // type changed!
-                   make_primitive("y", PrimitiveType::kFloat64),
-                   make_primitive("z", PrimitiveType::kFloat64),
+                   makePrimitive("x", PrimitiveType::kInt32),  // type changed!
+                   makePrimitive("y", PrimitiveType::kFloat64),
+                   makePrimitive("z", PrimitiveType::kFloat64),
                });
-  PJ::Status status = registry.evolve_schema(*result, changed);
+  PJ::Status status = registry.evolveSchema(*result, changed);
   ASSERT_FALSE(status.has_value());
 }
 
@@ -180,7 +180,7 @@ TEST(TypeRegistryTest, EvolveSchemaTypeChangeFails) {
 TEST(TypeRegistryTest, EvolveSchemaUnknownIdFails) {
   TypeRegistry registry;
 
-  PJ::Status status = registry.evolve_schema(999, make_point_schema());
+  PJ::Status status = registry.evolveSchema(999, make_point_schema());
   ASSERT_FALSE(status.has_value());
 }
 
@@ -188,17 +188,17 @@ TEST(TypeRegistryTest, EvolveSchemaUnknownIdFails) {
 TEST(TypeRegistryTest, MultipleSchemas) {
   TypeRegistry registry;
 
-  auto tree_a = make_primitive("temp", PrimitiveType::kFloat32);
+  auto tree_a = makePrimitive("temp", PrimitiveType::kFloat32);
   auto tree_b = make_point_schema();
-  auto tree_c = make_struct(
+  auto tree_c = makeStruct(
       "Pose", {
-                  make_primitive("frame", PrimitiveType::kString),
-                  make_struct(
+                  makePrimitive("frame", PrimitiveType::kString),
+                  makeStruct(
                       "position",
                       {
-                          make_primitive("x", PrimitiveType::kFloat64),
-                          make_primitive("y", PrimitiveType::kFloat64),
-                          make_primitive("z", PrimitiveType::kFloat64),
+                          makePrimitive("x", PrimitiveType::kFloat64),
+                          makePrimitive("y", PrimitiveType::kFloat64),
+                          makePrimitive("z", PrimitiveType::kFloat64),
                       }),
               });
 
@@ -206,9 +206,9 @@ TEST(TypeRegistryTest, MultipleSchemas) {
   auto* raw_b = tree_b.get();
   auto* raw_c = tree_c.get();
 
-  auto id_a = registry.register_schema("Temperature", tree_a);
-  auto id_b = registry.register_schema("Point", tree_b);
-  auto id_c = registry.register_schema("Pose", tree_c);
+  auto id_a = registry.registerSchema("Temperature", tree_a);
+  auto id_b = registry.registerSchema("Point", tree_b);
+  auto id_c = registry.registerSchema("Pose", tree_c);
 
   ASSERT_TRUE(id_a.has_value()) << id_a.error();
   ASSERT_TRUE(id_b.has_value()) << id_b.error();
@@ -225,9 +225,9 @@ TEST(TypeRegistryTest, MultipleSchemas) {
   EXPECT_EQ(registry.lookup(*id_c), raw_c);
 
   // find_by_name works for all
-  auto found_a = registry.find_by_name("Temperature");
-  auto found_b = registry.find_by_name("Point");
-  auto found_c = registry.find_by_name("Pose");
+  auto found_a = registry.findByName("Temperature");
+  auto found_b = registry.findByName("Point");
+  auto found_c = registry.findByName("Pose");
   ASSERT_TRUE(found_a.has_value());
   ASSERT_TRUE(found_b.has_value());
   ASSERT_TRUE(found_c.has_value());

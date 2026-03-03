@@ -30,41 +30,41 @@ class DialogPluginBase {
   virtual std::string widget_data() = 0;
 
   /// Called when a widget fires an event. Return true if widget_data changed.
-  virtual bool on_widget_event(std::string_view widget_name, std::string_view event_json) = 0;
+  virtual bool onWidgetEvent(std::string_view widget_name, std::string_view event_json) = 0;
 
   /// Called periodically. Return true if widget_data changed.
-  virtual bool on_tick() {
+  virtual bool onTick() {
     return false;
   }
 
   /// Called when the user clicks OK. final_state_json contains the dialog's final widget state.
-  virtual void on_accepted(std::string_view final_state_json) {
+  virtual void onAccepted(std::string_view final_state_json) {
     (void)final_state_json;
   }
 
   /// Called when the user clicks Cancel.
-  virtual void on_rejected() {}
+  virtual void onRejected() {}
 
   /// Return a JSON string capturing plugin config for persistence.
-  virtual std::string save_config() const {
+  virtual std::string saveConfig() const {
     return "{}";
   }
 
   /// Restore plugin state from a previously saved config. Return true if widget_data changed.
-  virtual bool load_config(std::string_view config_json) {
+  virtual bool loadConfig(std::string_view config_json) {
     (void)config_json;
     return false;
   }
 
   /// Return an error message, or "" if no error.
-  virtual std::string last_error() const {
+  virtual std::string lastError() const {
     return "";
   }
 
   /// Returns a vtable with the create function set to `create_fn`.
   /// Used by PJ_DIALOG_PLUGIN to wire up the concrete type.
   template <typename CreateFn>
-  static const PJ_dialog_vtable_t* vtable_with_create(CreateFn create_fn) {
+  static const PJ_dialog_vtable_t* vtableWithCreate(CreateFn create_fn) {
     static const PJ_dialog_vtable_t vt = {
         PJ_DIALOG_PROTOCOL_VERSION, sizeof(PJ_dialog_vtable_t), create_fn,
         trampoline_destroy,         trampoline_get_manifest,    trampoline_get_ui_content,
@@ -146,7 +146,7 @@ class DialogPluginBase {
   static bool trampoline_on_widget_event(void* ctx, const char* widget_name, const char* event_json) {
     auto* self = static_cast<DialogPluginBase*>(ctx);
     try {
-      return self->on_widget_event(widget_name, event_json);
+      return self->onWidgetEvent(widget_name, event_json);
     } catch (const std::exception& e) {
       self->error_buf_ = e.what();
       return false;
@@ -159,7 +159,7 @@ class DialogPluginBase {
   static bool trampoline_on_tick(void* ctx) {
     auto* self = static_cast<DialogPluginBase*>(ctx);
     try {
-      return self->on_tick();
+      return self->onTick();
     } catch (const std::exception& e) {
       self->error_buf_ = e.what();
       return false;
@@ -172,7 +172,7 @@ class DialogPluginBase {
   static void trampoline_on_accepted(void* ctx, const char* final_state_json) {
     auto* self = static_cast<DialogPluginBase*>(ctx);
     try {
-      self->on_accepted(final_state_json);
+      self->onAccepted(final_state_json);
     } catch (const std::exception& e) {
       self->error_buf_ = e.what();
     } catch (...) {
@@ -183,7 +183,7 @@ class DialogPluginBase {
   static void trampoline_on_rejected(void* ctx) {
     auto* self = static_cast<DialogPluginBase*>(ctx);
     try {
-      self->on_rejected();
+      self->onRejected();
     } catch (const std::exception& e) {
       self->error_buf_ = e.what();
     } catch (...) {
@@ -194,7 +194,7 @@ class DialogPluginBase {
   static const char* trampoline_save_config(void* ctx) {
     auto* self = static_cast<DialogPluginBase*>(ctx);
     try {
-      self->config_buf_ = self->save_config();
+      self->config_buf_ = self->saveConfig();
       return self->config_buf_.c_str();
     } catch (const std::exception& e) {
       self->error_buf_ = e.what();
@@ -208,7 +208,7 @@ class DialogPluginBase {
   static bool trampoline_load_config(void* ctx, const char* config_json) {
     auto* self = static_cast<DialogPluginBase*>(ctx);
     try {
-      return self->load_config(config_json);
+      return self->loadConfig(config_json);
     } catch (const std::exception& e) {
       self->error_buf_ = e.what();
       return false;
@@ -221,7 +221,7 @@ class DialogPluginBase {
   static const char* trampoline_get_last_error(void* ctx) {
     auto* self = static_cast<DialogPluginBase*>(ctx);
     try {
-      self->error_buf_ = self->last_error();
+      self->error_buf_ = self->lastError();
     } catch (const std::exception& e) {
       self->error_buf_ = e.what();
     } catch (...) {
@@ -238,6 +238,6 @@ class DialogPluginBase {
 #define PJ_DIALOG_PLUGIN(ClassName)                                                          \
   extern "C" PJ_DIALOG_EXPORT const PJ_dialog_vtable_t* PJ_get_dialog_vtable() {             \
     static const PJ_dialog_vtable_t* vt =                                                    \
-        PJ::DialogPluginBase::vtable_with_create([]() -> void* { return new ClassName(); }); \
+        PJ::DialogPluginBase::vtableWithCreate([]() -> void* { return new ClassName(); }); \
     return vt;                                                                               \
   }

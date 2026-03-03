@@ -27,7 +27,7 @@ struct BitSpan {
     return bit_length == 0;
   }
 
-  [[nodiscard]] constexpr std::size_t size_bits() const noexcept {
+  [[nodiscard]] constexpr std::size_t sizeBits() const noexcept {
     return bit_length;
   }
 

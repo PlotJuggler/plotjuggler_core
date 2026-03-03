@@ -42,7 +42,7 @@ using NumericValue =
     std::variant<float, double, int8_t, int16_t, int32_t, int64_t, uint8_t, uint16_t, uint32_t, uint64_t>;
 
 // Size in bytes of each numeric type
-[[nodiscard]] constexpr size_t numeric_type_size(NumericType type) noexcept {
+[[nodiscard]] constexpr size_t numericTypeSize(NumericType type) noexcept {
   switch (type) {
     case NumericType::kFloat32:
       return sizeof(float);
@@ -69,12 +69,12 @@ using NumericValue =
 }
 
 // Map a NumericValue variant index to NumericType
-[[nodiscard]] constexpr NumericType numeric_value_type(const NumericValue& v) noexcept {
+[[nodiscard]] constexpr NumericType numericValueType(const NumericValue& v) noexcept {
   return static_cast<NumericType>(v.index());
 }
 
 // Convert any NumericValue to double (for stats, display)
-[[nodiscard]] constexpr double numeric_value_to_double(const NumericValue& v) noexcept {
+[[nodiscard]] constexpr double numericValueToDouble(const NumericValue& v) noexcept {
   return std::visit([](const auto& val) -> double { return static_cast<double>(val); }, v);
 }
 

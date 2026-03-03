@@ -11,35 +11,35 @@ namespace PJ {
 TopicStorage::TopicStorage(TopicId topic_id, TopicDescriptor descriptor)
     : topic_id_(topic_id), descriptor_(std::move(descriptor)) {}
 
-PJ::Status TopicStorage::append_sealed_chunk(TopicChunk chunk) {
+PJ::Status TopicStorage::appendSealedChunk(TopicChunk chunk) {
   if (!sealed_chunks_.empty() && chunk.stats.t_min < sealed_chunks_.back().stats.t_min) {
     return PJ::unexpected(
         absl::StrCat(
             "Out-of-order chunk: new t_min=", chunk.stats.t_min, " < last t_min=", sealed_chunks_.back().stats.t_min));
   }
   sealed_chunks_.push_back(std::move(chunk));
-  return PJ::ok_status();
+  return PJ::okStatus();
 }
 
-void TopicStorage::evict_before(Timestamp t_keep_min) {
+void TopicStorage::evictBefore(Timestamp t_keep_min) {
   while (!sealed_chunks_.empty() && sealed_chunks_.front().stats.t_max < t_keep_min) {
     sealed_chunks_.pop_front();
   }
 }
 
-void TopicStorage::clear_chunks() noexcept {
+void TopicStorage::clearChunks() noexcept {
   sealed_chunks_.clear();
 }
 
-void TopicStorage::set_column_descriptors(std::vector<ColumnDescriptor> descs) noexcept {
+void TopicStorage::setColumnDescriptors(std::vector<ColumnDescriptor> descs) noexcept {
   column_descriptors_ = std::move(descs);
 }
 
-const std::vector<ColumnDescriptor>& TopicStorage::column_descriptors() const noexcept {
+const std::vector<ColumnDescriptor>& TopicStorage::columnDescriptors() const noexcept {
   return column_descriptors_;
 }
 
-const std::deque<TopicChunk>& TopicStorage::sealed_chunks() const noexcept {
+const std::deque<TopicChunk>& TopicStorage::sealedChunks() const noexcept {
   return sealed_chunks_;
 }
 
@@ -69,7 +69,7 @@ TopicMetadata TopicStorage::metadata() const {
       meta.total_byte_size += col_buf.size();
     }
     for (const auto& validity_buf : chunk.validity_bitmaps) {
-      meta.total_byte_size += validity_buf.size_bytes();
+      meta.total_byte_size += validity_buf.sizeBytes();
     }
     for (const auto& enc : chunk.encoding_data) {
       std::visit(
@@ -122,34 +122,34 @@ Timestamp TopicStorage::time_max() const noexcept {
   return sealed_chunks_.back().stats.t_max;
 }
 
-void TopicStorage::update_schema(SchemaId new_schema) {
+void TopicStorage::updateSchema(SchemaId new_schema) {
   descriptor_.schema_id = new_schema;
 }
 
-void TopicStorage::update_max_observed_array_length(uint32_t observed_length) {
+void TopicStorage::updateMaxObservedArrayLength(uint32_t observed_length) {
   if (observed_length > max_observed_array_length_) {
     max_observed_array_length_ = observed_length;
   }
 }
 
-void TopicStorage::increment_truncated_sample_count() {
+void TopicStorage::incrementTruncatedSampleCount() {
   ++truncated_sample_count_;
 }
 
-uint32_t TopicStorage::max_observed_array_length() const noexcept {
+uint32_t TopicStorage::maxObservedArrayLength() const noexcept {
   return max_observed_array_length_;
 }
 
-uint32_t TopicStorage::truncated_sample_count() const noexcept {
+uint32_t TopicStorage::truncatedSampleCount() const noexcept {
   return truncated_sample_count_;
 }
 
-uint32_t TopicStorage::array_expansion_count(const std::string& field_path) const noexcept {
+uint32_t TopicStorage::arrayExpansionCount(const std::string& field_path) const noexcept {
   auto it = array_expansion_counts_.find(field_path);
   return it != array_expansion_counts_.end() ? it->second : 0;
 }
 
-void TopicStorage::set_array_expansion_count(const std::string& field_path, uint32_t count) {
+void TopicStorage::setArrayExpansionCount(const std::string& field_path, uint32_t count) {
   array_expansion_counts_[field_path] = count;
 }
 

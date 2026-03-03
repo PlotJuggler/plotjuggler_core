@@ -54,38 +54,38 @@ bool RawBuffer::empty() const noexcept {
 // BitVector
 // ---------------------------------------------------------------------------
 
-void BitVector::init_valid(std::size_t num_bits) {
+void BitVector::initValid(std::size_t num_bits) {
   bit_count_ = num_bits;
-  bytes_.resize(bytes_for_bits(num_bits));
+  bytes_.resize(bytesForBits(num_bits));
   if (!bytes_.empty()) {
     std::memset(bytes_.data(), 0xFF, bytes_.size());
   }
 }
 
-void BitVector::ensure_size(std::size_t num_bits) {
+void BitVector::ensureSize(std::size_t num_bits) {
   if (num_bits > bit_count_) {
     bit_count_ = num_bits;
   }
-  const std::size_t needed = bytes_for_bits(num_bits);
+  const std::size_t needed = bytesForBits(num_bits);
   if (bytes_.size() < needed) {
     bytes_.resize(needed);
   }
 }
 
-void BitVector::set_valid(std::size_t bit_index) {
+void BitVector::setValid(std::size_t bit_index) {
   bytes_[bit_index / 8] |= static_cast<uint8_t>(1u << (bit_index % 8));
 }
 
-void BitVector::set_null(std::size_t bit_index) {
+void BitVector::setNull(std::size_t bit_index) {
   bytes_[bit_index / 8] &= static_cast<uint8_t>(~(1u << (bit_index % 8)));
 }
 
-bool BitVector::is_valid(std::size_t bit_index) const {
+bool BitVector::isValid(std::size_t bit_index) const {
   return (bytes_[bit_index / 8] & (1u << (bit_index % 8))) != 0;
 }
 
-std::size_t BitVector::count_nulls(std::size_t num_bits) const {
-  const std::size_t num_bytes = bytes_for_bits(num_bits);
+std::size_t BitVector::countNulls(std::size_t num_bits) const {
+  const std::size_t num_bytes = bytesForBits(num_bits);
   const uint8_t* ptr = bytes_.data();
 
   std::size_t total_set_bits = 0;
@@ -106,7 +106,7 @@ std::size_t BitVector::count_nulls(std::size_t num_bits) const {
   return num_bits - total_set_bits;
 }
 
-void BitVector::assign_bytes(Span<const uint8_t> bytes, std::size_t bit_count) {
+void BitVector::assignBytes(Span<const uint8_t> bytes, std::size_t bit_count) {
   bytes_.assign(bytes.begin(), bytes.end());
   bit_count_ = bit_count;
 }
@@ -116,7 +116,7 @@ void BitVector::clear() {
   bit_count_ = 0;
 }
 
-PJ::BitSpan BitVector::bit_span() const noexcept {
+PJ::BitSpan BitVector::bitSpan() const noexcept {
   return PJ::BitSpan{PJ::Span<const uint8_t>(bytes_.data(), bytes_.size()), 0, bit_count_};
 }
 
@@ -128,11 +128,11 @@ uint8_t* BitVector::mutable_data() noexcept {
   return bytes_.data();
 }
 
-std::size_t BitVector::size_bytes() const noexcept {
+std::size_t BitVector::sizeBytes() const noexcept {
   return bytes_.size();
 }
 
-std::size_t BitVector::size_bits() const noexcept {
+std::size_t BitVector::sizeBits() const noexcept {
   return bit_count_;
 }
 

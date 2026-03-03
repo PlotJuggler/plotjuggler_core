@@ -52,23 +52,23 @@ StringColumnData make_string_column(const std::vector<std::string>& strings) {
 TEST(DictionaryEncoding, RepeatedStrings) {
   auto col = make_string_column({"base", "world", "base", "base"});
 
-  auto encoded = dictionary_encode_strings(Span<const uint8_t>(col.offsets), Span<const uint8_t>(col.values), 4);
+  auto encoded = dictionaryEncodeStrings(Span<const uint8_t>(col.offsets), Span<const uint8_t>(col.values), 4);
 
   EXPECT_EQ(encoded.count, 4u);
   EXPECT_EQ(encoded.dictionary.size(), 2u);
   EXPECT_EQ(encoded.dictionary[0], "base");
   EXPECT_EQ(encoded.dictionary[1], "world");
 
-  EXPECT_EQ(dictionary_lookup(encoded, 0), "base");
-  EXPECT_EQ(dictionary_lookup(encoded, 1), "world");
-  EXPECT_EQ(dictionary_lookup(encoded, 2), "base");
-  EXPECT_EQ(dictionary_lookup(encoded, 3), "base");
+  EXPECT_EQ(dictionaryLookup(encoded, 0), "base");
+  EXPECT_EQ(dictionaryLookup(encoded, 1), "world");
+  EXPECT_EQ(dictionaryLookup(encoded, 2), "base");
+  EXPECT_EQ(dictionaryLookup(encoded, 3), "base");
 }
 
 TEST(DictionaryEncoding, AllUniqueStrings) {
   auto col = make_string_column({"alpha", "beta", "gamma", "delta"});
 
-  auto encoded = dictionary_encode_strings(Span<const uint8_t>(col.offsets), Span<const uint8_t>(col.values), 4);
+  auto encoded = dictionaryEncodeStrings(Span<const uint8_t>(col.offsets), Span<const uint8_t>(col.values), 4);
 
   EXPECT_EQ(encoded.count, 4u);
   EXPECT_EQ(encoded.dictionary.size(), 4u);
@@ -78,12 +78,12 @@ TEST(DictionaryEncoding, LookupCorrectness) {
   std::vector<std::string> strings = {"foo", "bar", "baz", "foo", "qux"};
   auto col = make_string_column(strings);
 
-  auto encoded = dictionary_encode_strings(Span<const uint8_t>(col.offsets), Span<const uint8_t>(col.values), 5);
+  auto encoded = dictionaryEncodeStrings(Span<const uint8_t>(col.offsets), Span<const uint8_t>(col.values), 5);
 
   EXPECT_EQ(encoded.count, 5u);
 
   for (std::size_t i = 0; i < strings.size(); ++i) {
-    EXPECT_EQ(dictionary_lookup(encoded, i), strings[i]) << "mismatch at row " << i;
+    EXPECT_EQ(dictionaryLookup(encoded, i), strings[i]) << "mismatch at row " << i;
   }
 }
 
@@ -95,13 +95,13 @@ TEST(PackedBools, SixteenValues) {
   //                    0  1  2  3  4  5  6  7   8  9  10 11 12 13 14 15
   std::array<uint8_t, 16> values = {1, 0, 1, 1, 0, 0, 1, 0, 1, 1, 0, 0, 1, 1, 0, 1};
 
-  auto packed = pack_bools(values);
+  auto packed = packBools(values);
 
   EXPECT_EQ(packed.count, 16u);
   EXPECT_EQ(packed.bits.size(), 2u);  // 16 bits = 2 bytes
 
   for (std::size_t i = 0; i < values.size(); ++i) {
-    EXPECT_EQ(unpack_bool(packed, i), values[i] != 0) << "mismatch at index " << i;
+    EXPECT_EQ(unpackBool(packed, i), values[i] != 0) << "mismatch at index " << i;
   }
 }
 
@@ -109,13 +109,13 @@ TEST(PackedBools, ExactByteBoundary) {
   // Exactly 8 values
   std::array<uint8_t, 8> values = {1, 1, 0, 1, 0, 1, 1, 0};
 
-  auto packed = pack_bools(values);
+  auto packed = packBools(values);
 
   EXPECT_EQ(packed.count, 8u);
   EXPECT_EQ(packed.bits.size(), 1u);  // 8 bits = 1 byte
 
   for (std::size_t i = 0; i < values.size(); ++i) {
-    EXPECT_EQ(unpack_bool(packed, i), values[i] != 0) << "mismatch at index " << i;
+    EXPECT_EQ(unpackBool(packed, i), values[i] != 0) << "mismatch at index " << i;
   }
 }
 
@@ -123,18 +123,18 @@ TEST(PackedBools, NineValues) {
   // One past a byte boundary
   std::array<uint8_t, 9> values = {1, 0, 1, 1, 0, 0, 1, 0, 1};
 
-  auto packed = pack_bools(values);
+  auto packed = packBools(values);
 
   EXPECT_EQ(packed.count, 9u);
   EXPECT_EQ(packed.bits.size(), 2u);  // ceil(9/8) = 2 bytes
 
   for (std::size_t i = 0; i < values.size(); ++i) {
-    EXPECT_EQ(unpack_bool(packed, i), values[i] != 0) << "mismatch at index " << i;
+    EXPECT_EQ(unpackBool(packed, i), values[i] != 0) << "mismatch at index " << i;
   }
 }
 
 TEST(PackedBools, Empty) {
-  auto packed = pack_bools(Span<const uint8_t>());
+  auto packed = packBools(Span<const uint8_t>());
 
   EXPECT_EQ(packed.count, 0u);
   EXPECT_TRUE(packed.bits.empty());
@@ -152,12 +152,12 @@ TEST(ConstantEncoding, Float64) {
     std::memcpy(buf.data() + i * sizeof(double), &val, sizeof(double));
   }
 
-  auto enc = constant_encode(buf, StorageKind::kFloat64, count);
+  auto enc = constantEncode(buf, StorageKind::kFloat64, count);
   EXPECT_EQ(enc.count, count);
   EXPECT_EQ(enc.value_kind, StorageKind::kFloat64);
   EXPECT_EQ(enc.value_size, sizeof(double));
 
-  EXPECT_DOUBLE_EQ(constant_decode_as_double(enc), 3.14);
+  EXPECT_DOUBLE_EQ(constantDecodeAsDouble(enc), 3.14);
 }
 
 TEST(ConstantEncoding, Int32) {
@@ -168,11 +168,11 @@ TEST(ConstantEncoding, Int32) {
     std::memcpy(buf.data() + i * sizeof(int32_t), &val, sizeof(int32_t));
   }
 
-  auto enc = constant_encode(buf, StorageKind::kInt32, count);
+  auto enc = constantEncode(buf, StorageKind::kInt32, count);
   EXPECT_EQ(enc.count, count);
   EXPECT_EQ(enc.value_kind, StorageKind::kInt32);
 
-  EXPECT_DOUBLE_EQ(constant_decode_as_double(enc), -42.0);
+  EXPECT_DOUBLE_EQ(constantDecodeAsDouble(enc), -42.0);
 }
 
 // ==========================================================================
@@ -188,7 +188,7 @@ TEST(FOREncoding, NarrowRange_Int32) {
     std::memcpy(buf.data() + i * sizeof(int32_t), &val, sizeof(int32_t));
   }
 
-  auto enc = for_encode(buf, StorageKind::kInt32, count, 1000, 1100);
+  auto enc = forEncode(buf, StorageKind::kInt32, count, 1000, 1100);
   EXPECT_EQ(enc.offset_bytes, 1);
   EXPECT_EQ(enc.reference, 1000);
   EXPECT_EQ(enc.count, count);
@@ -196,7 +196,7 @@ TEST(FOREncoding, NarrowRange_Int32) {
 
   // Verify round-trip all values
   for (std::size_t i = 0; i < count; ++i) {
-    EXPECT_DOUBLE_EQ(for_decode_one_as_double(enc, i), 1000.0 + static_cast<double>(i)) << "row " << i;
+    EXPECT_DOUBLE_EQ(forDecodeOneAsDouble(enc, i), 1000.0 + static_cast<double>(i)) << "row " << i;
   }
 }
 
@@ -209,12 +209,12 @@ TEST(FOREncoding, MediumRange_Int32) {
     std::memcpy(buf.data() + i * sizeof(int32_t), &val, sizeof(int32_t));
   }
 
-  auto enc = for_encode(buf, StorageKind::kInt32, count, 0, 50000);
+  auto enc = forEncode(buf, StorageKind::kInt32, count, 0, 50000);
   EXPECT_EQ(enc.offset_bytes, 2);
   EXPECT_EQ(enc.reference, 0);
 
   for (std::size_t i = 0; i < count; ++i) {
-    EXPECT_DOUBLE_EQ(for_decode_one_as_double(enc, i), static_cast<double>(i * 100)) << "row " << i;
+    EXPECT_DOUBLE_EQ(forDecodeOneAsDouble(enc, i), static_cast<double>(i * 100)) << "row " << i;
   }
 }
 
@@ -227,12 +227,12 @@ TEST(FOREncoding, NegativeRange_Int64) {
     std::memcpy(buf.data() + i * sizeof(int64_t), &val, sizeof(int64_t));
   }
 
-  auto enc = for_encode(buf, StorageKind::kInt64, count, -100, 100);
+  auto enc = forEncode(buf, StorageKind::kInt64, count, -100, 100);
   EXPECT_EQ(enc.offset_bytes, 1);
   EXPECT_EQ(enc.reference, -100);
 
   for (std::size_t i = 0; i < count; ++i) {
-    EXPECT_DOUBLE_EQ(for_decode_one_as_double(enc, i), -100.0 + static_cast<double>(i)) << "row " << i;
+    EXPECT_DOUBLE_EQ(forDecodeOneAsDouble(enc, i), -100.0 + static_cast<double>(i)) << "row " << i;
   }
 }
 
@@ -244,10 +244,10 @@ TEST(FOREncoding, BulkDecode) {
     std::memcpy(buf.data() + i * sizeof(int32_t), &val, sizeof(int32_t));
   }
 
-  auto enc = for_encode(buf, StorageKind::kInt32, count, 500, 549);
+  auto enc = forEncode(buf, StorageKind::kInt32, count, 500, 549);
 
   std::vector<double> out(count);
-  for_decode_range_as_doubles(enc, out, 0);
+  forDecodeRangeAsDoubles(enc, out, 0);
 
   for (std::size_t i = 0; i < count; ++i) {
     EXPECT_DOUBLE_EQ(out[i], 500.0 + static_cast<double>(i)) << "row " << i;
@@ -255,7 +255,7 @@ TEST(FOREncoding, BulkDecode) {
 
   // Decode a sub-range
   std::vector<double> sub(10);
-  for_decode_range_as_doubles(enc, sub, 20);
+  forDecodeRangeAsDoubles(enc, sub, 20);
   for (std::size_t i = 0; i < 10; ++i) {
     EXPECT_DOUBLE_EQ(sub[i], 520.0 + static_cast<double>(i)) << "sub " << i;
   }
@@ -287,7 +287,7 @@ TEST(DictionaryEncoding, NarrowIndices) {
   }
   auto col = make_string_column(data);
 
-  auto encoded = dictionary_encode_strings(Span<const uint8_t>(col.offsets), Span<const uint8_t>(col.values), 1000);
+  auto encoded = dictionaryEncodeStrings(Span<const uint8_t>(col.offsets), Span<const uint8_t>(col.values), 1000);
 
   EXPECT_EQ(encoded.dictionary.size(), 4u);
   EXPECT_EQ(encoded.index_bytes, 1);
@@ -296,7 +296,7 @@ TEST(DictionaryEncoding, NarrowIndices) {
 
   // Verify lookups
   for (std::size_t i = 0; i < 1000; ++i) {
-    EXPECT_EQ(dictionary_lookup(encoded, i), data[i]) << "row " << i;
+    EXPECT_EQ(dictionaryLookup(encoded, i), data[i]) << "row " << i;
   }
 }
 
@@ -316,7 +316,7 @@ TEST(DictionaryEncoding, MediumIndices) {
   }
   auto col = make_string_column(data);
 
-  auto encoded = dictionary_encode_strings(Span<const uint8_t>(col.offsets), Span<const uint8_t>(col.values), 600);
+  auto encoded = dictionaryEncodeStrings(Span<const uint8_t>(col.offsets), Span<const uint8_t>(col.values), 600);
 
   EXPECT_EQ(encoded.dictionary.size(), 300u);
   EXPECT_EQ(encoded.index_bytes, 2);
@@ -324,7 +324,7 @@ TEST(DictionaryEncoding, MediumIndices) {
   EXPECT_EQ(encoded.indices.size(), 1200u);
 
   for (std::size_t i = 0; i < 600; ++i) {
-    EXPECT_EQ(dictionary_lookup(encoded, i), data[i]) << "row " << i;
+    EXPECT_EQ(dictionaryLookup(encoded, i), data[i]) << "row " << i;
   }
 }
 
@@ -333,20 +333,20 @@ TEST(DictionaryEncoding, MediumIndices) {
 // ==========================================================================
 
 TEST(ByteWidthHelpers, IndexBytesFor) {
-  EXPECT_EQ(index_bytes_for(1), 1);
-  EXPECT_EQ(index_bytes_for(256), 1);
-  EXPECT_EQ(index_bytes_for(257), 2);
-  EXPECT_EQ(index_bytes_for(65536), 2);
-  EXPECT_EQ(index_bytes_for(65537), 4);
+  EXPECT_EQ(indexBytesFor(1), 1);
+  EXPECT_EQ(indexBytesFor(256), 1);
+  EXPECT_EQ(indexBytesFor(257), 2);
+  EXPECT_EQ(indexBytesFor(65536), 2);
+  EXPECT_EQ(indexBytesFor(65537), 4);
 }
 
 TEST(ByteWidthHelpers, OffsetBytesFor) {
-  EXPECT_EQ(offset_bytes_for(0), 1);
-  EXPECT_EQ(offset_bytes_for(255), 1);
-  EXPECT_EQ(offset_bytes_for(256), 2);
-  EXPECT_EQ(offset_bytes_for(65535), 2);
-  EXPECT_EQ(offset_bytes_for(65536), 4);
-  EXPECT_EQ(offset_bytes_for(uint64_t{1} << 32), 8);
+  EXPECT_EQ(offsetBytesFor(0), 1);
+  EXPECT_EQ(offsetBytesFor(255), 1);
+  EXPECT_EQ(offsetBytesFor(256), 2);
+  EXPECT_EQ(offsetBytesFor(65535), 2);
+  EXPECT_EQ(offsetBytesFor(65536), 4);
+  EXPECT_EQ(offsetBytesFor(uint64_t{1} << 32), 8);
 }
 
 }  // namespace

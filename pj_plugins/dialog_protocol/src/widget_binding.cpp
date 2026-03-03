@@ -40,7 +40,7 @@ static void apply_to_widget(QWidget* w, std::string_view name, const PJ::WidgetD
     if (auto v = view.placeholder(name)) {
       le->setPlaceholderText(QString::fromStdString(*v));
     }
-    if (auto v = view.read_only(name)) {
+    if (auto v = view.readOnly(name)) {
       le->setReadOnly(*v);
     }
     return;
@@ -54,7 +54,7 @@ static void apply_to_widget(QWidget* w, std::string_view name, const PJ::WidgetD
         cb->addItem(QString::fromStdString(item));
       }
     }
-    if (auto v = view.current_index(name)) {
+    if (auto v = view.currentIndex(name)) {
       cb->setCurrentIndex(*v);
     }
     return;
@@ -81,13 +81,13 @@ static void apply_to_widget(QWidget* w, std::string_view name, const PJ::WidgetD
 
   // --- QSpinBox ---
   if (auto* sb = qobject_cast<QSpinBox*>(w)) {
-    if (auto v = view.range_min(name)) {
+    if (auto v = view.rangeMin(name)) {
       sb->setMinimum(*v);
     }
-    if (auto v = view.range_max(name)) {
+    if (auto v = view.rangeMax(name)) {
       sb->setMaximum(*v);
     }
-    if (auto v = view.value_int(name)) {
+    if (auto v = view.valueInt(name)) {
       sb->setValue(*v);
     }
     return;
@@ -95,7 +95,7 @@ static void apply_to_widget(QWidget* w, std::string_view name, const PJ::WidgetD
 
   // --- QDoubleSpinBox ---
   if (auto* dsb = qobject_cast<QDoubleSpinBox*>(w)) {
-    if (auto v = view.value_double(name)) {
+    if (auto v = view.valueDouble(name)) {
       dsb->setValue(*v);
     }
     return;
@@ -103,13 +103,13 @@ static void apply_to_widget(QWidget* w, std::string_view name, const PJ::WidgetD
 
   // --- QListWidget ---
   if (auto* lw = qobject_cast<QListWidget*>(w)) {
-    if (auto v = view.list_items(name)) {
+    if (auto v = view.listItems(name)) {
       lw->clear();
       for (const auto& item : *v) {
         lw->addItem(QString::fromStdString(item));
       }
     }
-    if (auto v = view.selected_items(name)) {
+    if (auto v = view.selectedItems(name)) {
       std::set<std::string> selected(v->begin(), v->end());
       for (int i = 0; i < lw->count(); ++i) {
         auto* item = lw->item(i);
@@ -121,7 +121,7 @@ static void apply_to_widget(QWidget* w, std::string_view name, const PJ::WidgetD
 
   // --- QTableWidget ---
   if (auto* tw = qobject_cast<QTableWidget*>(w)) {
-    if (auto v = view.table_headers(name)) {
+    if (auto v = view.tableHeaders(name)) {
       QStringList hdr;
       for (const auto& h : *v) {
         hdr << QString::fromStdString(h);
@@ -129,7 +129,7 @@ static void apply_to_widget(QWidget* w, std::string_view name, const PJ::WidgetD
       tw->setColumnCount(static_cast<int>(hdr.size()));
       tw->setHorizontalHeaderLabels(hdr);
     }
-    if (auto v = view.table_rows(name)) {
+    if (auto v = view.tableRows(name)) {
       tw->setRowCount(static_cast<int>(v->size()));
       for (std::size_t r = 0; r < v->size(); ++r) {
         const auto& row = (*v)[r];
@@ -155,7 +155,7 @@ static void apply_to_widget(QWidget* w, std::string_view name, const PJ::WidgetD
 
   // --- QPushButton ---
   if (auto* btn = qobject_cast<QPushButton*>(w)) {
-    if (auto v = view.button_text(name)) {
+    if (auto v = view.buttonText(name)) {
       btn->setText(QString::fromStdString(*v));
     }
     return;
@@ -163,7 +163,7 @@ static void apply_to_widget(QWidget* w, std::string_view name, const PJ::WidgetD
 
   // --- QTabWidget ---
   if (auto* tw = qobject_cast<QTabWidget*>(w)) {
-    if (auto v = view.tab_index(name)) {
+    if (auto v = view.tabIndex(name)) {
       tw->setCurrentIndex(*v);
     }
     return;
@@ -171,7 +171,7 @@ static void apply_to_widget(QWidget* w, std::string_view name, const PJ::WidgetD
 
   // --- QDialogButtonBox ---
   if (auto* dbb = qobject_cast<QDialogButtonBox*>(w)) {
-    if (auto v = view.ok_enabled(name)) {
+    if (auto v = view.okEnabled(name)) {
       if (auto* ok = dbb->button(QDialogButtonBox::Ok)) {
         ok->setEnabled(*v);
       }
@@ -182,8 +182,8 @@ static void apply_to_widget(QWidget* w, std::string_view name, const PJ::WidgetD
   // Containers (QFrame, QGroupBox, QWidget) — only generic properties applied above.
 }
 
-void apply_widget_data(QWidget* root, const PJ::WidgetDataView& view) {
-  for (const auto& name : view.widget_names()) {
+void applyWidgetData(QWidget* root, const PJ::WidgetDataView& view) {
+  for (const auto& name : view.widgetNames()) {
     auto* w = root->findChild<QWidget*>(QString::fromStdString(name));
     if (!w) {
       continue;
@@ -200,7 +200,7 @@ static bool is_internal_widget_name(const QString& name) {
   return name.startsWith("qt_");
 }
 
-void connect_widget_signals(QWidget* root, WidgetEventCallback callback) {
+void connectWidgetSignals(QWidget* root, WidgetEventCallback callback) {
   using PJ::WidgetEventBuilder;
 
   for (auto* w : root->findChildren<QWidget*>()) {
@@ -212,13 +212,13 @@ void connect_widget_signals(QWidget* root, WidgetEventCallback callback) {
 
     if (auto* le = qobject_cast<QLineEdit*>(w)) {
       QObject::connect(le, &QLineEdit::textChanged, le, [callback, name](const QString& text) {
-        callback(name, WidgetEventBuilder::text_changed(text.toStdString()));
+        callback(name, WidgetEventBuilder::textChanged(text.toStdString()));
       });
       continue;
     }
     if (auto* cb = qobject_cast<QComboBox*>(w)) {
       QObject::connect(cb, &QComboBox::currentIndexChanged, cb, [callback, name, cb](int index) {
-        callback(name, WidgetEventBuilder::index_changed(index, cb->currentText().toStdString()));
+        callback(name, WidgetEventBuilder::indexChanged(index, cb->currentText().toStdString()));
       });
       continue;
     }
@@ -236,13 +236,13 @@ void connect_widget_signals(QWidget* root, WidgetEventCallback callback) {
     }
     if (auto* sb = qobject_cast<QSpinBox*>(w)) {
       QObject::connect(sb, &QSpinBox::valueChanged, sb, [callback, name](int value) {
-        callback(name, WidgetEventBuilder::value_changed(value));
+        callback(name, WidgetEventBuilder::valueChanged(value));
       });
       continue;
     }
     if (auto* dsb = qobject_cast<QDoubleSpinBox*>(w)) {
       QObject::connect(dsb, &QDoubleSpinBox::valueChanged, dsb, [callback, name](double value) {
-        callback(name, WidgetEventBuilder::value_changed(value));
+        callback(name, WidgetEventBuilder::valueChanged(value));
       });
       continue;
     }
@@ -252,7 +252,7 @@ void connect_widget_signals(QWidget* root, WidgetEventCallback callback) {
         for (auto* item : lw->selectedItems()) {
           sel.push_back(item->text().toStdString());
         }
-        callback(name, WidgetEventBuilder::selection_changed(sel));
+        callback(name, WidgetEventBuilder::selectionChanged(sel));
       });
       continue;
     }
@@ -267,7 +267,7 @@ void connect_widget_signals(QWidget* root, WidgetEventCallback callback) {
     }
     if (auto* tw = qobject_cast<QTabWidget*>(w)) {
       QObject::connect(tw, &QTabWidget::currentChanged, tw, [callback, name](int index) {
-        callback(name, WidgetEventBuilder::tab_changed(index));
+        callback(name, WidgetEventBuilder::tabChanged(index));
       });
       continue;
     }

@@ -76,7 +76,7 @@ const char* kUiContent = R"(<?xml version="1.0" encoding="UTF-8"?>
 }  // namespace
 
 class MockStreamer : public PJ::DialogPluginTyped {
-  using PJ::DialogPluginTyped::on_value_changed;
+  using PJ::DialogPluginTyped::onValueChanged;
 
  public:
   std::string manifest() const override {
@@ -95,44 +95,44 @@ class MockStreamer : public PJ::DialogPluginTyped {
   std::string widget_data() override {
     PJ::WidgetData wd;
 
-    wd.set_text("host_input", host_);
-    wd.set_placeholder("host_input", "e.g. localhost");
-    wd.set_value("port_input", port_);
-    wd.set_range("port_input", 1, 65535);
+    wd.setText("host_input", host_);
+    wd.setPlaceholder("host_input", "e.g. localhost");
+    wd.setValue("port_input", port_);
+    wd.setRange("port_input", 1, 65535);
 
     std::vector<std::string> protocols = {"TCP", "UDP", "WebSocket"};
-    wd.set_items("protocol_combo", protocols);
-    wd.set_current_index("protocol_combo", protocol_index_);
+    wd.setItems("protocol_combo", protocols);
+    wd.setCurrentIndex("protocol_combo", protocol_index_);
 
-    wd.set_checked("use_tls_check", use_tls_);
+    wd.setChecked("use_tls_check", use_tls_);
 
     if (use_tls_) {
-      wd.set_file_picker(
+      wd.setFilePicker(
           "cert_picker_btn", cert_path_.empty() ? "Select Certificate..." : cert_path_, "*.pem *.crt *.cer",
           "Select TLS Certificate");
-      wd.set_visible("cert_picker_btn", true);
+      wd.setVisible("cert_picker_btn", true);
     } else {
-      wd.set_visible("cert_picker_btn", false);
+      wd.setVisible("cert_picker_btn", false);
     }
 
-    wd.set_button_text("connect_btn", connected_ ? "Disconnect" : "Connect");
-    wd.set_enabled("connect_btn", !host_.empty());
+    wd.setButtonText("connect_btn", connected_ ? "Disconnect" : "Connect");
+    wd.setEnabled("connect_btn", !host_.empty());
 
-    wd.set_label("status_label", status_text_);
+    wd.setLabel("status_label", status_text_);
 
     if (connected_ && !topics_.empty()) {
-      wd.set_list_items("topic_list", topics_);
-      wd.set_visible("topic_list", true);
+      wd.setListItems("topic_list", topics_);
+      wd.setVisible("topic_list", true);
     } else {
-      wd.set_visible("topic_list", false);
+      wd.setVisible("topic_list", false);
     }
 
-    wd.set_ok_enabled("button_box", connected_ && !selected_topics_.empty());
+    wd.setOkEnabled("button_box", connected_ && !selected_topics_.empty());
 
-    return wd.to_json();
+    return wd.toJson();
   }
 
-  bool on_text_changed(std::string_view widget_name, std::string_view text) override {
+  bool onTextChanged(std::string_view widget_name, std::string_view text) override {
     if (widget_name == "host_input") {
       host_ = std::string(text);
       return true;
@@ -140,7 +140,7 @@ class MockStreamer : public PJ::DialogPluginTyped {
     return false;
   }
 
-  bool on_value_changed(std::string_view widget_name, int value) override {
+  bool onValueChanged(std::string_view widget_name, int value) {
     if (widget_name == "port_input") {
       port_ = value;
       return true;
@@ -148,7 +148,7 @@ class MockStreamer : public PJ::DialogPluginTyped {
     return false;
   }
 
-  bool on_index_changed(std::string_view widget_name, int index) override {
+  bool onIndexChanged(std::string_view widget_name, int index) override {
     if (widget_name == "protocol_combo") {
       protocol_index_ = index;
       return true;
@@ -156,7 +156,7 @@ class MockStreamer : public PJ::DialogPluginTyped {
     return false;
   }
 
-  bool on_toggled(std::string_view widget_name, bool checked) override {
+  bool onToggled(std::string_view widget_name, bool checked) override {
     if (widget_name == "use_tls_check") {
       use_tls_ = checked;
       return true;
@@ -164,7 +164,7 @@ class MockStreamer : public PJ::DialogPluginTyped {
     return false;
   }
 
-  bool on_clicked(std::string_view widget_name) override {
+  bool onClicked(std::string_view widget_name) override {
     if (widget_name == "connect_btn") {
       if (connected_) {
         connected_ = false;
@@ -186,7 +186,7 @@ class MockStreamer : public PJ::DialogPluginTyped {
     return false;
   }
 
-  bool on_file_selected(std::string_view widget_name, std::string_view path) override {
+  bool onFileSelected(std::string_view widget_name, std::string_view path) override {
     if (widget_name == "cert_picker_btn") {
       cert_path_ = std::string(path);
       return true;
@@ -194,7 +194,7 @@ class MockStreamer : public PJ::DialogPluginTyped {
     return false;
   }
 
-  bool on_selection_changed(std::string_view widget_name, const std::vector<std::string>& selected) override {
+  bool onSelectionChanged(std::string_view widget_name, const std::vector<std::string>& selected) override {
     if (widget_name == "topic_list") {
       selected_topics_ = selected;
       return true;
@@ -202,7 +202,7 @@ class MockStreamer : public PJ::DialogPluginTyped {
     return false;
   }
 
-  bool on_tick() override {
+  bool onTick() override {
     if (!connected_) {
       return false;
     }
@@ -217,16 +217,16 @@ class MockStreamer : public PJ::DialogPluginTyped {
     return false;
   }
 
-  void on_accepted(std::string_view /*final_state_json*/) override {
+  void onAccepted(std::string_view /*final_state_json*/) override {
     // In a real plugin, start streaming the selected topics
   }
 
-  void on_rejected() override {
+  void onRejected() override {
     connected_ = false;
     topics_.clear();
   }
 
-  std::string save_config() const override {
+  std::string saveConfig() const override {
     nlohmann::json cfg;
     cfg["host"] = host_;
     cfg["port"] = port_;
@@ -236,7 +236,7 @@ class MockStreamer : public PJ::DialogPluginTyped {
     return cfg.dump();
   }
 
-  bool load_config(std::string_view config_json) override {
+  bool loadConfig(std::string_view config_json) override {
     auto cfg = nlohmann::json::parse(config_json, nullptr, false);
     if (cfg.is_discarded()) {
       return false;
@@ -260,7 +260,7 @@ class MockStreamer : public PJ::DialogPluginTyped {
     return true;
   }
 
-  std::string last_error() const override {
+  std::string lastError() const override {
     std::string err = std::move(error_);
     error_.clear();
     return err;

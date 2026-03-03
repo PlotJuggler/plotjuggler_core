@@ -47,20 +47,20 @@ class DialogHandle {
   // --- Queries — return copied strings ---
 
   [[nodiscard]] std::string manifest() const {
-    return safe_string(vt_->get_manifest(ctx_));
+    return safeString(vt_->get_manifest(ctx_));
   }
 
   [[nodiscard]] std::string ui_content() const {
-    return safe_string(vt_->get_ui_content(ctx_));
+    return safeString(vt_->get_ui_content(ctx_));
   }
 
   [[nodiscard]] std::string widget_data() const {
-    return safe_string(vt_->get_widget_data(ctx_));
+    return safeString(vt_->get_widget_data(ctx_));
   }
 
   // --- Events — return true if host should re-read widget_data() ---
 
-  [[nodiscard]] bool send_event(std::string_view widget_name, std::string_view event_json) {
+  [[nodiscard]] bool sendEvent(std::string_view widget_name, std::string_view event_json) {
     return vt_->on_widget_event(ctx_, std::string(widget_name).c_str(), std::string(event_json).c_str());
   }
 
@@ -81,7 +81,7 @@ class DialogHandle {
   // --- Config persistence ---
 
   [[nodiscard]] std::string save_config() const {
-    return safe_string(vt_->save_config(ctx_));
+    return safeString(vt_->save_config(ctx_));
   }
 
   [[nodiscard]] bool load_config(std::string_view config_json) {
@@ -90,8 +90,8 @@ class DialogHandle {
 
   // --- Error — returns "" if no error ---
 
-  [[nodiscard]] std::string last_error() const {
-    return safe_string(vt_->get_last_error(ctx_));
+  [[nodiscard]] std::string lastError() const {
+    return safeString(vt_->get_last_error(ctx_));
   }
 
   // --- Escape hatch ---
@@ -107,7 +107,7 @@ class DialogHandle {
   const PJ_dialog_vtable_t* vt_ = nullptr;
   void* ctx_ = nullptr;
 
-  static std::string safe_string(const char* s) {
+  static std::string safeString(const char* s) {
     return s ? std::string(s) : std::string();
   }
 };

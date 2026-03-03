@@ -57,12 +57,12 @@ void write_index(RawBuffer& buf, uint32_t index, uint8_t bytes) {
 // Constant encoding
 // ---------------------------------------------------------------------------
 
-ConstantEncoded constant_encode(Span<const uint8_t> data, StorageKind kind, std::size_t count) {
+ConstantEncoded constantEncode(Span<const uint8_t> data, StorageKind kind, std::size_t count) {
   ConstantEncoded result;
   result.value_kind = kind;
   result.count = count;
 
-  const std::size_t esize = storage_kind_size(kind);
+  const std::size_t esize = storageKindSize(kind);
   result.value_size = static_cast<uint8_t>(esize);
   if (esize > 0 && count > 0) {
     std::memcpy(result.value_bytes.data(), data.data(), esize);
@@ -70,7 +70,7 @@ ConstantEncoded constant_encode(Span<const uint8_t> data, StorageKind kind, std:
   return result;
 }
 
-double constant_decode_as_double(const ConstantEncoded& enc) {
+double constantDecodeAsDouble(const ConstantEncoded& enc) {
   const uint8_t* ptr = enc.value_bytes.data();
 
   auto load = [&]<typename T>(const T* /*tag*/) -> double {
@@ -102,16 +102,16 @@ double constant_decode_as_double(const ConstantEncoded& enc) {
 // Data must be int64_t values.
 // ---------------------------------------------------------------------------
 
-FrameOfReferenceEncoded for_encode(
+FrameOfReferenceEncoded forEncode(
     Span<const uint8_t> data, StorageKind kind, std::size_t count, int64_t min_val, int64_t max_val) {
   FrameOfReferenceEncoded result;
   result.reference = min_val;
   result.count = count;
 
   const auto range = static_cast<uint64_t>(max_val - min_val);
-  result.offset_bytes = offset_bytes_for(range);
+  result.offset_bytes = offsetBytesFor(range);
 
-  const std::size_t esize = storage_kind_size(kind);
+  const std::size_t esize = storageKindSize(kind);
   result.offsets.reserve(count * result.offset_bytes);
 
   for (std::size_t i = 0; i < count; ++i) {
@@ -147,7 +147,7 @@ FrameOfReferenceEncoded for_encode(
   return result;
 }
 
-double for_decode_one_as_double(const FrameOfReferenceEncoded& enc, std::size_t row) {
+double forDecodeOneAsDouble(const FrameOfReferenceEncoded& enc, std::size_t row) {
   const uint8_t* data = enc.offsets.data();
   uint64_t offset = 0;
 
@@ -175,7 +175,7 @@ double for_decode_one_as_double(const FrameOfReferenceEncoded& enc, std::size_t 
   return static_cast<double>(enc.reference) + static_cast<double>(offset);
 }
 
-void for_decode_range_as_doubles(const FrameOfReferenceEncoded& enc, Span<double> out, std::size_t row_start) {
+void forDecodeRangeAsDoubles(const FrameOfReferenceEncoded& enc, Span<double> out, std::size_t row_start) {
   const std::size_t count = out.size();
   const double ref = static_cast<double>(enc.reference);
 
@@ -208,7 +208,7 @@ void for_decode_range_as_doubles(const FrameOfReferenceEncoded& enc, Span<double
 // Dictionary encoding for strings
 // ---------------------------------------------------------------------------
 
-DictionaryEncoded dictionary_encode_strings(
+DictionaryEncoded dictionaryEncodeStrings(
     Span<const uint8_t> offsets_data, Span<const uint8_t> values_data, std::size_t row_count) {
   DictionaryEncoded result;
   result.count = row_count;
@@ -246,7 +246,7 @@ DictionaryEncoded dictionary_encode_strings(
   }
 
   // Determine narrowed index width
-  result.index_bytes = index_bytes_for(result.dictionary.size());
+  result.index_bytes = indexBytesFor(result.dictionary.size());
   result.indices.reserve(row_count * result.index_bytes);
 
   for (uint32_t idx : temp_indices) {
@@ -256,7 +256,7 @@ DictionaryEncoded dictionary_encode_strings(
   return result;
 }
 
-std::string_view dictionary_lookup(const DictionaryEncoded& encoded, std::size_t row) {
+std::string_view dictionaryLookup(const DictionaryEncoded& encoded, std::size_t row) {
   uint32_t index = read_index(encoded.indices.data(), row, encoded.index_bytes);
   if (index >= encoded.dictionary.size()) {
     return {};
@@ -268,7 +268,7 @@ std::string_view dictionary_lookup(const DictionaryEncoded& encoded, std::size_t
 // Packed bools
 // ---------------------------------------------------------------------------
 
-PackedBools pack_bools(Span<const uint8_t> values) {
+PackedBools packBools(Span<const uint8_t> values) {
   const std::size_t count = values.size();
   PackedBools result;
   result.count = count;
@@ -294,7 +294,7 @@ PackedBools pack_bools(Span<const uint8_t> values) {
   return result;
 }
 
-bool unpack_bool(const PackedBools& packed, std::size_t index) {
+bool unpackBool(const PackedBools& packed, std::size_t index) {
   std::size_t byte_idx = index / 8;
   std::size_t bit_idx = index % 8;
   uint8_t byte_val = 0;

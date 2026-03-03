@@ -37,7 +37,7 @@ struct ScalarSeriesHandle {
   PJ::FieldId value_field;
 };
 
-/// Describes one column's data for bulk append_columns().
+/// Describes one column's data for bulk appendColumns().
 struct ColumnData {
   /// Column index in topic schema.
   std::size_t col_index;
@@ -65,7 +65,7 @@ struct ColumnData {
   PJ::BitSpan validity;
 
   /// Derive row count from the active variant alternative.
-  [[nodiscard]] std::size_t row_count() const;
+  [[nodiscard]] std::size_t rowCount() const;
 
   /// Derive StorageKind from the active variant alternative.
   [[nodiscard]] StorageKind kind() const;
@@ -102,64 +102,64 @@ class DataWriter {
 
   // ---- Schema registration (delegates to engine's TypeRegistry) ----
   /// Register a schema name -> type tree mapping.
-  [[nodiscard]] PJ::Expected<PJ::SchemaId> register_schema(
+  [[nodiscard]] PJ::Expected<PJ::SchemaId> registerSchema(
       std::string schema_name, std::shared_ptr<PJ::TypeTreeNode> type_tree);
 
   // ---- Topic registration ----
   /// Register a topic under `dataset_id`.
-  [[nodiscard]] PJ::Expected<PJ::TopicId> register_topic(PJ::DatasetId dataset_id, TopicDescriptor descriptor);
+  [[nodiscard]] PJ::Expected<PJ::TopicId> registerTopic(PJ::DatasetId dataset_id, TopicDescriptor descriptor);
 
   // ---- Bind for fast path ----
   /// Resolve and cache topic columns for low-overhead writes.
-  [[nodiscard]] PJ::Expected<TopicWriteHandle> bind_topic_writer(PJ::TopicId topic_id);
+  [[nodiscard]] PJ::Expected<TopicWriteHandle> bindTopicWriter(PJ::TopicId topic_id);
 
   // ---- Field resolution ----
   /// Resolve one field path to its field id.
-  [[nodiscard]] PJ::Expected<PJ::FieldId> resolve_field(PJ::TopicId topic_id, std::string_view field_path);
+  [[nodiscard]] PJ::Expected<PJ::FieldId> resolveField(PJ::TopicId topic_id, std::string_view field_path);
 
   // ---- Row-at-a-time append ----
   /// Begin one row at timestamp `t`.
-  [[nodiscard]] PJ::Status begin_row(PJ::TopicId topic_id, PJ::Timestamp t);
+  [[nodiscard]] PJ::Status beginRow(PJ::TopicId topic_id, PJ::Timestamp t);
 
   /// Finalize current row for `topic_id`. Returns error if begin_row was not called first.
-  [[nodiscard]] PJ::Status finish_row(PJ::TopicId topic_id);
+  [[nodiscard]] PJ::Status finishRow(PJ::TopicId topic_id);
 
   // ---- Set values for current row by column index (7 storage types) ----
   /// Set float32 value in current row.
-  void set_float32(PJ::TopicId topic_id, std::size_t col_index, float value);
+  void setFloat32(PJ::TopicId topic_id, std::size_t col_index, float value);
 
   /// Set float64 value in current row.
-  void set_float64(PJ::TopicId topic_id, std::size_t col_index, double value);
+  void setFloat64(PJ::TopicId topic_id, std::size_t col_index, double value);
 
   /// Set int32 value in current row.
-  void set_int32(PJ::TopicId topic_id, std::size_t col_index, int32_t value);
+  void setInt32(PJ::TopicId topic_id, std::size_t col_index, int32_t value);
 
   /// Set int64 value in current row.
-  void set_int64(PJ::TopicId topic_id, std::size_t col_index, int64_t value);
+  void setInt64(PJ::TopicId topic_id, std::size_t col_index, int64_t value);
 
   /// Set uint64 value in current row.
-  void set_uint64(PJ::TopicId topic_id, std::size_t col_index, uint64_t value);
+  void setUint64(PJ::TopicId topic_id, std::size_t col_index, uint64_t value);
 
   /// Set string value in current row.
-  void set_string(PJ::TopicId topic_id, std::size_t col_index, std::string_view value);
+  void setString(PJ::TopicId topic_id, std::size_t col_index, std::string_view value);
 
   /// Set bool value in current row.
-  void set_bool(PJ::TopicId topic_id, std::size_t col_index, bool value);
+  void setBool(PJ::TopicId topic_id, std::size_t col_index, bool value);
 
   /// Mark current row value as null.
-  void set_null(PJ::TopicId topic_id, std::size_t col_index);
+  void setNull(PJ::TopicId topic_id, std::size_t col_index);
 
   // ---- Bulk column append ----
   /// Append aligned column batches and timestamps (auto-chunking if needed).
-  [[nodiscard]] PJ::Status append_columns(
+  [[nodiscard]] PJ::Status appendColumns(
       PJ::TopicId topic_id, PJ::Span<const PJ::Timestamp> timestamps, PJ::Span<const ColumnData> columns);
 
   // ---- Scalar convenience API ----
   /// Create/register a single-column scalar topic.
-  [[nodiscard]] PJ::Expected<ScalarSeriesHandle> register_scalar_series(
+  [[nodiscard]] PJ::Expected<ScalarSeriesHandle> registerScalarSeries(
       PJ::DatasetId dataset_id, std::string_view topic_name, PJ::NumericType value_type);
   /// Append one scalar sample.
-  void append_scalar(const ScalarSeriesHandle& handle, PJ::Timestamp t, PJ::NumericValue value);
+  void appendScalar(const ScalarSeriesHandle& handle, PJ::Timestamp t, PJ::NumericValue value);
 
   // ---- Dynamic column addition ----
   /// Ensure a column with `field_path` and `type` exists for `topic_id`.
@@ -169,9 +169,9 @@ class DataWriter {
   ///   are returned safely even mid-row).
   /// - If new and no row in progress: seals any pending builder, appends a ColumnDescriptor, persists layout.
   /// Works for both typed (schema_id != 0) and schemaless (schema_id == 0) topics.
-  /// NOTE: on typed topics, columns added via ensure_column are NOT reflected in get_type_tree() —
+  /// NOTE: on typed topics, columns added via ensure_column are NOT reflected in getTypeTree() —
   /// they exist only in the physical column layout (TopicStorage::column_descriptors / chunk descriptors).
-  [[nodiscard]] PJ::Expected<PJ::FieldId> ensure_column(
+  [[nodiscard]] PJ::Expected<PJ::FieldId> ensureColumn(
       PJ::TopicId topic_id, std::string_view field_path, PJ::PrimitiveType type);
 
   // ---- Variable-length array expansion ----
@@ -183,7 +183,7 @@ class DataWriter {
   /// Returns actual expansion count (may be less than new_length if clamped).
   /// For typed topics (schema_id != 0): validates field against schema; element_type ignored.
   /// For schemaless topics (schema_id == 0): any field path accepted; uses element_type.
-  [[nodiscard]] PJ::Expected<uint32_t> expand_array(
+  [[nodiscard]] PJ::Expected<uint32_t> expandArray(
       PJ::TopicId topic_id, std::string_view array_field_path, uint32_t new_length,
       PJ::PrimitiveType element_type = PJ::PrimitiveType::kFloat64);
 
@@ -192,7 +192,7 @@ class DataWriter {
   [[nodiscard]] std::vector<TopicChunk> flush(PJ::TopicId topic_id);
 
   /// Seal and return all pending chunks for all topics.
-  [[nodiscard]] std::vector<std::pair<PJ::TopicId, TopicChunk>> flush_all();
+  [[nodiscard]] std::vector<std::pair<PJ::TopicId, TopicChunk>> flushAll();
 
  private:
   DataEngine& engine_;
@@ -202,16 +202,16 @@ class DataWriter {
   // Column descriptors cached per topic (needed to recreate builders)
   absl::flat_hash_map<PJ::TopicId, std::vector<ColumnDescriptor>> topic_columns_;
 
-  TopicChunkBuilder& get_or_create_builder(PJ::TopicId topic_id);
+  TopicChunkBuilder& getOrCreateBuilder(PJ::TopicId topic_id);
 
   // Populate topic_columns_[topic_id] from TopicStorage if not already cached.
-  void ensure_cols_loaded(PJ::TopicId topic_id, const TopicStorage& storage);
+  void ensureColsLoaded(PJ::TopicId topic_id, const TopicStorage& storage);
 
   // Build column descriptors from a type tree
-  static std::vector<ColumnDescriptor> build_column_descriptors(const PJ::TypeTreeNode& root);
+  static std::vector<ColumnDescriptor> buildColumnDescriptors(const PJ::TypeTreeNode& root);
 
   // Seal current builder and move chunk to pending list
-  void auto_seal(PJ::TopicId topic_id);
+  void autoSeal(PJ::TopicId topic_id);
 };
 
 }  // namespace PJ

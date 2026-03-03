@@ -7,25 +7,25 @@
 
 namespace PJ {
 
-/// Static factory methods that produce event JSON strings for send_event().
+/// Static factory methods that produce event JSON strings for sendEvent().
 /// Each method returns a complete JSON string matching what PJ::WidgetEvent expects.
 struct WidgetEventBuilder {
   /// QLineEdit: text changed
-  [[nodiscard]] static std::string text_changed(std::string_view text) {
+  [[nodiscard]] static std::string textChanged(std::string_view text) {
     nlohmann::json j;
     j["text"] = text;
     return j.dump();
   }
 
   /// QComboBox: index changed (index only)
-  [[nodiscard]] static std::string index_changed(int index) {
+  [[nodiscard]] static std::string indexChanged(int index) {
     nlohmann::json j;
     j["current_index"] = index;
     return j.dump();
   }
 
   /// QComboBox: index changed (index + current text)
-  [[nodiscard]] static std::string index_changed(int index, std::string_view current_text) {
+  [[nodiscard]] static std::string indexChanged(int index, std::string_view current_text) {
     nlohmann::json j;
     j["current_index"] = index;
     j["current_text"] = current_text;
@@ -40,21 +40,21 @@ struct WidgetEventBuilder {
   }
 
   /// QSpinBox: value changed (int)
-  [[nodiscard]] static std::string value_changed(int value) {
+  [[nodiscard]] static std::string valueChanged(int value) {
     nlohmann::json j;
     j["value"] = value;
     return j.dump();
   }
 
   /// QDoubleSpinBox: value changed (double)
-  [[nodiscard]] static std::string value_changed(double value) {
+  [[nodiscard]] static std::string valueChanged(double value) {
     nlohmann::json j;
     j["value"] = value;
     return j.dump();
   }
 
   /// QListWidget: selection changed
-  [[nodiscard]] static std::string selection_changed(const std::vector<std::string>& selected) {
+  [[nodiscard]] static std::string selectionChanged(const std::vector<std::string>& selected) {
     nlohmann::json j;
     j["selected_items"] = selected;
     return j.dump();
@@ -68,14 +68,14 @@ struct WidgetEventBuilder {
   }
 
   /// File picker: file selected
-  [[nodiscard]] static std::string file_selected(std::string_view path) {
+  [[nodiscard]] static std::string fileSelected(std::string_view path) {
     nlohmann::json j;
     j["file_selected"] = path;
     return j.dump();
   }
 
   /// QTabWidget: tab changed
-  [[nodiscard]] static std::string tab_changed(int index) {
+  [[nodiscard]] static std::string tabChanged(int index) {
     nlohmann::json j;
     j["tab_index"] = index;
     return j.dump();

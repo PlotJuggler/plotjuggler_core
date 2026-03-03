@@ -21,22 +21,22 @@ class DataReader {
   explicit DataReader(const DataEngine& engine);
 
   /// List all dataset ids known by the engine.
-  [[nodiscard]] std::vector<PJ::DatasetId> list_datasets() const;
+  [[nodiscard]] std::vector<PJ::DatasetId> listDatasets() const;
 
   /// List topic ids for one dataset.
-  [[nodiscard]] std::vector<PJ::TopicId> list_topics(PJ::DatasetId dataset_id) const;
+  [[nodiscard]] std::vector<PJ::TopicId> listTopics(PJ::DatasetId dataset_id) const;
 
   /// Lookup schema tree for a topic (nullptr if unknown).
-  [[nodiscard]] const PJ::TypeTreeNode* get_type_tree(PJ::TopicId topic_id) const;
+  [[nodiscard]] const PJ::TypeTreeNode* getTypeTree(PJ::TopicId topic_id) const;
 
   /// Return topic metadata if topic exists.
-  [[nodiscard]] std::optional<TopicMetadata> get_metadata(PJ::TopicId topic_id) const;
+  [[nodiscard]] std::optional<TopicMetadata> getMetadata(PJ::TopicId topic_id) const;
 
   /// Create range cursor over [t_min, t_max].
-  [[nodiscard]] PJ::Expected<RangeCursor> range_query(const QueryRange& range) const;
+  [[nodiscard]] PJ::Expected<RangeCursor> rangeQuery(const QueryRange& range) const;
 
   /// Return latest sample at or before query time; nullopt payload if no row exists.
-  [[nodiscard]] PJ::Expected<std::optional<SampleRow>> latest_at(const QueryPoint& point) const;
+  [[nodiscard]] PJ::Expected<std::optional<SampleRow>> latestAt(const QueryPoint& point) const;
 
  private:
   const DataEngine& engine_;

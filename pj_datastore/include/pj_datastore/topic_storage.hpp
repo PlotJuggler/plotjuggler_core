@@ -26,7 +26,7 @@ struct TopicDescriptor {
   /// Target maximum rows per chunk for writers.
   uint32_t max_chunk_rows = 1024;  // Default chunk size
   /// Maximum number of element columns to expand per variable-length array field.
-  /// Prevents column explosion. expand_array() clamps to this limit.
+  /// Prevents column explosion. expandArray() clamps to this limit.
   uint32_t array_expansion_limit = 64;
 };
 
@@ -48,9 +48,9 @@ struct TopicMetadata {
   uint64_t total_row_count = 0;
   /// Approximate total memory footprint across retained chunks.
   uint64_t total_byte_size = 0;  // approximate
-  /// Largest array length ever passed to expand_array() for any field in this topic.
+  /// Largest array length ever passed to expandArray() for any field in this topic.
   uint32_t max_observed_array_length = 0;
-  /// Number of times expand_array() clamped due to array_expansion_limit.
+  /// Number of times expandArray() clamped due to array_expansion_limit.
   uint32_t truncated_sample_count = 0;
 };
 
@@ -61,23 +61,23 @@ class TopicStorage {
   TopicStorage(TopicId topic_id, TopicDescriptor descriptor);
 
   /// Append a sealed chunk; rejects out-of-order chunk timestamps.
-  [[nodiscard]] PJ::Status append_sealed_chunk(TopicChunk chunk);
+  [[nodiscard]] PJ::Status appendSealedChunk(TopicChunk chunk);
 
   /// Remove chunks whose max time is strictly before `t_keep_min`.
-  void evict_before(Timestamp t_keep_min);
+  void evictBefore(Timestamp t_keep_min);
 
   /// Unconditionally remove all retained sealed chunks.
-  void clear_chunks() noexcept;
+  void clearChunks() noexcept;
 
   /// Access retained sealed chunks in commit order.
-  [[nodiscard]] const std::deque<TopicChunk>& sealed_chunks() const noexcept;
+  [[nodiscard]] const std::deque<TopicChunk>& sealedChunks() const noexcept;
 
   /// Store column layout for schema_id==0 topics (populated at writer registration time).
   /// Allows derived engine and fresh writers to resolve the layout without a committed chunk.
-  void set_column_descriptors(std::vector<ColumnDescriptor> descs) noexcept;
+  void setColumnDescriptors(std::vector<ColumnDescriptor> descs) noexcept;
 
   /// Inline column layout (non-empty for schema_id==0 topics after the first writer is created).
-  [[nodiscard]] const std::vector<ColumnDescriptor>& column_descriptors() const noexcept;
+  [[nodiscard]] const std::vector<ColumnDescriptor>& columnDescriptors() const noexcept;
 
   /// Compute aggregated metadata for current retained chunks.
   [[nodiscard]] TopicMetadata metadata() const;
@@ -98,26 +98,26 @@ class TopicStorage {
   [[nodiscard]] Timestamp time_max() const noexcept;
 
   /// Update descriptor schema id for future writes.
-  void update_schema(SchemaId new_schema);
+  void updateSchema(SchemaId new_schema);
 
   /// Track the largest observed array length (called by DataWriter::expand_array).
-  void update_max_observed_array_length(uint32_t observed_length);
+  void updateMaxObservedArrayLength(uint32_t observed_length);
 
   /// Increment the truncation counter (called when expand_array clamps due to limit).
-  void increment_truncated_sample_count();
+  void incrementTruncatedSampleCount();
 
-  /// Largest array length ever passed to expand_array() for any field in this topic.
-  [[nodiscard]] uint32_t max_observed_array_length() const noexcept;
+  /// Largest array length ever passed to expandArray() for any field in this topic.
+  [[nodiscard]] uint32_t maxObservedArrayLength() const noexcept;
 
-  /// Number of times expand_array() clamped due to array_expansion_limit.
-  [[nodiscard]] uint32_t truncated_sample_count() const noexcept;
+  /// Number of times expandArray() clamped due to array_expansion_limit.
+  [[nodiscard]] uint32_t truncatedSampleCount() const noexcept;
 
   /// Return the current expansion count for a variable-length array field.
   /// Returns 0 if the field has not been expanded yet.
-  [[nodiscard]] uint32_t array_expansion_count(const std::string& field_path) const noexcept;
+  [[nodiscard]] uint32_t arrayExpansionCount(const std::string& field_path) const noexcept;
 
   /// Update the expansion count for a variable-length array field.
-  void set_array_expansion_count(const std::string& field_path, uint32_t count);
+  void setArrayExpansionCount(const std::string& field_path, uint32_t count);
 
  private:
   TopicId topic_id_;

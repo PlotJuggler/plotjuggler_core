@@ -22,61 +22,61 @@ class DataEngine {
 
   // Dataset management
   /// Create and register a dataset.
-  [[nodiscard]] PJ::Expected<PJ::DatasetId> create_dataset(PJ::DatasetDescriptor descriptor);
+  [[nodiscard]] PJ::Expected<PJ::DatasetId> createDataset(PJ::DatasetDescriptor descriptor);
 
   /// Lookup dataset by id (nullptr if missing).
-  [[nodiscard]] const PJ::DatasetInfo* get_dataset(PJ::DatasetId id) const;
+  [[nodiscard]] const PJ::DatasetInfo* getDataset(PJ::DatasetId id) const;
 
   // Topic management (called by DataWriter)
   /// Create a topic under a dataset.
-  [[nodiscard]] PJ::Expected<PJ::TopicId> create_topic(PJ::DatasetId dataset_id, TopicDescriptor descriptor);
+  [[nodiscard]] PJ::Expected<PJ::TopicId> createTopic(PJ::DatasetId dataset_id, TopicDescriptor descriptor);
 
   /// Mutable topic storage lookup (nullptr if missing).
-  [[nodiscard]] TopicStorage* get_topic_storage(PJ::TopicId id);
+  [[nodiscard]] TopicStorage* getTopicStorage(PJ::TopicId id);
 
   /// Const topic storage lookup (nullptr if missing).
-  [[nodiscard]] const TopicStorage* get_topic_storage(PJ::TopicId id) const;
+  [[nodiscard]] const TopicStorage* getTopicStorage(PJ::TopicId id) const;
 
   // Schema registry access
   /// Mutable schema registry access.
-  [[nodiscard]] TypeRegistry& type_registry();
+  [[nodiscard]] TypeRegistry& typeRegistry();
 
   /// Const schema registry access.
-  [[nodiscard]] const TypeRegistry& type_registry() const;
+  [[nodiscard]] const TypeRegistry& typeRegistry() const;
 
   // Time domains
   /// Create a new time domain.
-  [[nodiscard]] PJ::Expected<PJ::TimeDomainId> create_time_domain(std::string name);
+  [[nodiscard]] PJ::Expected<PJ::TimeDomainId> createTimeDomain(std::string name);
 
   /// Lookup time domain by id (nullptr if missing).
-  [[nodiscard]] const PJ::TimeDomain* get_time_domain(PJ::TimeDomainId id) const;
+  [[nodiscard]] const PJ::TimeDomain* getTimeDomain(PJ::TimeDomainId id) const;
 
   /// Update display offset for one time domain.
-  void set_display_offset(PJ::TimeDomainId id, PJ::Timestamp offset);
+  void setDisplayOffset(PJ::TimeDomainId id, PJ::Timestamp offset);
 
   // Commit cycle: commit sealed chunks, enforce retention
   /// Commit flushed chunks into topic storage.
   /// Returns the deduplicated set of topic IDs that received at least one new chunk.
-  /// Pass the return value directly to DerivedEngine::on_source_committed():
-  ///   derived.on_source_committed(engine.commit_chunks(writer.flush_all()));
-  std::vector<PJ::TopicId> commit_chunks(std::vector<std::pair<PJ::TopicId, TopicChunk>> chunks);
+  /// Pass the return value directly to DerivedEngine::onSourceCommitted():
+  ///   derived.onSourceCommitted(engine.commitChunks(writer.flushAll()));
+  std::vector<PJ::TopicId> commitChunks(std::vector<std::pair<PJ::TopicId, TopicChunk>> chunks);
 
   /// Evict old chunks outside retention window.
-  void enforce_retention(PJ::Timestamp retention_window_ns);
+  void enforceRetention(PJ::Timestamp retention_window_ns);
 
   // Writer/Reader factories
   /// Create a writer bound to this engine.
-  [[nodiscard]] DataWriter create_writer();
+  [[nodiscard]] DataWriter createWriter();
 
   /// Create a reader bound to this engine.
-  [[nodiscard]] DataReader create_reader() const;
+  [[nodiscard]] DataReader createReader() const;
 
   // Topic listing by dataset
   /// List all dataset ids.
-  [[nodiscard]] std::vector<PJ::DatasetId> list_datasets() const;
+  [[nodiscard]] std::vector<PJ::DatasetId> listDatasets() const;
 
   /// List topic ids for a dataset.
-  [[nodiscard]] std::vector<PJ::TopicId> list_topics(PJ::DatasetId dataset_id) const;
+  [[nodiscard]] std::vector<PJ::TopicId> listTopics(PJ::DatasetId dataset_id) const;
 
  private:
   /// Global schema registry.

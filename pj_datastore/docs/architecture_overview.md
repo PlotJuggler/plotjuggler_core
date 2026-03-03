@@ -130,8 +130,8 @@ Responsibilities:
 
 Important behavior:
 
-- `commit_chunks()` appends chunks and returns deduplicated changed topic IDs
-- `enforce_retention()` evicts by per-topic latest timestamp minus retention window
+- `commitChunks()` appends chunks and returns deduplicated changed topic IDs
+- `enforceRetention()` evicts by per-topic latest timestamp minus retention window
 
 ## 5.2 `DataWriter`
 
@@ -141,17 +141,17 @@ Responsibilities:
 
 - schema registration and topic registration
 - row-at-a-time ingest:
-  - `begin_row()`
-  - `set_*()` / `set_null()`
-  - `finish_row()`
+  - `beginRow()`
+  - `set_*()` / `setNull()`
+  - `finishRow()`
 - bulk columnar ingest:
-  - `append_columns()`
+  - `appendColumns()`
 - scalar convenience ingest:
-  - `register_scalar_series()`
-  - `append_scalar()`
+  - `registerScalarSeries()`
+  - `appendScalar()`
 - dynamic column addition:
-  - `ensure_column(topic_id, field_path, PrimitiveType)` — adds a single typed column by path; idempotent; works on typed and schemaless topics; no schema required
-  - `expand_array(topic_id, path, N, element_type=kFloat64)` — adds N indexed element columns; typed topics use schema for element type; schemaless topics use `element_type`
+  - `ensureColumn(topic_id, field_path, PrimitiveType)` — adds a single typed column by path; idempotent; works on typed and schemaless topics; no schema required
+  - `expandArray(topic_id, path, N, element_type=kFloat64)` — adds N indexed element columns; typed topics use schema for element type; schemaless topics use `element_type`
 - flush and auto-seal behavior
 
 Important behavior:
@@ -160,7 +160,7 @@ Important behavior:
 - missing row fields are auto-filled as null at row finalization
 - bulk ingest can span chunk boundaries automatically
 - `ensure_column` returns error on type mismatch for an existing path; safe no-op on same-type re-call even mid-row
-- columns added via `ensure_column` on typed topics are NOT reflected in `get_type_tree()` — physical layout and schema tree can diverge intentionally
+- columns added via `ensure_column` on typed topics are NOT reflected in `getTypeTree()` — physical layout and schema tree can diverge intentionally
 
 ## 5.3 `TopicChunkBuilder` and `TopicChunk`
 
@@ -228,7 +228,7 @@ Responsibilities:
 
 - parse Arrow IPC schema from bytes
 - map Arrow columns to engine columns
-- convert buffers and call `DataWriter::append_columns()`
+- convert buffers and call `DataWriter::appendColumns()`
 
 ---
 
@@ -240,14 +240,14 @@ Responsibilities:
 2. Caller registers schema/topic or scalar series.
 3. Caller appends rows through `begin_row` -> `set_*` -> `finish_row`.
 4. Builder auto-seals when `max_chunk_rows` is reached.
-5. Caller calls `flush()` or `flush_all()`.
-6. Caller commits via `DataEngine::commit_chunks()`.
-7. Optional: call `DataEngine::enforce_retention()`.
+5. Caller calls `flush()` or `flushAll()`.
+6. Caller commits via `DataEngine::commitChunks()`.
+7. Optional: call `DataEngine::enforceRetention()`.
 
 ## 6.2 Bulk ingest flow
 
 1. Caller builds timestamp array and `ColumnData[]`.
-2. Caller calls `append_columns()`.
+2. Caller calls `appendColumns()`.
 3. Writer slices batch per remaining chunk capacity.
 4. Builder appends data/validity and computes deferred bulk stats.
 5. Auto-seal occurs at chunk boundary.
@@ -256,14 +256,14 @@ Responsibilities:
 ## 6.3 Query flow
 
 1. Caller gets `DataReader`.
-2. Caller issues `range_query(QueryRange)` or `latest_at(QueryPoint)`.
+2. Caller issues `rangeQuery(QueryRange)` or `latestAt(QueryPoint)`.
 3. Query layer traverses committed chunks in `TopicStorage`.
 4. Rows are returned as `SampleRow` references into immutable chunk data.
 
 ## 6.4 Derived scheduling flow
 
 1. Caller commits source chunks.
-2. Changed topic IDs are passed to `DerivedEngine::on_source_committed()`.
+2. Changed topic IDs are passed to `DerivedEngine::onSourceCommitted()`.
 3. Scheduler runs nodes in topological order.
 4. Incremental runs process only unseen inputs using watermarks.
 5. Output rows are written via writer APIs into derived output topics.
@@ -374,7 +374,7 @@ Notable gaps relative to the broader plan documents:
 - plugin staging queue model (`PluginStagingContext`, SPSC queue) is not implemented; commit is synchronous (Phase 5 deferred)
 - advanced time-domain alignment controls and automatic t0 alignment are not implemented (Phase 3)
 - automatic schema inference from first message for schemaless formats (JSON, CBOR, MessagePack) is not implemented; the storage primitives (`ensure_column`, schemaless `expand_array`) are ready, but plugin-level discovery and field auto-registration are not
-- `SchemaVersionHistory` per topic (tracking schema version entries over time) is not implemented; schema evolution replaces the tree in-place via `TypeRegistry::evolve_schema()`
+- `SchemaVersionHistory` per topic (tracking schema version entries over time) is not implemented; schema evolution replaces the tree in-place via `TypeRegistry::evolveSchema()`
 - full plugin migration/integration is out of scope in this repository stage
 
 ---

@@ -34,9 +34,9 @@ TopicChunk build_typed_chunk(PrimitiveType type, SetFn set_fn) {
   TopicChunkBuilder builder(/*topic_id=*/1, /*schema_id=*/1, cols, kPointCount);
 
   for (int i = 0; i < kPointCount; ++i) {
-    builder.begin_row(static_cast<Timestamp>(i));
+    builder.beginRow(static_cast<Timestamp>(i));
     set_fn(builder, 0, i);
-    builder.finish_row();
+    builder.finishRow();
   }
   return builder.seal();
 }
@@ -51,7 +51,7 @@ std::deque<TopicChunk> build_chunked_deque(PrimitiveType type, SetFn set_fn) {
   std::unique_ptr<TopicChunkBuilder> owned;
 
   for (int i = 0; i < kPointCount; ++i) {
-    if (!builder || builder->is_full()) {
+    if (!builder || builder->isFull()) {
       if (builder) {
         chunks.push_back(builder->seal());
       }
@@ -59,11 +59,11 @@ std::deque<TopicChunk> build_chunked_deque(PrimitiveType type, SetFn set_fn) {
           /*topic_id=*/1, /*schema_id=*/1, cols, kChunkSize);
       builder = owned.get();
     }
-    builder->begin_row(static_cast<Timestamp>(i));
+    builder->beginRow(static_cast<Timestamp>(i));
     set_fn(*builder, 0, i);
-    builder->finish_row();
+    builder->finishRow();
   }
-  if (builder && builder->row_count() > 0) {
+  if (builder && builder->rowCount() > 0) {
     chunks.push_back(builder->seal());
   }
   return chunks;
@@ -110,7 +110,7 @@ void BM_ColumnBuffer_ReadFloat32(benchmark::State& state) {
   static TypedColumnBuffer buf(make_descriptor(PrimitiveType::kFloat32, "value"));
   static bool init = [&] {
     for (int i = 0; i < kPointCount; ++i) {
-      buf.append_float32(static_cast<float>(i) * 0.1f);
+      buf.appendFloat32(static_cast<float>(i) * 0.1f);
     }
     return true;
   }();
@@ -119,7 +119,7 @@ void BM_ColumnBuffer_ReadFloat32(benchmark::State& state) {
   for (auto _ : state) {
     double sum = 0.0;
     for (int i = 0; i < kPointCount; ++i) {
-      sum += buf.read_float32(static_cast<std::size_t>(i));
+      sum += buf.readFloat32(static_cast<std::size_t>(i));
     }
     benchmark::DoNotOptimize(sum);
     benchmark::ClobberMemory();
@@ -131,7 +131,7 @@ void BM_ColumnBuffer_ReadInt64(benchmark::State& state) {
   static TypedColumnBuffer buf(make_descriptor(PrimitiveType::kInt64, "value"));
   static bool init = [&] {
     for (int i = 0; i < kPointCount; ++i) {
-      buf.append_int64(static_cast<int64_t>(i));
+      buf.appendInt64(static_cast<int64_t>(i));
     }
     return true;
   }();
@@ -140,7 +140,7 @@ void BM_ColumnBuffer_ReadInt64(benchmark::State& state) {
   for (auto _ : state) {
     int64_t sum = 0;
     for (int i = 0; i < kPointCount; ++i) {
-      sum += buf.read_int64(static_cast<std::size_t>(i));
+      sum += buf.readInt64(static_cast<std::size_t>(i));
     }
     benchmark::DoNotOptimize(sum);
     benchmark::ClobberMemory();
@@ -153,7 +153,7 @@ void BM_ColumnBuffer_ReadString(benchmark::State& state) {
   static TypedColumnBuffer buf(make_descriptor(PrimitiveType::kString, "state"));
   static bool init = [&] {
     for (int i = 0; i < kPointCount; ++i) {
-      buf.append_string(kEnumValues[static_cast<std::size_t>(i) % 4]);
+      buf.appendString(kEnumValues[static_cast<std::size_t>(i) % 4]);
     }
     return true;
   }();
@@ -162,7 +162,7 @@ void BM_ColumnBuffer_ReadString(benchmark::State& state) {
   for (auto _ : state) {
     std::size_t total_len = 0;
     for (int i = 0; i < kPointCount; ++i) {
-      total_len += buf.read_string(static_cast<std::size_t>(i)).size();
+      total_len += buf.readString(static_cast<std::size_t>(i)).size();
     }
     benchmark::DoNotOptimize(total_len);
     benchmark::ClobberMemory();
@@ -181,12 +181,12 @@ BENCHMARK(BM_ColumnBuffer_ReadString);
 void BM_Chunk_ReadFloat32(benchmark::State& state) {
   static TopicChunk chunk = build_typed_chunk(
       PrimitiveType::kFloat32,
-      [](TopicChunkBuilder& b, std::size_t col, int i) { b.set_float32(col, static_cast<float>(i) * 0.1f); });
+      [](TopicChunkBuilder& b, std::size_t col, int i) { b.setFloat32(col, static_cast<float>(i) * 0.1f); });
 
   for (auto _ : state) {
     double sum = 0.0;
     for (int i = 0; i < kPointCount; ++i) {
-      sum += chunk.read_numeric_as_double(0, static_cast<std::size_t>(i));
+      sum += chunk.readNumericAsDouble(0, static_cast<std::size_t>(i));
     }
     benchmark::DoNotOptimize(sum);
     benchmark::ClobberMemory();
@@ -197,13 +197,13 @@ void BM_Chunk_ReadFloat32(benchmark::State& state) {
 
 void BM_Chunk_ReadInt64(benchmark::State& state) {
   static TopicChunk chunk = build_typed_chunk(PrimitiveType::kInt64, [](TopicChunkBuilder& b, std::size_t col, int i) {
-    b.set_int64(col, static_cast<int64_t>(i));
+    b.setInt64(col, static_cast<int64_t>(i));
   });
 
   for (auto _ : state) {
     double sum = 0.0;
     for (int i = 0; i < kPointCount; ++i) {
-      sum += chunk.read_numeric_as_double(0, static_cast<std::size_t>(i));
+      sum += chunk.readNumericAsDouble(0, static_cast<std::size_t>(i));
     }
     benchmark::DoNotOptimize(sum);
     benchmark::ClobberMemory();
@@ -215,13 +215,13 @@ void BM_Chunk_ReadInt64(benchmark::State& state) {
 void BM_Chunk_ReadString(benchmark::State& state) {
   static const std::vector<std::string> kEnumValues = {"IDLE", "RUN", "WARN", "ERROR"};
   static TopicChunk chunk = build_typed_chunk(PrimitiveType::kString, [](TopicChunkBuilder& b, std::size_t col, int i) {
-    b.set_string(col, kEnumValues[static_cast<std::size_t>(i) % 4]);
+    b.setString(col, kEnumValues[static_cast<std::size_t>(i) % 4]);
   });
 
   for (auto _ : state) {
     std::size_t total_len = 0;
     for (int i = 0; i < kPointCount; ++i) {
-      total_len += chunk.read_string(0, static_cast<std::size_t>(i)).size();
+      total_len += chunk.readString(0, static_cast<std::size_t>(i)).size();
     }
     benchmark::DoNotOptimize(total_len);
     benchmark::ClobberMemory();
@@ -241,11 +241,11 @@ BENCHMARK(BM_Chunk_ReadString);
 void BM_Chunk_BulkReadFloat32(benchmark::State& state) {
   static TopicChunk chunk = build_typed_chunk(
       PrimitiveType::kFloat32,
-      [](TopicChunkBuilder& b, std::size_t col, int i) { b.set_float32(col, static_cast<float>(i) * 0.1f); });
+      [](TopicChunkBuilder& b, std::size_t col, int i) { b.setFloat32(col, static_cast<float>(i) * 0.1f); });
 
   std::vector<double> buf(kPointCount);
   for (auto _ : state) {
-    chunk.read_column_as_doubles(0, Span<double>(buf), 0);
+    chunk.readColumnAsDoubles(0, Span<double>(buf), 0);
     benchmark::DoNotOptimize(buf.data());
     benchmark::ClobberMemory();
   }
@@ -255,12 +255,12 @@ void BM_Chunk_BulkReadFloat32(benchmark::State& state) {
 
 void BM_Chunk_BulkReadInt64(benchmark::State& state) {
   static TopicChunk chunk = build_typed_chunk(PrimitiveType::kInt64, [](TopicChunkBuilder& b, std::size_t col, int i) {
-    b.set_int64(col, static_cast<int64_t>(i));
+    b.setInt64(col, static_cast<int64_t>(i));
   });
 
   std::vector<double> buf(kPointCount);
   for (auto _ : state) {
-    chunk.read_column_as_doubles(0, Span<double>(buf), 0);
+    chunk.readColumnAsDoubles(0, Span<double>(buf), 0);
     benchmark::DoNotOptimize(buf.data());
     benchmark::ClobberMemory();
   }
@@ -278,13 +278,13 @@ BENCHMARK(BM_Chunk_BulkReadInt64);
 void BM_Chunk_ReadInt64_FOR(benchmark::State& state) {
   // int64 values mod 100 → range [0,99], FOR uses 1 byte offsets
   static TopicChunk chunk = build_typed_chunk(PrimitiveType::kInt64, [](TopicChunkBuilder& b, std::size_t col, int i) {
-    b.set_int64(col, static_cast<int64_t>(i % 100));
+    b.setInt64(col, static_cast<int64_t>(i % 100));
   });
 
   for (auto _ : state) {
     double sum = 0.0;
     for (int i = 0; i < kPointCount; ++i) {
-      sum += chunk.read_numeric_as_double(0, static_cast<std::size_t>(i));
+      sum += chunk.readNumericAsDouble(0, static_cast<std::size_t>(i));
     }
     benchmark::DoNotOptimize(sum);
     benchmark::ClobberMemory();
@@ -297,12 +297,12 @@ void BM_Chunk_ReadInt64_FOR(benchmark::State& state) {
 void BM_Chunk_BulkReadInt64_FOR(benchmark::State& state) {
   // Same FOR-compressed int64 column, bulk read
   static TopicChunk chunk = build_typed_chunk(PrimitiveType::kInt64, [](TopicChunkBuilder& b, std::size_t col, int i) {
-    b.set_int64(col, static_cast<int64_t>(i % 100));
+    b.setInt64(col, static_cast<int64_t>(i % 100));
   });
 
   std::vector<double> buf(kPointCount);
   for (auto _ : state) {
-    chunk.read_column_as_doubles(0, Span<double>(buf), 0);
+    chunk.readColumnAsDoubles(0, Span<double>(buf), 0);
     benchmark::DoNotOptimize(buf.data());
     benchmark::ClobberMemory();
   }
@@ -314,12 +314,12 @@ void BM_Chunk_BulkReadInt64_FOR(benchmark::State& state) {
 void BM_Chunk_ReadInt32_Constant(benchmark::State& state) {
   // Constant int32 column
   static TopicChunk chunk = build_typed_chunk(
-      PrimitiveType::kInt32, [](TopicChunkBuilder& b, std::size_t col, int /*i*/) { b.set_int32(col, 42); });
+      PrimitiveType::kInt32, [](TopicChunkBuilder& b, std::size_t col, int /*i*/) { b.setInt32(col, 42); });
 
   for (auto _ : state) {
     double sum = 0.0;
     for (int i = 0; i < kPointCount; ++i) {
-      sum += chunk.read_numeric_as_double(0, static_cast<std::size_t>(i));
+      sum += chunk.readNumericAsDouble(0, static_cast<std::size_t>(i));
     }
     benchmark::DoNotOptimize(sum);
     benchmark::ClobberMemory();
@@ -332,11 +332,11 @@ void BM_Chunk_ReadInt32_Constant(benchmark::State& state) {
 void BM_Chunk_BulkReadInt32_Constant(benchmark::State& state) {
   // Same constant column, bulk read
   static TopicChunk chunk = build_typed_chunk(
-      PrimitiveType::kInt32, [](TopicChunkBuilder& b, std::size_t col, int /*i*/) { b.set_int32(col, 42); });
+      PrimitiveType::kInt32, [](TopicChunkBuilder& b, std::size_t col, int /*i*/) { b.setInt32(col, 42); });
 
   std::vector<double> buf(kPointCount);
   for (auto _ : state) {
-    chunk.read_column_as_doubles(0, Span<double>(buf), 0);
+    chunk.readColumnAsDoubles(0, Span<double>(buf), 0);
     benchmark::DoNotOptimize(buf.data());
     benchmark::ClobberMemory();
   }
@@ -357,12 +357,12 @@ BENCHMARK(BM_Chunk_BulkReadInt32_Constant);
 void BM_Cursor_ReadFloat32(benchmark::State& state) {
   static std::deque<TopicChunk> chunks = build_chunked_deque(
       PrimitiveType::kFloat32,
-      [](TopicChunkBuilder& b, std::size_t col, int i) { b.set_float32(col, static_cast<float>(i) * 0.1f); });
+      [](TopicChunkBuilder& b, std::size_t col, int i) { b.setFloat32(col, static_cast<float>(i) * 0.1f); });
 
   for (auto _ : state) {
     double sum = 0.0;
-    auto cursor = range_query(chunks, 0, kPointCount - 1);
-    cursor.for_each([&](const SampleRow& row) { sum += row.chunk->read_numeric_as_double(0, row.row_index); });
+    auto cursor = rangeQuery(chunks, 0, kPointCount - 1);
+    cursor.forEach([&](const SampleRow& row) { sum += row.chunk->readNumericAsDouble(0, row.row_index); });
     benchmark::DoNotOptimize(sum);
     benchmark::ClobberMemory();
   }
@@ -372,12 +372,12 @@ void BM_Cursor_ReadFloat32(benchmark::State& state) {
 void BM_Cursor_ReadInt64(benchmark::State& state) {
   static std::deque<TopicChunk> chunks = build_chunked_deque(
       PrimitiveType::kInt64,
-      [](TopicChunkBuilder& b, std::size_t col, int i) { b.set_int64(col, static_cast<int64_t>(i)); });
+      [](TopicChunkBuilder& b, std::size_t col, int i) { b.setInt64(col, static_cast<int64_t>(i)); });
 
   for (auto _ : state) {
     double sum = 0.0;
-    auto cursor = range_query(chunks, 0, kPointCount - 1);
-    cursor.for_each([&](const SampleRow& row) { sum += row.chunk->read_numeric_as_double(0, row.row_index); });
+    auto cursor = rangeQuery(chunks, 0, kPointCount - 1);
+    cursor.forEach([&](const SampleRow& row) { sum += row.chunk->readNumericAsDouble(0, row.row_index); });
     benchmark::DoNotOptimize(sum);
     benchmark::ClobberMemory();
   }
@@ -388,13 +388,13 @@ void BM_Cursor_ReadString(benchmark::State& state) {
   static const std::vector<std::string> kEnumValues = {"IDLE", "RUN", "WARN", "ERROR"};
   static std::deque<TopicChunk> chunks =
       build_chunked_deque(PrimitiveType::kString, [](TopicChunkBuilder& b, std::size_t col, int i) {
-        b.set_string(col, kEnumValues[static_cast<std::size_t>(i) % 4]);
+        b.setString(col, kEnumValues[static_cast<std::size_t>(i) % 4]);
       });
 
   for (auto _ : state) {
     std::size_t total_len = 0;
-    auto cursor = range_query(chunks, 0, kPointCount - 1);
-    cursor.for_each([&](const SampleRow& row) { total_len += row.chunk->read_string(0, row.row_index).size(); });
+    auto cursor = rangeQuery(chunks, 0, kPointCount - 1);
+    cursor.forEach([&](const SampleRow& row) { total_len += row.chunk->readString(0, row.row_index).size(); });
     benchmark::DoNotOptimize(total_len);
     benchmark::ClobberMemory();
   }
@@ -412,15 +412,15 @@ BENCHMARK(BM_Cursor_ReadString);
 void BM_Cursor_ChunkAtATime_Float32(benchmark::State& state) {
   static std::deque<TopicChunk> chunks = build_chunked_deque(
       PrimitiveType::kFloat32,
-      [](TopicChunkBuilder& b, std::size_t col, int i) { b.set_float32(col, static_cast<float>(i) * 0.1f); });
+      [](TopicChunkBuilder& b, std::size_t col, int i) { b.setFloat32(col, static_cast<float>(i) * 0.1f); });
 
   std::vector<double> buf(kChunkSize);
   for (auto _ : state) {
     double sum = 0.0;
-    auto cursor = range_query(chunks, 0, kPointCount - 1);
-    cursor.for_each_chunk([&](const ChunkRowRange& range) {
+    auto cursor = rangeQuery(chunks, 0, kPointCount - 1);
+    cursor.forEachChunk([&](const ChunkRowRange& range) {
       const std::size_t n = range.row_end - range.row_start;
-      range.chunk->read_column_as_doubles(0, Span<double>(buf.data(), n), range.row_start);
+      range.chunk->readColumnAsDoubles(0, Span<double>(buf.data(), n), range.row_start);
       for (std::size_t i = 0; i < n; ++i) {
         sum += buf[i];
       }
@@ -434,15 +434,15 @@ void BM_Cursor_ChunkAtATime_Float32(benchmark::State& state) {
 void BM_Cursor_ChunkAtATime_Int64(benchmark::State& state) {
   static std::deque<TopicChunk> chunks = build_chunked_deque(
       PrimitiveType::kInt64,
-      [](TopicChunkBuilder& b, std::size_t col, int i) { b.set_int64(col, static_cast<int64_t>(i)); });
+      [](TopicChunkBuilder& b, std::size_t col, int i) { b.setInt64(col, static_cast<int64_t>(i)); });
 
   std::vector<double> buf(kChunkSize);
   for (auto _ : state) {
     double sum = 0.0;
-    auto cursor = range_query(chunks, 0, kPointCount - 1);
-    cursor.for_each_chunk([&](const ChunkRowRange& range) {
+    auto cursor = rangeQuery(chunks, 0, kPointCount - 1);
+    cursor.forEachChunk([&](const ChunkRowRange& range) {
       const std::size_t n = range.row_end - range.row_start;
-      range.chunk->read_column_as_doubles(0, Span<double>(buf.data(), n), range.row_start);
+      range.chunk->readColumnAsDoubles(0, Span<double>(buf.data(), n), range.row_start);
       for (std::size_t i = 0; i < n; ++i) {
         sum += buf[i];
       }

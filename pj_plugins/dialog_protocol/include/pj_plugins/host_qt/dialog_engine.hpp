@@ -29,18 +29,18 @@ class DialogEngine {
   explicit DialogEngine(PJ::DialogHandle handle, DialogEngineConfig config = {});
 
   /// Show the plugin's dialog modally. Returns the result.
-  [[nodiscard]] DialogResult show_dialog(QWidget* parent = nullptr);
+  [[nodiscard]] DialogResult showDialog(QWidget* parent = nullptr);
 
   /// Run plugin headlessly (no UI): pump N ticks, return final widget_data JSON.
-  [[nodiscard]] std::string run_headless(int max_ticks);
+  [[nodiscard]] std::string runHeadless(int max_ticks);
 
-  /// Stats from the last show_dialog() call.
+  /// Stats from the last showDialog() call.
   struct Stats {
     int tick_count = 0;
     int event_count = 0;
     int diff_apply_count = 0;
   };
-  [[nodiscard]] Stats last_stats() const {
+  [[nodiscard]] Stats lastStats() const {
     return stats_;
   }
 

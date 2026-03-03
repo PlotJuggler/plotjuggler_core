@@ -8,7 +8,7 @@
 
 namespace PJ {
 
-/// Read-only parser for the event_json string passed to on_widget_event().
+/// Read-only parser for the event_json string passed to onWidgetEvent().
 /// Returns std::nullopt for missing fields instead of throwing.
 class WidgetEvent {
  public:
@@ -20,31 +20,31 @@ class WidgetEvent {
 
   /// QLineEdit: text changed
   std::optional<std::string> text() const {
-    return get_string("text");
+    return getString("text");
   }
 
   /// QComboBox: current index changed
-  std::optional<int> current_index() const {
-    return get_int("current_index");
+  std::optional<int> currentIndex() const {
+    return getInt("current_index");
   }
 
   /// QComboBox: current text
-  std::optional<std::string> current_text() const {
-    return get_string("current_text");
+  std::optional<std::string> currentText() const {
+    return getString("current_text");
   }
 
   /// QCheckBox, QRadioButton: toggled
   std::optional<bool> checked() const {
-    return get_bool("checked");
+    return getBool("checked");
   }
 
   /// QSpinBox: value changed
-  std::optional<int> value_int() const {
-    return get_int("value");
+  std::optional<int> valueInt() const {
+    return getInt("value");
   }
 
   /// QDoubleSpinBox: value changed
-  std::optional<double> value_double() const {
+  std::optional<double> valueDouble() const {
     auto it = data_.find("value");
     if (it == data_.end() || !it->is_number()) {
       return std::nullopt;
@@ -53,7 +53,7 @@ class WidgetEvent {
   }
 
   /// QListWidget: selection changed
-  std::optional<std::vector<std::string>> selected_items() const {
+  std::optional<std::vector<std::string>> selectedItems() const {
     auto it = data_.find("selected_items");
     if (it == data_.end() || !it->is_array()) {
       return std::nullopt;
@@ -75,13 +75,13 @@ class WidgetEvent {
   }
 
   /// File picker: file selected
-  std::optional<std::string> file_selected() const {
-    return get_string("file_selected");
+  std::optional<std::string> fileSelected() const {
+    return getString("file_selected");
   }
 
   /// QTabWidget: tab changed
-  std::optional<int> tab_index() const {
-    return get_int("tab_index");
+  std::optional<int> tabIndex() const {
+    return getInt("tab_index");
   }
 
   /// Check if a key exists in the event data
@@ -97,7 +97,7 @@ class WidgetEvent {
  private:
   nlohmann::json data_;
 
-  std::optional<std::string> get_string(const char* key) const {
+  std::optional<std::string> getString(const char* key) const {
     auto it = data_.find(key);
     if (it == data_.end() || !it->is_string()) {
       return std::nullopt;
@@ -105,7 +105,7 @@ class WidgetEvent {
     return it->get<std::string>();
   }
 
-  std::optional<int> get_int(const char* key) const {
+  std::optional<int> getInt(const char* key) const {
     auto it = data_.find(key);
     if (it == data_.end() || !it->is_number_integer()) {
       return std::nullopt;
@@ -113,7 +113,7 @@ class WidgetEvent {
     return it->get<int>();
   }
 
-  std::optional<bool> get_bool(const char* key) const {
+  std::optional<bool> getBool(const char* key) const {
     auto it = data_.find(key);
     if (it == data_.end() || !it->is_boolean()) {
       return std::nullopt;

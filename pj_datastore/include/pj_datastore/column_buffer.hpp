@@ -32,7 +32,7 @@ enum class StorageKind : uint8_t {
   kString,
 };
 
-[[nodiscard]] constexpr StorageKind storage_kind_of(PrimitiveType t) noexcept {
+[[nodiscard]] constexpr StorageKind storageKindOf(PrimitiveType t) noexcept {
   switch (t) {
     case PrimitiveType::kFloat32:
       return StorageKind::kFloat32;
@@ -59,7 +59,7 @@ enum class StorageKind : uint8_t {
 }
 
 // Byte size of a StorageKind's fixed-width element. Returns 0 for kString.
-[[nodiscard]] constexpr std::size_t storage_kind_size(StorageKind k) noexcept {
+[[nodiscard]] constexpr std::size_t storageKindSize(StorageKind k) noexcept {
   switch (k) {
     case StorageKind::kFloat32:
       return sizeof(float);
@@ -108,104 +108,104 @@ class TypedColumnBuffer {
   [[nodiscard]] const ColumnDescriptor& descriptor() const noexcept;
 
   /// Number of appended rows.
-  [[nodiscard]] std::size_t row_count() const noexcept;
+  [[nodiscard]] std::size_t rowCount() const noexcept;
 
   /// True if at least one row is null.
-  [[nodiscard]] bool has_nulls() const noexcept;
+  [[nodiscard]] bool hasNulls() const noexcept;
 
   /// True if row is valid (non-null).
-  [[nodiscard]] bool is_valid(std::size_t row) const noexcept;
+  [[nodiscard]] bool isValid(std::size_t row) const noexcept;
 
   // Append typed values (7 storage types)
   /// Append one float32 value.
-  void append_float32(float value);
+  void appendFloat32(float value);
 
   /// Append one float64 value.
-  void append_float64(double value);
+  void appendFloat64(double value);
 
   /// Append one int32 value.
-  void append_int32(int32_t value);
+  void appendInt32(int32_t value);
 
   /// Append one int64 value.
-  void append_int64(int64_t value);
+  void appendInt64(int64_t value);
 
   /// Append one uint64 value.
-  void append_uint64(uint64_t value);
+  void appendUint64(uint64_t value);
 
   /// Append one bool value (stored as uint8 0/1).
-  void append_bool(bool value);
+  void appendBool(bool value);
 
   /// Append one UTF-8 string.
-  void append_string(std::string_view value);
+  void appendString(std::string_view value);
 
   /// Append a null row (value slot is zero-filled).
-  void append_null();
+  void appendNull();
 
   // Read typed values (7 storage types)
   /// Read one float32 value.
-  [[nodiscard]] float read_float32(std::size_t row) const;
+  [[nodiscard]] float readFloat32(std::size_t row) const;
 
   /// Read one float64 value.
-  [[nodiscard]] double read_float64(std::size_t row) const;
+  [[nodiscard]] double readFloat64(std::size_t row) const;
 
   /// Read one int32 value.
-  [[nodiscard]] int32_t read_int32(std::size_t row) const;
+  [[nodiscard]] int32_t readInt32(std::size_t row) const;
 
   /// Read one int64 value.
-  [[nodiscard]] int64_t read_int64(std::size_t row) const;
+  [[nodiscard]] int64_t readInt64(std::size_t row) const;
 
   /// Read one uint64 value.
-  [[nodiscard]] uint64_t read_uint64(std::size_t row) const;
+  [[nodiscard]] uint64_t readUint64(std::size_t row) const;
 
   /// Read one bool value.
-  [[nodiscard]] bool read_bool(std::size_t row) const;
+  [[nodiscard]] bool readBool(std::size_t row) const;
 
   /// Read one string view.
-  [[nodiscard]] std::string_view read_string(std::size_t row) const;
+  [[nodiscard]] std::string_view readString(std::size_t row) const;
 
   /// Return true if row is null.
-  [[nodiscard]] bool is_null(std::size_t row) const;
+  [[nodiscard]] bool isNull(std::size_t row) const;
 
   // Read any numeric column as double (for stats, display).
   // For string columns, returns NaN.
-  [[nodiscard]] double read_as_double(std::size_t row) const;
+  [[nodiscard]] double readAsDouble(std::size_t row) const;
 
   // ---- Bulk append (contiguous memcpy-based) ----
   /// Append contiguous float32 values.
-  void append_float32_bulk(Span<const float> data);
+  void appendFloat32Bulk(Span<const float> data);
 
   /// Append contiguous float64 values.
-  void append_float64_bulk(Span<const double> data);
+  void appendFloat64Bulk(Span<const double> data);
 
   /// Append contiguous int32 values.
-  void append_int32_bulk(Span<const int32_t> data);
+  void appendInt32Bulk(Span<const int32_t> data);
 
   /// Append contiguous int64 values.
-  void append_int64_bulk(Span<const int64_t> data);
+  void appendInt64Bulk(Span<const int64_t> data);
 
   /// Append contiguous uint64 values.
-  void append_uint64_bulk(Span<const uint64_t> data);
+  void appendUint64Bulk(Span<const uint64_t> data);
 
   /// Append contiguous bool bytes (0/1).
-  void append_bool_bulk(Span<const uint8_t> data);
+  void appendBoolBulk(Span<const uint8_t> data);
 
   /// Append strings from Arrow-compatible offset+data layout.
   /// offsets has (count + 1) entries; data contains the concatenated strings.
-  void append_strings_bulk(Span<const uint32_t> offsets, Span<const char> data);
+  void appendStringsBulk(Span<const uint32_t> offsets, Span<const char> data);
 
   /// Append a validity bitmap for the most recently appended `count` rows.
   /// Arrow-compatible bit layout. bit_offset is the starting bit within bitmap.
-  void append_validity_bulk(BitSpan validity);
+  void appendValidityBulk(BitSpan validity);
 
   // Access underlying buffers (for encoding at seal time)
   /// Raw value bytes.
-  [[nodiscard]] const RawBuffer& value_buffer() const noexcept;
+  [[nodiscard]] const RawBuffer& valueBuffer() const noexcept;
 
   /// Packed validity bitmap.
-  [[nodiscard]] const BitVector& validity_buffer() const noexcept;
+  [[nodiscard]] const BitVector& validityBuffer() const noexcept;
 
   /// String offsets bytes (uint32 array).
-  [[nodiscard]] const RawBuffer& offsets_buffer() const noexcept;  // strings only
+  [[nodiscard]] const RawBuffer& offsetsBuffer() const noexcept;  // strings only
 
  private:
   /// Column descriptor metadata.
@@ -223,16 +223,16 @@ class TypedColumnBuffer {
   /// Whether validity_ has been initialized.
   bool validity_initialized_ = false;
 
-  void ensure_validity_initialized();
+  void ensureValidityInitialized();
 
   template <typename T>
-  void append_fixed(T value);
+  void appendFixed(T value);
 
   template <typename T>
-  void append_fixed_bulk(Span<const T> data);
+  void appendFixedBulk(Span<const T> data);
 
   template <typename T>
-  [[nodiscard]] T read_fixed(std::size_t row) const;
+  [[nodiscard]] T readFixed(std::size_t row) const;
 };
 
 }  // namespace PJ

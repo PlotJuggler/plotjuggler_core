@@ -19,14 +19,14 @@ ColumnDescriptor make_descriptor(PrimitiveType type, std::string path = "test_fi
 // -----------------------------------------------------------------------
 TEST(TypedColumnBufferTest, Float32AppendRead) {
   TypedColumnBuffer buf(make_descriptor(PrimitiveType::kFloat32));
-  buf.append_float32(1.5f);
-  buf.append_float32(-3.14f);
-  buf.append_float32(0.0f);
+  buf.appendFloat32(1.5f);
+  buf.appendFloat32(-3.14f);
+  buf.appendFloat32(0.0f);
 
-  EXPECT_EQ(buf.row_count(), 3u);
-  EXPECT_FLOAT_EQ(buf.read_float32(0), 1.5f);
-  EXPECT_FLOAT_EQ(buf.read_float32(1), -3.14f);
-  EXPECT_FLOAT_EQ(buf.read_float32(2), 0.0f);
+  EXPECT_EQ(buf.rowCount(), 3u);
+  EXPECT_FLOAT_EQ(buf.readFloat32(0), 1.5f);
+  EXPECT_FLOAT_EQ(buf.readFloat32(1), -3.14f);
+  EXPECT_FLOAT_EQ(buf.readFloat32(2), 0.0f);
 }
 
 // -----------------------------------------------------------------------
@@ -34,12 +34,12 @@ TEST(TypedColumnBufferTest, Float32AppendRead) {
 // -----------------------------------------------------------------------
 TEST(TypedColumnBufferTest, Float64AppendRead) {
   TypedColumnBuffer buf(make_descriptor(PrimitiveType::kFloat64));
-  buf.append_float64(2.718281828459045);
-  buf.append_float64(-1e308);
+  buf.appendFloat64(2.718281828459045);
+  buf.appendFloat64(-1e308);
 
-  EXPECT_EQ(buf.row_count(), 2u);
-  EXPECT_DOUBLE_EQ(buf.read_float64(0), 2.718281828459045);
-  EXPECT_DOUBLE_EQ(buf.read_float64(1), -1e308);
+  EXPECT_EQ(buf.rowCount(), 2u);
+  EXPECT_DOUBLE_EQ(buf.readFloat64(0), 2.718281828459045);
+  EXPECT_DOUBLE_EQ(buf.readFloat64(1), -1e308);
 }
 
 // -----------------------------------------------------------------------
@@ -47,14 +47,14 @@ TEST(TypedColumnBufferTest, Float64AppendRead) {
 // -----------------------------------------------------------------------
 TEST(TypedColumnBufferTest, Int32AppendRead) {
   TypedColumnBuffer buf(make_descriptor(PrimitiveType::kInt32));
-  buf.append_int32(42);
-  buf.append_int32(-100);
-  buf.append_int32(0);
+  buf.appendInt32(42);
+  buf.appendInt32(-100);
+  buf.appendInt32(0);
 
-  EXPECT_EQ(buf.row_count(), 3u);
-  EXPECT_EQ(buf.read_int32(0), 42);
-  EXPECT_EQ(buf.read_int32(1), -100);
-  EXPECT_EQ(buf.read_int32(2), 0);
+  EXPECT_EQ(buf.rowCount(), 3u);
+  EXPECT_EQ(buf.readInt32(0), 42);
+  EXPECT_EQ(buf.readInt32(1), -100);
+  EXPECT_EQ(buf.readInt32(2), 0);
 }
 
 // -----------------------------------------------------------------------
@@ -62,14 +62,14 @@ TEST(TypedColumnBufferTest, Int32AppendRead) {
 // -----------------------------------------------------------------------
 TEST(TypedColumnBufferTest, Int64AppendRead) {
   TypedColumnBuffer buf(make_descriptor(PrimitiveType::kInt64));
-  buf.append_int64(INT64_MAX);
-  buf.append_int64(INT64_MIN);
-  buf.append_int64(0);
+  buf.appendInt64(INT64_MAX);
+  buf.appendInt64(INT64_MIN);
+  buf.appendInt64(0);
 
-  EXPECT_EQ(buf.row_count(), 3u);
-  EXPECT_EQ(buf.read_int64(0), INT64_MAX);
-  EXPECT_EQ(buf.read_int64(1), INT64_MIN);
-  EXPECT_EQ(buf.read_int64(2), 0);
+  EXPECT_EQ(buf.rowCount(), 3u);
+  EXPECT_EQ(buf.readInt64(0), INT64_MAX);
+  EXPECT_EQ(buf.readInt64(1), INT64_MIN);
+  EXPECT_EQ(buf.readInt64(2), 0);
 }
 
 // -----------------------------------------------------------------------
@@ -77,14 +77,14 @@ TEST(TypedColumnBufferTest, Int64AppendRead) {
 // -----------------------------------------------------------------------
 TEST(TypedColumnBufferTest, Uint64AppendRead) {
   TypedColumnBuffer buf(make_descriptor(PrimitiveType::kUint64));
-  buf.append_uint64(255);
-  buf.append_uint64(0);
-  buf.append_uint64(18000000000000000000ULL);
+  buf.appendUint64(255);
+  buf.appendUint64(0);
+  buf.appendUint64(18000000000000000000ULL);
 
-  EXPECT_EQ(buf.row_count(), 3u);
-  EXPECT_EQ(buf.read_uint64(0), 255U);
-  EXPECT_EQ(buf.read_uint64(1), 0U);
-  EXPECT_EQ(buf.read_uint64(2), 18000000000000000000ULL);
+  EXPECT_EQ(buf.rowCount(), 3u);
+  EXPECT_EQ(buf.readUint64(0), 255U);
+  EXPECT_EQ(buf.readUint64(1), 0U);
+  EXPECT_EQ(buf.readUint64(2), 18000000000000000000ULL);
 }
 
 // -----------------------------------------------------------------------
@@ -92,14 +92,14 @@ TEST(TypedColumnBufferTest, Uint64AppendRead) {
 // -----------------------------------------------------------------------
 TEST(TypedColumnBufferTest, BoolAppendRead) {
   TypedColumnBuffer buf(make_descriptor(PrimitiveType::kBool));
-  buf.append_bool(true);
-  buf.append_bool(false);
-  buf.append_bool(true);
+  buf.appendBool(true);
+  buf.appendBool(false);
+  buf.appendBool(true);
 
-  EXPECT_EQ(buf.row_count(), 3u);
-  EXPECT_TRUE(buf.read_bool(0));
-  EXPECT_FALSE(buf.read_bool(1));
-  EXPECT_TRUE(buf.read_bool(2));
+  EXPECT_EQ(buf.rowCount(), 3u);
+  EXPECT_TRUE(buf.readBool(0));
+  EXPECT_FALSE(buf.readBool(1));
+  EXPECT_TRUE(buf.readBool(2));
 }
 
 // -----------------------------------------------------------------------
@@ -107,14 +107,14 @@ TEST(TypedColumnBufferTest, BoolAppendRead) {
 // -----------------------------------------------------------------------
 TEST(TypedColumnBufferTest, StringAppendRead) {
   TypedColumnBuffer buf(make_descriptor(PrimitiveType::kString));
-  buf.append_string("hello");
-  buf.append_string("world");
-  buf.append_string("test");
+  buf.appendString("hello");
+  buf.appendString("world");
+  buf.appendString("test");
 
-  EXPECT_EQ(buf.row_count(), 3u);
-  EXPECT_EQ(buf.read_string(0), "hello");
-  EXPECT_EQ(buf.read_string(1), "world");
-  EXPECT_EQ(buf.read_string(2), "test");
+  EXPECT_EQ(buf.rowCount(), 3u);
+  EXPECT_EQ(buf.readString(0), "hello");
+  EXPECT_EQ(buf.readString(1), "world");
+  EXPECT_EQ(buf.readString(2), "test");
 }
 
 // -----------------------------------------------------------------------
@@ -122,18 +122,18 @@ TEST(TypedColumnBufferTest, StringAppendRead) {
 // -----------------------------------------------------------------------
 TEST(TypedColumnBufferTest, NullHandling) {
   TypedColumnBuffer buf(make_descriptor(PrimitiveType::kFloat32));
-  buf.append_float32(1.0f);
-  buf.append_null();
-  buf.append_float32(3.0f);
+  buf.appendFloat32(1.0f);
+  buf.appendNull();
+  buf.appendFloat32(3.0f);
 
-  EXPECT_EQ(buf.row_count(), 3u);
-  EXPECT_FALSE(buf.is_null(0));
-  EXPECT_TRUE(buf.is_null(1));
-  EXPECT_FALSE(buf.is_null(2));
+  EXPECT_EQ(buf.rowCount(), 3u);
+  EXPECT_FALSE(buf.isNull(0));
+  EXPECT_TRUE(buf.isNull(1));
+  EXPECT_FALSE(buf.isNull(2));
 
   // Non-null values are still readable.
-  EXPECT_FLOAT_EQ(buf.read_float32(0), 1.0f);
-  EXPECT_FLOAT_EQ(buf.read_float32(2), 3.0f);
+  EXPECT_FLOAT_EQ(buf.readFloat32(0), 1.0f);
+  EXPECT_FLOAT_EQ(buf.readFloat32(2), 3.0f);
 }
 
 // -----------------------------------------------------------------------
@@ -141,13 +141,13 @@ TEST(TypedColumnBufferTest, NullHandling) {
 // -----------------------------------------------------------------------
 TEST(TypedColumnBufferTest, HasNulls) {
   TypedColumnBuffer buf(make_descriptor(PrimitiveType::kInt32));
-  EXPECT_FALSE(buf.has_nulls());
+  EXPECT_FALSE(buf.hasNulls());
 
-  buf.append_int32(10);
-  EXPECT_FALSE(buf.has_nulls());
+  buf.appendInt32(10);
+  EXPECT_FALSE(buf.hasNulls());
 
-  buf.append_null();
-  EXPECT_TRUE(buf.has_nulls());
+  buf.appendNull();
+  EXPECT_TRUE(buf.hasNulls());
 }
 
 // -----------------------------------------------------------------------
@@ -155,19 +155,19 @@ TEST(TypedColumnBufferTest, HasNulls) {
 // -----------------------------------------------------------------------
 TEST(TypedColumnBufferTest, RowCountIncrements) {
   TypedColumnBuffer buf(make_descriptor(PrimitiveType::kFloat64));
-  EXPECT_EQ(buf.row_count(), 0u);
+  EXPECT_EQ(buf.rowCount(), 0u);
 
-  buf.append_float64(1.0);
-  EXPECT_EQ(buf.row_count(), 1u);
+  buf.appendFloat64(1.0);
+  EXPECT_EQ(buf.rowCount(), 1u);
 
-  buf.append_float64(2.0);
-  EXPECT_EQ(buf.row_count(), 2u);
+  buf.appendFloat64(2.0);
+  EXPECT_EQ(buf.rowCount(), 2u);
 
-  buf.append_null();
-  EXPECT_EQ(buf.row_count(), 3u);
+  buf.appendNull();
+  EXPECT_EQ(buf.rowCount(), 3u);
 
-  buf.append_float64(4.0);
-  EXPECT_EQ(buf.row_count(), 4u);
+  buf.appendFloat64(4.0);
+  EXPECT_EQ(buf.rowCount(), 4u);
 }
 
 // -----------------------------------------------------------------------
@@ -175,9 +175,9 @@ TEST(TypedColumnBufferTest, RowCountIncrements) {
 // -----------------------------------------------------------------------
 TEST(TypedColumnBufferTest, ReadAsDoubleFloat32) {
   TypedColumnBuffer buf(make_descriptor(PrimitiveType::kFloat32));
-  buf.append_float32(1.5f);
+  buf.appendFloat32(1.5f);
 
-  EXPECT_DOUBLE_EQ(buf.read_as_double(0), 1.5);
+  EXPECT_DOUBLE_EQ(buf.readAsDouble(0), 1.5);
 }
 
 // -----------------------------------------------------------------------
@@ -185,9 +185,9 @@ TEST(TypedColumnBufferTest, ReadAsDoubleFloat32) {
 // -----------------------------------------------------------------------
 TEST(TypedColumnBufferTest, ReadAsDoubleInt32) {
   TypedColumnBuffer buf(make_descriptor(PrimitiveType::kInt32));
-  buf.append_int32(42);
+  buf.appendInt32(42);
 
-  EXPECT_DOUBLE_EQ(buf.read_as_double(0), 42.0);
+  EXPECT_DOUBLE_EQ(buf.readAsDouble(0), 42.0);
 }
 
 // -----------------------------------------------------------------------
@@ -195,18 +195,18 @@ TEST(TypedColumnBufferTest, ReadAsDoubleInt32) {
 // -----------------------------------------------------------------------
 TEST(TypedColumnBufferTest, MultipleStringsVaryingLengths) {
   TypedColumnBuffer buf(make_descriptor(PrimitiveType::kString));
-  buf.append_string("a");
-  buf.append_string("bb");
-  buf.append_string("ccc");
-  buf.append_string("dddd");
-  buf.append_string("eeeee");
+  buf.appendString("a");
+  buf.appendString("bb");
+  buf.appendString("ccc");
+  buf.appendString("dddd");
+  buf.appendString("eeeee");
 
-  EXPECT_EQ(buf.row_count(), 5u);
-  EXPECT_EQ(buf.read_string(0), "a");
-  EXPECT_EQ(buf.read_string(1), "bb");
-  EXPECT_EQ(buf.read_string(2), "ccc");
-  EXPECT_EQ(buf.read_string(3), "dddd");
-  EXPECT_EQ(buf.read_string(4), "eeeee");
+  EXPECT_EQ(buf.rowCount(), 5u);
+  EXPECT_EQ(buf.readString(0), "a");
+  EXPECT_EQ(buf.readString(1), "bb");
+  EXPECT_EQ(buf.readString(2), "ccc");
+  EXPECT_EQ(buf.readString(3), "dddd");
+  EXPECT_EQ(buf.readString(4), "eeeee");
 }
 
 // -----------------------------------------------------------------------
@@ -214,11 +214,11 @@ TEST(TypedColumnBufferTest, MultipleStringsVaryingLengths) {
 // -----------------------------------------------------------------------
 TEST(TypedColumnBufferTest, EmptyString) {
   TypedColumnBuffer buf(make_descriptor(PrimitiveType::kString));
-  buf.append_string("");
+  buf.appendString("");
 
-  EXPECT_EQ(buf.row_count(), 1u);
-  EXPECT_EQ(buf.read_string(0), "");
-  EXPECT_TRUE(buf.read_string(0).empty());
+  EXPECT_EQ(buf.rowCount(), 1u);
+  EXPECT_EQ(buf.readString(0), "");
+  EXPECT_TRUE(buf.readString(0).empty());
 }
 
 // -----------------------------------------------------------------------
@@ -237,11 +237,11 @@ TEST(TypedColumnBufferTest, DescriptorAccessor) {
 // -----------------------------------------------------------------------
 TEST(TypedColumnBufferTest, ReadAsDoubleBool) {
   TypedColumnBuffer buf(make_descriptor(PrimitiveType::kBool));
-  buf.append_bool(true);
-  buf.append_bool(false);
+  buf.appendBool(true);
+  buf.appendBool(false);
 
-  EXPECT_DOUBLE_EQ(buf.read_as_double(0), 1.0);
-  EXPECT_DOUBLE_EQ(buf.read_as_double(1), 0.0);
+  EXPECT_DOUBLE_EQ(buf.readAsDouble(0), 1.0);
+  EXPECT_DOUBLE_EQ(buf.readAsDouble(1), 0.0);
 }
 
 // -----------------------------------------------------------------------
@@ -249,9 +249,9 @@ TEST(TypedColumnBufferTest, ReadAsDoubleBool) {
 // -----------------------------------------------------------------------
 TEST(TypedColumnBufferTest, ReadAsDoubleStringReturnsNaN) {
   TypedColumnBuffer buf(make_descriptor(PrimitiveType::kString));
-  buf.append_string("hello");
+  buf.appendString("hello");
 
-  EXPECT_TRUE(std::isnan(buf.read_as_double(0)));
+  EXPECT_TRUE(std::isnan(buf.readAsDouble(0)));
 }
 
 // -----------------------------------------------------------------------
@@ -259,17 +259,17 @@ TEST(TypedColumnBufferTest, ReadAsDoubleStringReturnsNaN) {
 // -----------------------------------------------------------------------
 TEST(TypedColumnBufferTest, NullInStringColumn) {
   TypedColumnBuffer buf(make_descriptor(PrimitiveType::kString));
-  buf.append_string("hello");
-  buf.append_null();
-  buf.append_string("world");
+  buf.appendString("hello");
+  buf.appendNull();
+  buf.appendString("world");
 
-  EXPECT_EQ(buf.row_count(), 3u);
-  EXPECT_FALSE(buf.is_null(0));
-  EXPECT_TRUE(buf.is_null(1));
-  EXPECT_FALSE(buf.is_null(2));
-  EXPECT_EQ(buf.read_string(0), "hello");
-  EXPECT_EQ(buf.read_string(1), "");  // null string reads as empty
-  EXPECT_EQ(buf.read_string(2), "world");
+  EXPECT_EQ(buf.rowCount(), 3u);
+  EXPECT_FALSE(buf.isNull(0));
+  EXPECT_TRUE(buf.isNull(1));
+  EXPECT_FALSE(buf.isNull(2));
+  EXPECT_EQ(buf.readString(0), "hello");
+  EXPECT_EQ(buf.readString(1), "");  // null string reads as empty
+  EXPECT_EQ(buf.readString(2), "world");
 }
 
 // -----------------------------------------------------------------------
@@ -277,20 +277,20 @@ TEST(TypedColumnBufferTest, NullInStringColumn) {
 // -----------------------------------------------------------------------
 TEST(TypedColumnBufferTest, ValueBufferNonEmpty) {
   TypedColumnBuffer buf(make_descriptor(PrimitiveType::kInt32));
-  EXPECT_TRUE(buf.value_buffer().empty());
+  EXPECT_TRUE(buf.valueBuffer().empty());
 
-  buf.append_int32(10);
-  EXPECT_FALSE(buf.value_buffer().empty());
-  EXPECT_EQ(buf.value_buffer().size(), sizeof(int32_t));
+  buf.appendInt32(10);
+  EXPECT_FALSE(buf.valueBuffer().empty());
+  EXPECT_EQ(buf.valueBuffer().size(), sizeof(int32_t));
 }
 
 TEST(TypedColumnBufferTest, OffsetsBufferForStrings) {
   TypedColumnBuffer buf(make_descriptor(PrimitiveType::kString));
-  EXPECT_TRUE(buf.offsets_buffer().empty());
+  EXPECT_TRUE(buf.offsetsBuffer().empty());
 
-  buf.append_string("hi");
+  buf.appendString("hi");
   // offsets: [0, 2] => 2 * sizeof(uint32_t) = 8
-  EXPECT_EQ(buf.offsets_buffer().size(), 2 * sizeof(uint32_t));
+  EXPECT_EQ(buf.offsetsBuffer().size(), 2 * sizeof(uint32_t));
 }
 
 // -----------------------------------------------------------------------
@@ -299,11 +299,11 @@ TEST(TypedColumnBufferTest, OffsetsBufferForStrings) {
 TEST(TypedColumnBufferTest, BulkFloat32AppendRead) {
   TypedColumnBuffer buf(make_descriptor(PrimitiveType::kFloat32));
   const float data[] = {1.0f, 2.0f, 3.0f, 4.0f, 5.0f};
-  buf.append_float32_bulk(Span<const float>(data, 5));
+  buf.appendFloat32Bulk(Span<const float>(data, 5));
 
-  EXPECT_EQ(buf.row_count(), 5u);
+  EXPECT_EQ(buf.rowCount(), 5u);
   for (std::size_t i = 0; i < 5; ++i) {
-    EXPECT_FLOAT_EQ(buf.read_float32(i), data[i]);
+    EXPECT_FLOAT_EQ(buf.readFloat32(i), data[i]);
   }
 }
 
@@ -313,11 +313,11 @@ TEST(TypedColumnBufferTest, BulkFloat32AppendRead) {
 TEST(TypedColumnBufferTest, BulkFloat64AppendRead) {
   TypedColumnBuffer buf(make_descriptor(PrimitiveType::kFloat64));
   const double data[] = {1.1, 2.2, 3.3};
-  buf.append_float64_bulk(Span<const double>(data, 3));
+  buf.appendFloat64Bulk(Span<const double>(data, 3));
 
-  EXPECT_EQ(buf.row_count(), 3u);
+  EXPECT_EQ(buf.rowCount(), 3u);
   for (std::size_t i = 0; i < 3; ++i) {
-    EXPECT_DOUBLE_EQ(buf.read_float64(i), data[i]);
+    EXPECT_DOUBLE_EQ(buf.readFloat64(i), data[i]);
   }
 }
 
@@ -327,11 +327,11 @@ TEST(TypedColumnBufferTest, BulkFloat64AppendRead) {
 TEST(TypedColumnBufferTest, BulkInt32AppendRead) {
   TypedColumnBuffer buf(make_descriptor(PrimitiveType::kInt32));
   const int32_t data[] = {-100, 0, 42, 999};
-  buf.append_int32_bulk(Span<const int32_t>(data, 4));
+  buf.appendInt32Bulk(Span<const int32_t>(data, 4));
 
-  EXPECT_EQ(buf.row_count(), 4u);
+  EXPECT_EQ(buf.rowCount(), 4u);
   for (std::size_t i = 0; i < 4; ++i) {
-    EXPECT_EQ(buf.read_int32(i), data[i]);
+    EXPECT_EQ(buf.readInt32(i), data[i]);
   }
 }
 
@@ -341,11 +341,11 @@ TEST(TypedColumnBufferTest, BulkInt32AppendRead) {
 TEST(TypedColumnBufferTest, BulkInt64AppendRead) {
   TypedColumnBuffer buf(make_descriptor(PrimitiveType::kInt64));
   const int64_t data[] = {INT64_MIN, 0, INT64_MAX};
-  buf.append_int64_bulk(Span<const int64_t>(data, 3));
+  buf.appendInt64Bulk(Span<const int64_t>(data, 3));
 
-  EXPECT_EQ(buf.row_count(), 3u);
+  EXPECT_EQ(buf.rowCount(), 3u);
   for (std::size_t i = 0; i < 3; ++i) {
-    EXPECT_EQ(buf.read_int64(i), data[i]);
+    EXPECT_EQ(buf.readInt64(i), data[i]);
   }
 }
 
@@ -355,11 +355,11 @@ TEST(TypedColumnBufferTest, BulkInt64AppendRead) {
 TEST(TypedColumnBufferTest, BulkUint64AppendRead) {
   TypedColumnBuffer buf(make_descriptor(PrimitiveType::kUint64));
   const uint64_t data[] = {0, 255, 18000000000000000000ULL};
-  buf.append_uint64_bulk(Span<const uint64_t>(data, 3));
+  buf.appendUint64Bulk(Span<const uint64_t>(data, 3));
 
-  EXPECT_EQ(buf.row_count(), 3u);
+  EXPECT_EQ(buf.rowCount(), 3u);
   for (std::size_t i = 0; i < 3; ++i) {
-    EXPECT_EQ(buf.read_uint64(i), data[i]);
+    EXPECT_EQ(buf.readUint64(i), data[i]);
   }
 }
 
@@ -369,14 +369,14 @@ TEST(TypedColumnBufferTest, BulkUint64AppendRead) {
 TEST(TypedColumnBufferTest, BulkBoolAppendRead) {
   TypedColumnBuffer buf(make_descriptor(PrimitiveType::kBool));
   const uint8_t data[] = {1, 0, 1, 1, 0};
-  buf.append_bool_bulk(Span<const uint8_t>(data, 5));
+  buf.appendBoolBulk(Span<const uint8_t>(data, 5));
 
-  EXPECT_EQ(buf.row_count(), 5u);
-  EXPECT_TRUE(buf.read_bool(0));
-  EXPECT_FALSE(buf.read_bool(1));
-  EXPECT_TRUE(buf.read_bool(2));
-  EXPECT_TRUE(buf.read_bool(3));
-  EXPECT_FALSE(buf.read_bool(4));
+  EXPECT_EQ(buf.rowCount(), 5u);
+  EXPECT_TRUE(buf.readBool(0));
+  EXPECT_FALSE(buf.readBool(1));
+  EXPECT_TRUE(buf.readBool(2));
+  EXPECT_TRUE(buf.readBool(3));
+  EXPECT_FALSE(buf.readBool(4));
 }
 
 // -----------------------------------------------------------------------
@@ -387,12 +387,12 @@ TEST(TypedColumnBufferTest, BulkStringAppendRead) {
   // "hello" "world" "!"
   const char string_data[] = "helloworld!";
   const uint32_t offsets[] = {0, 5, 10, 11};
-  buf.append_strings_bulk(Span<const uint32_t>(offsets, 4), Span<const char>(string_data, 11));
+  buf.appendStringsBulk(Span<const uint32_t>(offsets, 4), Span<const char>(string_data, 11));
 
-  EXPECT_EQ(buf.row_count(), 3u);
-  EXPECT_EQ(buf.read_string(0), "hello");
-  EXPECT_EQ(buf.read_string(1), "world");
-  EXPECT_EQ(buf.read_string(2), "!");
+  EXPECT_EQ(buf.rowCount(), 3u);
+  EXPECT_EQ(buf.readString(0), "hello");
+  EXPECT_EQ(buf.readString(1), "world");
+  EXPECT_EQ(buf.readString(2), "!");
 }
 
 // -----------------------------------------------------------------------
@@ -401,17 +401,17 @@ TEST(TypedColumnBufferTest, BulkStringAppendRead) {
 TEST(TypedColumnBufferTest, BulkValidityBitmap) {
   TypedColumnBuffer buf(make_descriptor(PrimitiveType::kFloat32));
   const float data[] = {1.0f, 0.0f, 3.0f, 0.0f};
-  buf.append_float32_bulk(Span<const float>(data, 4));
+  buf.appendFloat32Bulk(Span<const float>(data, 4));
 
   // Validity bitmap: bits [1,0,1,0] = 0b0101 = 0x05
   const uint8_t bitmap[] = {0x05};
-  buf.append_validity_bulk(BitSpan{Span<const uint8_t>(bitmap, 1), 0, 4});
+  buf.appendValidityBulk(BitSpan{Span<const uint8_t>(bitmap, 1), 0, 4});
 
-  EXPECT_FALSE(buf.is_null(0));
-  EXPECT_TRUE(buf.is_null(1));
-  EXPECT_FALSE(buf.is_null(2));
-  EXPECT_TRUE(buf.is_null(3));
-  EXPECT_TRUE(buf.has_nulls());
+  EXPECT_FALSE(buf.isNull(0));
+  EXPECT_TRUE(buf.isNull(1));
+  EXPECT_FALSE(buf.isNull(2));
+  EXPECT_TRUE(buf.isNull(3));
+  EXPECT_TRUE(buf.hasNulls());
 }
 
 // -----------------------------------------------------------------------
@@ -419,18 +419,18 @@ TEST(TypedColumnBufferTest, BulkValidityBitmap) {
 // -----------------------------------------------------------------------
 TEST(TypedColumnBufferTest, BulkAfterSingleAppend) {
   TypedColumnBuffer buf(make_descriptor(PrimitiveType::kFloat32));
-  buf.append_float32(1.0f);
-  buf.append_float32(2.0f);
+  buf.appendFloat32(1.0f);
+  buf.appendFloat32(2.0f);
 
   const float bulk[] = {3.0f, 4.0f, 5.0f};
-  buf.append_float32_bulk(Span<const float>(bulk, 3));
+  buf.appendFloat32Bulk(Span<const float>(bulk, 3));
 
-  EXPECT_EQ(buf.row_count(), 5u);
-  EXPECT_FLOAT_EQ(buf.read_float32(0), 1.0f);
-  EXPECT_FLOAT_EQ(buf.read_float32(1), 2.0f);
-  EXPECT_FLOAT_EQ(buf.read_float32(2), 3.0f);
-  EXPECT_FLOAT_EQ(buf.read_float32(3), 4.0f);
-  EXPECT_FLOAT_EQ(buf.read_float32(4), 5.0f);
+  EXPECT_EQ(buf.rowCount(), 5u);
+  EXPECT_FLOAT_EQ(buf.readFloat32(0), 1.0f);
+  EXPECT_FLOAT_EQ(buf.readFloat32(1), 2.0f);
+  EXPECT_FLOAT_EQ(buf.readFloat32(2), 3.0f);
+  EXPECT_FLOAT_EQ(buf.readFloat32(3), 4.0f);
+  EXPECT_FLOAT_EQ(buf.readFloat32(4), 5.0f);
 }
 
 // -----------------------------------------------------------------------
@@ -438,8 +438,8 @@ TEST(TypedColumnBufferTest, BulkAfterSingleAppend) {
 // -----------------------------------------------------------------------
 TEST(TypedColumnBufferTest, BulkZeroCount) {
   TypedColumnBuffer buf(make_descriptor(PrimitiveType::kFloat32));
-  buf.append_float32_bulk(Span<const float>());
-  EXPECT_EQ(buf.row_count(), 0u);
+  buf.appendFloat32Bulk(Span<const float>());
+  EXPECT_EQ(buf.rowCount(), 0u);
 }
 
 // -----------------------------------------------------------------------
@@ -450,11 +450,11 @@ TEST(TypedColumnBufferTest, BulkStringsNonZeroBaseOffset) {
   // Simulates Arrow-style offsets that don't start at 0
   const char string_data[] = "XXXXXhelloworld";
   const uint32_t offsets[] = {5, 10, 15};  // 2 strings: "hello", "world"
-  buf.append_strings_bulk(Span<const uint32_t>(offsets, 3), Span<const char>(string_data, 15));
+  buf.appendStringsBulk(Span<const uint32_t>(offsets, 3), Span<const char>(string_data, 15));
 
-  EXPECT_EQ(buf.row_count(), 2u);
-  EXPECT_EQ(buf.read_string(0), "hello");
-  EXPECT_EQ(buf.read_string(1), "world");
+  EXPECT_EQ(buf.rowCount(), 2u);
+  EXPECT_EQ(buf.readString(0), "hello");
+  EXPECT_EQ(buf.readString(1), "world");
 }
 
 // -----------------------------------------------------------------------
@@ -463,7 +463,7 @@ TEST(TypedColumnBufferTest, BulkStringsNonZeroBaseOffset) {
 TEST(TypedColumnBufferTest, BulkValidityWithBitOffset) {
   TypedColumnBuffer buf(make_descriptor(PrimitiveType::kInt32));
   const int32_t data[] = {10, 20, 30};
-  buf.append_int32_bulk(Span<const int32_t>(data, 3));
+  buf.appendInt32Bulk(Span<const int32_t>(data, 3));
 
   // bitmap = 0b01010000, bit_offset = 4, so bits 4,5,6 = 1,0,1
   // In Arrow's LSB-first layout: byte 0x50 = 0b01010000
@@ -471,11 +471,11 @@ TEST(TypedColumnBufferTest, BulkValidityWithBitOffset) {
   //   bit 5 = (0x50 >> 5) & 1 = 0 (null)
   //   bit 6 = (0x50 >> 6) & 1 = 1 (valid)
   const uint8_t bitmap[] = {0x50};
-  buf.append_validity_bulk(BitSpan{Span<const uint8_t>(bitmap, 1), 4, 3});
+  buf.appendValidityBulk(BitSpan{Span<const uint8_t>(bitmap, 1), 4, 3});
 
-  EXPECT_FALSE(buf.is_null(0));  // bit 4 = 1 -> valid
-  EXPECT_TRUE(buf.is_null(1));   // bit 5 = 0 -> null
-  EXPECT_FALSE(buf.is_null(2));  // bit 6 = 1 -> valid
+  EXPECT_FALSE(buf.isNull(0));  // bit 4 = 1 -> valid
+  EXPECT_TRUE(buf.isNull(1));   // bit 5 = 0 -> null
+  EXPECT_FALSE(buf.isNull(2));  // bit 6 = 1 -> valid
 }
 
 }  // namespace

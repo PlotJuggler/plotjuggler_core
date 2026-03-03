@@ -17,11 +17,11 @@ namespace {
 //   rotation: struct {w: float32, x: float32, y: float32, z: float32}
 //             semantic_tags = {"quaternion"}
 std::shared_ptr<TypeTreeNode> make_robot_pose() {
-  auto position = make_struct(
+  auto position = makeStruct(
       "position", {
-                      make_primitive("x", PrimitiveType::kFloat32),
-                      make_primitive("y", PrimitiveType::kFloat32),
-                      make_primitive("z", PrimitiveType::kFloat32),
+                      makePrimitive("x", PrimitiveType::kFloat32),
+                      makePrimitive("y", PrimitiveType::kFloat32),
+                      makePrimitive("z", PrimitiveType::kFloat32),
                   });
 
   auto rotation = std::make_shared<TypeTreeNode>(TypeTreeNode{
@@ -30,16 +30,16 @@ std::shared_ptr<TypeTreeNode> make_robot_pose() {
       .semantic_tags = {"quaternion"},
       .children =
           {
-              make_primitive("w", PrimitiveType::kFloat32),
-              make_primitive("x", PrimitiveType::kFloat32),
-              make_primitive("y", PrimitiveType::kFloat32),
-              make_primitive("z", PrimitiveType::kFloat32),
+              makePrimitive("w", PrimitiveType::kFloat32),
+              makePrimitive("x", PrimitiveType::kFloat32),
+              makePrimitive("y", PrimitiveType::kFloat32),
+              makePrimitive("z", PrimitiveType::kFloat32),
           },
   });
 
-  return make_struct(
+  return makeStruct(
       "Pose", {
-                  make_primitive("frame_name", PrimitiveType::kString),
+                  makePrimitive("frame_name", PrimitiveType::kString),
                   position,
                   rotation,
               });
@@ -49,7 +49,7 @@ std::shared_ptr<TypeTreeNode> make_robot_pose() {
 
 TEST(TypeTreeTest, FlattenFieldPathsRobotPose) {
   auto pose = make_robot_pose();
-  auto paths = flatten_field_paths(*pose);
+  auto paths = flattenFieldPaths(*pose);
 
   const std::vector<std::string> expected = {
       "frame_name", "position.x", "position.y", "position.z", "rotation.w", "rotation.x", "rotation.y", "rotation.z",
@@ -65,13 +65,13 @@ TEST(TypeTreeTest, FlattenFieldPathsRobotPose) {
 
 TEST(TypeTreeTest, CountLeafFieldsRobotPose) {
   auto pose = make_robot_pose();
-  EXPECT_EQ(count_leaf_fields(*pose), 8u);
+  EXPECT_EQ(countLeafFields(*pose), 8u);
 }
 
 // ---------- Test 3: factory functions set correct TypeKind ----------
 
 TEST(TypeTreeTest, MakePrimitiveSetsKind) {
-  auto node = make_primitive("x", PrimitiveType::kFloat32);
+  auto node = makePrimitive("x", PrimitiveType::kFloat32);
   EXPECT_EQ(node->kind, TypeKind::kPrimitive);
   EXPECT_EQ(node->name, "x");
   ASSERT_TRUE(node->primitive_type.has_value());
@@ -79,14 +79,14 @@ TEST(TypeTreeTest, MakePrimitiveSetsKind) {
 }
 
 TEST(TypeTreeTest, MakeStructSetsKind) {
-  auto node = make_struct("s", {});
+  auto node = makeStruct("s", {});
   EXPECT_EQ(node->kind, TypeKind::kStruct);
   EXPECT_EQ(node->name, "s");
 }
 
 TEST(TypeTreeTest, MakeArraySetsKind) {
-  auto elem = make_primitive("elem", PrimitiveType::kFloat64);
-  auto node = make_array("arr", elem);
+  auto elem = makePrimitive("elem", PrimitiveType::kFloat64);
+  auto node = makeArray("arr", elem);
   EXPECT_EQ(node->kind, TypeKind::kArray);
   EXPECT_EQ(node->name, "arr");
   EXPECT_EQ(node->element_type, elem);
@@ -99,7 +99,7 @@ TEST(TypeTreeTest, MakeEnumSetsKind) {
   mapping.name_to_value["OFF"] = 0;
   mapping.name_to_value["ON"] = 1;
 
-  auto node = make_enum("state", PrimitiveType::kInt32, std::move(mapping));
+  auto node = makeEnum("state", PrimitiveType::kInt32, std::move(mapping));
   EXPECT_EQ(node->kind, TypeKind::kEnum);
   EXPECT_EQ(node->name, "state");
 }
@@ -118,15 +118,15 @@ TEST(TypeTreeTest, SemanticTagsPreserved) {
 // ---------- Test 5: make_array with fixed size ----------
 
 TEST(TypeTreeTest, MakeArrayWithFixedSize) {
-  auto elem = make_primitive("elem", PrimitiveType::kFloat32);
-  auto node = make_array("data", elem, 10);
+  auto elem = makePrimitive("elem", PrimitiveType::kFloat32);
+  auto node = makeArray("data", elem, 10);
   ASSERT_TRUE(node->fixed_array_size.has_value());
   EXPECT_EQ(node->fixed_array_size.value(), 10u);
 }
 
 TEST(TypeTreeTest, MakeArrayWithoutFixedSize) {
-  auto elem = make_primitive("elem", PrimitiveType::kFloat32);
-  auto node = make_array("data", elem);
+  auto elem = makePrimitive("elem", PrimitiveType::kFloat32);
+  auto node = makeArray("data", elem);
   EXPECT_FALSE(node->fixed_array_size.has_value());
 }
 
@@ -139,7 +139,7 @@ TEST(TypeTreeTest, MakeEnumMappingRoundtrips) {
   mapping.name_to_value["OFF"] = 0;
   mapping.name_to_value["ON"] = 1;
 
-  auto node = make_enum("switch", PrimitiveType::kInt32, std::move(mapping));
+  auto node = makeEnum("switch", PrimitiveType::kInt32, std::move(mapping));
 
   ASSERT_TRUE(node->enum_mapping.has_value());
   const auto& em = node->enum_mapping.value();
@@ -159,7 +159,7 @@ TEST(TypeTreeTest, MakeEnumMappingRoundtrips) {
 
 TEST(TypeTreeTest, MakeEnumStoresUnderlyingType) {
   EnumMapping mapping;
-  auto node = make_enum("e", PrimitiveType::kUint8, std::move(mapping));
+  auto node = makeEnum("e", PrimitiveType::kUint8, std::move(mapping));
   ASSERT_TRUE(node->primitive_type.has_value());
   EXPECT_EQ(node->primitive_type.value(), PrimitiveType::kUint8);
 }
@@ -167,8 +167,8 @@ TEST(TypeTreeTest, MakeEnumStoresUnderlyingType) {
 // ---------- Test 7: flatten on a primitive-only root ----------
 
 TEST(TypeTreeTest, FlattenPrimitiveRoot) {
-  auto node = make_primitive("temperature", PrimitiveType::kFloat64);
-  auto paths = flatten_field_paths(*node);
+  auto node = makePrimitive("temperature", PrimitiveType::kFloat64);
+  auto paths = flattenFieldPaths(*node);
   ASSERT_EQ(paths.size(), 1u);
   EXPECT_EQ(paths[0], "temperature");
 }
@@ -177,8 +177,8 @@ TEST(TypeTreeTest, FlattenPrimitiveRoot) {
 
 TEST(TypeTreeTest, FlattenEnumRoot) {
   EnumMapping mapping;
-  auto node = make_enum("state", PrimitiveType::kInt32, std::move(mapping));
-  auto paths = flatten_field_paths(*node);
+  auto node = makeEnum("state", PrimitiveType::kInt32, std::move(mapping));
+  auto paths = flattenFieldPaths(*node);
   ASSERT_EQ(paths.size(), 1u);
   EXPECT_EQ(paths[0], "state");
 }
@@ -186,9 +186,9 @@ TEST(TypeTreeTest, FlattenEnumRoot) {
 // ---------- Test 9: flatten on an array root ----------
 
 TEST(TypeTreeTest, FlattenArrayRoot) {
-  auto elem = make_primitive("elem", PrimitiveType::kFloat32);
-  auto node = make_array("sensor_data", elem, 100);
-  auto paths = flatten_field_paths(*node);
+  auto elem = makePrimitive("elem", PrimitiveType::kFloat32);
+  auto node = makeArray("sensor_data", elem, 100);
+  auto paths = flattenFieldPaths(*node);
   ASSERT_EQ(paths.size(), 1u);
   EXPECT_EQ(paths[0], "sensor_data");
 }
@@ -196,30 +196,30 @@ TEST(TypeTreeTest, FlattenArrayRoot) {
 // ---------- Test 10: count_leaf_fields on non-struct roots ----------
 
 TEST(TypeTreeTest, CountLeafFieldsPrimitive) {
-  auto node = make_primitive("x", PrimitiveType::kFloat32);
-  EXPECT_EQ(count_leaf_fields(*node), 1u);
+  auto node = makePrimitive("x", PrimitiveType::kFloat32);
+  EXPECT_EQ(countLeafFields(*node), 1u);
 }
 
 TEST(TypeTreeTest, CountLeafFieldsEmptyStruct) {
-  auto node = make_struct("empty", {});
-  EXPECT_EQ(count_leaf_fields(*node), 0u);
+  auto node = makeStruct("empty", {});
+  EXPECT_EQ(countLeafFields(*node), 0u);
 }
 
 // ---------- Test 11: deeply nested struct ----------
 
 TEST(TypeTreeTest, DeeplyNestedStruct) {
-  auto inner = make_struct(
+  auto inner = makeStruct(
       "inner", {
-                   make_primitive("val", PrimitiveType::kInt32),
+                   makePrimitive("val", PrimitiveType::kInt32),
                });
-  auto middle = make_struct("middle", {inner});
-  auto outer = make_struct("outer", {middle});
+  auto middle = makeStruct("middle", {inner});
+  auto outer = makeStruct("outer", {middle});
 
-  auto paths = flatten_field_paths(*outer);
+  auto paths = flattenFieldPaths(*outer);
   ASSERT_EQ(paths.size(), 1u);
   EXPECT_EQ(paths[0], "middle.inner.val");
 
-  EXPECT_EQ(count_leaf_fields(*outer), 1u);
+  EXPECT_EQ(countLeafFields(*outer), 1u);
 }
 
 }  // namespace

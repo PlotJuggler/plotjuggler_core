@@ -70,16 +70,16 @@ static VarValue decode_as_varvalue(const TopicChunk& chunk, std::size_t col, std
   switch (kind) {
     case StorageKind::kFloat32:
     case StorageKind::kFloat64:
-      return chunk.read_numeric_as_double(col, row);
+      return chunk.readNumericAsDouble(col, row);
     case StorageKind::kInt32:
     case StorageKind::kInt64:
-      return static_cast<int64_t>(chunk.read_numeric_as_double(col, row));
+      return static_cast<int64_t>(chunk.readNumericAsDouble(col, row));
     case StorageKind::kUint64:
-      return static_cast<int64_t>(chunk.read_numeric_as_double(col, row));
+      return static_cast<int64_t>(chunk.readNumericAsDouble(col, row));
     case StorageKind::kBool:
-      return static_cast<int64_t>(chunk.read_bool(col, row) ? 1 : 0);
+      return static_cast<int64_t>(chunk.readBool(col, row) ? 1 : 0);
     case StorageKind::kString:
-      return std::string(chunk.read_string(col, row));
+      return std::string(chunk.readString(col, row));
   }
   return 0.0;
 }
@@ -89,7 +89,7 @@ static void write_varvalue(
     DataWriter& writer, PJ::TopicId tid, std::size_t col, const VarValue& val, StorageKind out_kind) {
   if (out_kind == StorageKind::kString) {
     if (const auto* s = std::get_if<std::string>(&val)) {
-      writer.set_string(tid, col, *s);
+      writer.setString(tid, col, *s);
     }
     return;
   }
@@ -108,22 +108,22 @@ static void write_varvalue(
 
   switch (out_kind) {
     case StorageKind::kFloat32:
-      writer.set_float32(tid, col, static_cast<float>(dval));
+      writer.setFloat32(tid, col, static_cast<float>(dval));
       break;
     case StorageKind::kFloat64:
-      writer.set_float64(tid, col, dval);
+      writer.setFloat64(tid, col, dval);
       break;
     case StorageKind::kInt32:
-      writer.set_int32(tid, col, static_cast<int32_t>(dval));
+      writer.setInt32(tid, col, static_cast<int32_t>(dval));
       break;
     case StorageKind::kInt64:
-      writer.set_int64(tid, col, static_cast<int64_t>(dval));
+      writer.setInt64(tid, col, static_cast<int64_t>(dval));
       break;
     case StorageKind::kUint64:
-      writer.set_uint64(tid, col, static_cast<uint64_t>(dval));
+      writer.setUint64(tid, col, static_cast<uint64_t>(dval));
       break;
     case StorageKind::kBool:
-      writer.set_bool(tid, col, dval != 0.0);
+      writer.setBool(tid, col, dval != 0.0);
       break;
     case StorageKind::kString:
       break;  // handled above
@@ -238,11 +238,11 @@ static std::string check_cycle(
 // add_siso_transform
 // ---------------------------------------------------------------------------
 
-PJ::Expected<PJ::NodeId> DerivedEngine::add_siso_transform(
+PJ::Expected<PJ::NodeId> DerivedEngine::addSisoTransform(
     PJ::TopicId input_topic_id, std::string output_topic_name, PJ::DatasetId output_dataset_id,
     std::unique_ptr<ISISOTransform> op) {
   // 1. Check input topic exists
-  const TopicStorage* in_storage = engine_.get_topic_storage(input_topic_id);
+  const TopicStorage* in_storage = engine_.getTopicStorage(input_topic_id);
   if (!in_storage) {
     return PJ::unexpected(absl::StrCat("add_siso_transform: input topic ", input_topic_id, " not found"));
   }
@@ -257,9 +257,9 @@ PJ::Expected<PJ::NodeId> DerivedEngine::add_siso_transform(
   std::optional<PJ::PrimitiveType> leaf_primitive;
 
   if (schema_id != 0) {
-    const PJ::TypeTreeNode* root = engine_.type_registry().lookup(schema_id);
+    const PJ::TypeTreeNode* root = engine_.typeRegistry().lookup(schema_id);
     if (root) {
-      num_cols = PJ::count_leaf_fields(*root);
+      num_cols = PJ::countLeafFields(*root);
       leaf_primitive = find_first_leaf(*root);
     }
   }
@@ -267,7 +267,7 @@ PJ::Expected<PJ::NodeId> DerivedEngine::add_siso_transform(
   if (num_cols == 0) {
     // Fall back 1: inline column layout stored in TopicStorage at registration time.
     // This covers schema_id==0 topics (register_scalar_series) with no committed chunks yet.
-    const auto& stored = in_storage->column_descriptors();
+    const auto& stored = in_storage->columnDescriptors();
     if (!stored.empty()) {
       num_cols = stored.size();
       leaf_primitive = stored[0].logical_type;
@@ -275,8 +275,8 @@ PJ::Expected<PJ::NodeId> DerivedEngine::add_siso_transform(
   }
 
   if (num_cols == 0) {
-    // Fall back 2: first committed chunk's column_descriptors (legacy path).
-    const auto& chunks = in_storage->sealed_chunks();
+    // Fall back 2: first committed chunk's columnDescriptors (legacy path).
+    const auto& chunks = in_storage->sealedChunks();
     if (!chunks.empty() && !chunks[0].column_descriptors.empty()) {
       num_cols = chunks[0].column_descriptors.size();
       leaf_primitive = chunks[0].column_descriptors[0].logical_type;
@@ -296,10 +296,10 @@ PJ::Expected<PJ::NodeId> DerivedEngine::add_siso_transform(
   if (!leaf_primitive) {
     return PJ::unexpected(std::string("add_siso_transform: could not determine leaf primitive type"));
   }
-  StorageKind in_kind = storage_kind_of(*leaf_primitive);
+  StorageKind in_kind = storageKindOf(*leaf_primitive);
 
   // 3. Determine output kind
-  StorageKind out_kind = op->output_kind(in_kind);
+  StorageKind out_kind = op->outputKind(in_kind);
 
   // 4. Check output name uniqueness within dataset
   auto name_key = std::make_pair(output_dataset_id, output_topic_name);
@@ -319,14 +319,14 @@ PJ::Expected<PJ::NodeId> DerivedEngine::add_siso_transform(
   // 6. Create output schema (single column, output_kind, name = "value")
   PJ::PrimitiveType out_primitive = storage_kind_to_primitive(out_kind);
   std::string schema_name = absl::StrCat("derived_siso_", output_topic_name, "_", next_node_id_);
-  auto out_type_tree = PJ::make_primitive("value", out_primitive);
-  auto out_schema_or = engine_.type_registry().register_or_get(schema_name, out_type_tree);
+  auto out_type_tree = PJ::makePrimitive("value", out_primitive);
+  auto out_schema_or = engine_.typeRegistry().registerOrGet(schema_name, out_type_tree);
   if (!out_schema_or.has_value()) {
     return PJ::unexpected(out_schema_or.error());
   }
 
   // 7. Create output topic
-  auto out_topic_or = engine_.create_topic(
+  auto out_topic_or = engine_.createTopic(
       output_dataset_id,
       TopicDescriptor{.name = output_topic_name, .schema_id = *out_schema_or, .dataset_id = output_dataset_id});
   if (!out_topic_or.has_value()) {
@@ -365,7 +365,7 @@ PJ::Expected<PJ::NodeId> DerivedEngine::add_siso_transform(
 // add_mimo_transform
 // ---------------------------------------------------------------------------
 
-PJ::Expected<PJ::NodeId> DerivedEngine::add_mimo_transform(
+PJ::Expected<PJ::NodeId> DerivedEngine::addMimoTransform(
     std::vector<PJ::TopicId> input_topic_ids, std::vector<std::string> output_topic_names,
     PJ::DatasetId output_dataset_id, std::unique_ptr<IMIMOTransform> op) {
   if (input_topic_ids.empty()) {
@@ -385,7 +385,7 @@ PJ::Expected<PJ::NodeId> DerivedEngine::add_mimo_transform(
   input_kinds.reserve(input_topic_ids.size());
 
   for (PJ::TopicId tid : input_topic_ids) {
-    const TopicStorage* storage = engine_.get_topic_storage(tid);
+    const TopicStorage* storage = engine_.getTopicStorage(tid);
     if (!storage) {
       return PJ::unexpected(absl::StrCat("add_mimo_transform: input topic ", tid, " not found"));
     }
@@ -395,21 +395,21 @@ PJ::Expected<PJ::NodeId> DerivedEngine::add_mimo_transform(
     std::optional<PJ::PrimitiveType> leaf_primitive;
 
     if (schema_id != 0) {
-      const PJ::TypeTreeNode* root = engine_.type_registry().lookup(schema_id);
+      const PJ::TypeTreeNode* root = engine_.typeRegistry().lookup(schema_id);
       if (root) {
-        num_cols = PJ::count_leaf_fields(*root);
+        num_cols = PJ::countLeafFields(*root);
         leaf_primitive = find_first_leaf(*root);
       }
     }
     if (num_cols == 0) {
-      const auto& stored = storage->column_descriptors();
+      const auto& stored = storage->columnDescriptors();
       if (!stored.empty()) {
         num_cols = stored.size();
         leaf_primitive = stored[0].logical_type;
       }
     }
     if (num_cols == 0) {
-      const auto& chunks = storage->sealed_chunks();
+      const auto& chunks = storage->sealedChunks();
       if (!chunks.empty() && !chunks[0].column_descriptors.empty()) {
         num_cols = chunks[0].column_descriptors.size();
         leaf_primitive = chunks[0].column_descriptors[0].logical_type;
@@ -427,7 +427,7 @@ PJ::Expected<PJ::NodeId> DerivedEngine::add_mimo_transform(
     if (!leaf_primitive) {
       return PJ::unexpected(absl::StrCat("add_mimo_transform: cannot determine primitive type for input topic ", tid));
     }
-    input_kinds.push_back(storage_kind_of(*leaf_primitive));
+    input_kinds.push_back(storageKindOf(*leaf_primitive));
   }
 
   // 2. Check output name uniqueness within dataset.
@@ -449,11 +449,11 @@ PJ::Expected<PJ::NodeId> DerivedEngine::add_mimo_transform(
   }
 
   // 4. Query output StorageKinds from the transform.
-  std::vector<StorageKind> output_kinds = op->output_kinds(PJ::Span<const StorageKind>(input_kinds));
+  std::vector<StorageKind> output_kinds = op->outputKinds(PJ::Span<const StorageKind>(input_kinds));
   if (output_kinds.size() != output_topic_names.size()) {
     return PJ::unexpected(
         absl::StrCat(
-            "add_mimo_transform: op->output_kinds() returned ", output_kinds.size(), " kinds but ",
+            "add_mimo_transform: op->outputKinds() returned ", output_kinds.size(), " kinds but ",
             output_topic_names.size(), " output names provided"));
   }
 
@@ -465,12 +465,12 @@ PJ::Expected<PJ::NodeId> DerivedEngine::add_mimo_transform(
   for (std::size_t k = 0; k < output_topic_names.size(); ++k) {
     PJ::PrimitiveType out_primitive = storage_kind_to_primitive(output_kinds[k]);
     std::string schema_name = absl::StrCat("derived_mimo_", node_id, "_", k);
-    auto out_type_tree = PJ::make_primitive("value", out_primitive);
-    auto out_schema_or = engine_.type_registry().register_or_get(schema_name, out_type_tree);
+    auto out_type_tree = PJ::makePrimitive("value", out_primitive);
+    auto out_schema_or = engine_.typeRegistry().registerOrGet(schema_name, out_type_tree);
     if (!out_schema_or.has_value()) {
       return PJ::unexpected(out_schema_or.error());
     }
-    auto out_topic_or = engine_.create_topic(
+    auto out_topic_or = engine_.createTopic(
         output_dataset_id,
         TopicDescriptor{.name = output_topic_names[k], .schema_id = *out_schema_or, .dataset_id = output_dataset_id});
     if (!out_topic_or.has_value()) {
@@ -527,7 +527,7 @@ PJ::Expected<PJ::NodeId> DerivedEngine::add_mimo_transform(
 // Node management
 // ---------------------------------------------------------------------------
 
-PJ::Status DerivedEngine::remove_node(PJ::NodeId id) {
+PJ::Status DerivedEngine::removeNode(PJ::NodeId id) {
   auto it = impl_->nodes.find(id);
   if (it == impl_->nodes.end()) {
     return PJ::unexpected(absl::StrCat("remove_node: node ", id, " not found"));
@@ -560,14 +560,14 @@ PJ::Status DerivedEngine::remove_node(PJ::NodeId id) {
   }
 
   impl_->nodes.erase(it);
-  return PJ::ok_status();
+  return PJ::okStatus();
 }
 
-bool DerivedEngine::has_node(PJ::NodeId id) const noexcept {
+bool DerivedEngine::hasNode(PJ::NodeId id) const noexcept {
   return impl_->nodes.contains(id);
 }
 
-std::vector<PJ::TopicId> DerivedEngine::output_topics(PJ::NodeId id) const {
+std::vector<PJ::TopicId> DerivedEngine::outputTopics(PJ::NodeId id) const {
   auto it = impl_->nodes.find(id);
   if (it == impl_->nodes.end()) {
     return {};
@@ -579,7 +579,7 @@ std::vector<PJ::TopicId> DerivedEngine::output_topics(PJ::NodeId id) const {
 // topological_order — Kahn's algorithm
 // ---------------------------------------------------------------------------
 
-std::vector<PJ::NodeId> DerivedEngine::topological_order() const {
+std::vector<PJ::NodeId> DerivedEngine::topologicalOrder() const {
   absl::flat_hash_map<PJ::NodeId, int> in_degree;
   for (const auto& [id, _] : impl_->nodes) {
     in_degree[id] = 0;
@@ -639,7 +639,7 @@ std::vector<PJ::NodeId> DerivedEngine::topological_order() const {
 // on_source_committed
 // ---------------------------------------------------------------------------
 
-void DerivedEngine::on_source_committed(PJ::Span<const PJ::TopicId> changed_topics) {
+void DerivedEngine::onSourceCommitted(PJ::Span<const PJ::TopicId> changed_topics) {
   for (PJ::TopicId tid : changed_topics) {
     auto it = impl_->topic_to_nodes.find(tid);
     if (it == impl_->topic_to_nodes.end()) {
@@ -659,14 +659,14 @@ void DerivedEngine::on_source_committed(PJ::Span<const PJ::TopicId> changed_topi
 // ---------------------------------------------------------------------------
 
 static PJ::Status run_siso_incremental(DerivedEngineImpl& /*impl*/, DataEngine& engine, DerivedNode& node) {
-  const TopicStorage* in_storage = engine.get_topic_storage(node.siso_input_topic_id);
+  const TopicStorage* in_storage = engine.getTopicStorage(node.siso_input_topic_id);
   if (!in_storage) {
     return PJ::unexpected(absl::StrCat("run_siso_incremental: input topic ", node.siso_input_topic_id, " not found"));
   }
 
-  const std::deque<TopicChunk>& all_chunks = in_storage->sealed_chunks();
+  const std::deque<TopicChunk>& all_chunks = in_storage->sealedChunks();
 
-  DataWriter writer = engine.create_writer();
+  DataWriter writer = engine.createWriter();
   PJ::TopicId out_tid = node.output_topic_ids[0];
   PJ::ChunkId max_seen = node.last_processed_chunk_id;
   bool wrote_any = false;
@@ -683,12 +683,12 @@ static PJ::Status run_siso_incremental(DerivedEngineImpl& /*impl*/, DataEngine& 
       node.in_val_buf = decode_as_varvalue(chunk, 0, i, node.siso_input_kind);
 
       if (node.siso_op->calculate(ts, node.in_val_buf, out_ts, node.out_val_buf)) {
-        auto s = writer.begin_row(out_tid, out_ts);
+        auto s = writer.beginRow(out_tid, out_ts);
         if (!s.has_value()) {
           return s;
         }
         write_varvalue(writer, out_tid, 0, node.out_val_buf, node.siso_output_kind);
-        s = writer.finish_row(out_tid);
+        s = writer.finishRow(out_tid);
         if (!s.has_value()) {
           return s;
         }
@@ -698,12 +698,12 @@ static PJ::Status run_siso_incremental(DerivedEngineImpl& /*impl*/, DataEngine& 
   }
 
   if (wrote_any) {
-    auto chunks = writer.flush_all();
-    engine.commit_chunks(std::move(chunks));
+    auto chunks = writer.flushAll();
+    engine.commitChunks(std::move(chunks));
   }
 
   node.last_processed_chunk_id = max_seen;
-  return PJ::ok_status();
+  return PJ::okStatus();
 }
 
 // ---------------------------------------------------------------------------
@@ -713,7 +713,7 @@ static PJ::Status run_siso_incremental(DerivedEngineImpl& /*impl*/, DataEngine& 
 static PJ::Status run_mimo_incremental(DerivedEngineImpl& /*impl*/, DataEngine& engine, DerivedNode& node) {
   const std::size_t num_inputs = node.mimo_input_topic_ids.size();
   if (num_inputs == 0) {
-    return PJ::ok_status();
+    return PJ::okStatus();
   }
 
   // 1. Collect (timestamp, chunk*, row_index) for each input topic,
@@ -726,12 +726,12 @@ static PJ::Status run_mimo_incremental(DerivedEngineImpl& /*impl*/, DataEngine& 
   std::vector<std::vector<SampleLoc>> per_topic(num_inputs);
 
   for (std::size_t i = 0; i < num_inputs; ++i) {
-    const TopicStorage* storage = engine.get_topic_storage(node.mimo_input_topic_ids[i]);
+    const TopicStorage* storage = engine.getTopicStorage(node.mimo_input_topic_ids[i]);
     if (!storage) {
       return PJ::unexpected(
           absl::StrCat("run_mimo_incremental: input topic ", node.mimo_input_topic_ids[i], " not found"));
     }
-    for (const TopicChunk& chunk : storage->sealed_chunks()) {
+    for (const TopicChunk& chunk : storage->sealedChunks()) {
       if (chunk.stats.t_max <= node.mimo_last_ts) {
         continue;  // entire chunk already processed
       }
@@ -745,7 +745,7 @@ static PJ::Status run_mimo_incremental(DerivedEngineImpl& /*impl*/, DataEngine& 
     }
     // Early exit: if any topic has no new data, no join is possible.
     if (per_topic[i].empty()) {
-      return PJ::ok_status();
+      return PJ::okStatus();
     }
   }
 
@@ -767,7 +767,7 @@ static PJ::Status run_mimo_incremental(DerivedEngineImpl& /*impl*/, DataEngine& 
         std::remove_if(joined_ts.begin(), joined_ts.end(), [&](PJ::Timestamp t) { return !topic_set.contains(t); });
     joined_ts.erase(new_end, joined_ts.end());
     if (joined_ts.empty()) {
-      return PJ::ok_status();
+      return PJ::okStatus();
     }
   }
 
@@ -779,7 +779,7 @@ static PJ::Status run_mimo_incremental(DerivedEngineImpl& /*impl*/, DataEngine& 
     joined_ts.erase(new_end, joined_ts.end());
   }
   if (joined_ts.empty()) {
-    return PJ::ok_status();
+    return PJ::okStatus();
   }
 
   // 3. Build per-topic lookup: timestamp → (chunk*, row_index).
@@ -798,7 +798,7 @@ static PJ::Status run_mimo_incremental(DerivedEngineImpl& /*impl*/, DataEngine& 
   node.mimo_in_buf.resize(num_inputs);
   node.mimo_out_buf.resize(num_outputs);
 
-  DataWriter writer = engine.create_writer();
+  DataWriter writer = engine.createWriter();
   bool wrote_any = false;
 
   for (PJ::Timestamp ts : joined_ts) {
@@ -810,12 +810,12 @@ static PJ::Status run_mimo_incremental(DerivedEngineImpl& /*impl*/, DataEngine& 
     PJ::Timestamp out_ts = ts;
     if (node.mimo_op->calculate(ts, node.mimo_in_buf, out_ts, node.mimo_out_buf)) {
       for (std::size_t k = 0; k < num_outputs; ++k) {
-        auto s = writer.begin_row(node.output_topic_ids[k], out_ts);
+        auto s = writer.beginRow(node.output_topic_ids[k], out_ts);
         if (!s.has_value()) {
           return s;
         }
         write_varvalue(writer, node.output_topic_ids[k], 0, node.mimo_out_buf[k], node.mimo_output_kinds[k]);
-        s = writer.finish_row(node.output_topic_ids[k]);
+        s = writer.finishRow(node.output_topic_ids[k]);
         if (!s.has_value()) {
           return s;
         }
@@ -825,7 +825,7 @@ static PJ::Status run_mimo_incremental(DerivedEngineImpl& /*impl*/, DataEngine& 
   }
 
   if (wrote_any) {
-    engine.commit_chunks(writer.flush_all());
+    engine.commitChunks(writer.flushAll());
   }
 
   // Advance watermark to the last joined input timestamp.
@@ -833,7 +833,7 @@ static PJ::Status run_mimo_incremental(DerivedEngineImpl& /*impl*/, DataEngine& 
   // produce new joins in the future even if not all of them generated output.
   node.mimo_last_ts = joined_ts.back();
 
-  return PJ::ok_status();
+  return PJ::okStatus();
 }
 
 // ---------------------------------------------------------------------------
@@ -841,7 +841,7 @@ static PJ::Status run_mimo_incremental(DerivedEngineImpl& /*impl*/, DataEngine& 
 // ---------------------------------------------------------------------------
 
 PJ::Status DerivedEngine::schedule(const std::unordered_set<PJ::NodeId>& active_nodes) {
-  auto order = topological_order();
+  auto order = topologicalOrder();
 
   // Compute the set of nodes to consider (active_nodes ∪ their transitive upstream deps).
   absl::flat_hash_set<PJ::NodeId> filter;
@@ -883,7 +883,7 @@ PJ::Status DerivedEngine::schedule(const std::unordered_set<PJ::NodeId>& active_
       continue;
     }
 
-    PJ::Status s = PJ::ok_status();
+    PJ::Status s = PJ::okStatus();
     if (!node.is_mimo) {
       s = run_siso_incremental(*impl_, engine_, node);
     } else {
@@ -908,7 +908,7 @@ PJ::Status DerivedEngine::schedule(const std::unordered_set<PJ::NodeId>& active_
     }
   }
 
-  return PJ::ok_status();
+  return PJ::okStatus();
 }
 
 // ---------------------------------------------------------------------------
@@ -924,9 +924,9 @@ PJ::Status DerivedEngine::recompute_batch(PJ::NodeId node_id) {
 
   // 1. Clear all output chunks unconditionally.
   for (PJ::TopicId out_tid : node.output_topic_ids) {
-    TopicStorage* storage = engine_.get_topic_storage(out_tid);
+    TopicStorage* storage = engine_.getTopicStorage(out_tid);
     if (storage) {
-      storage->clear_chunks();
+      storage->clearChunks();
     }
   }
 
@@ -948,7 +948,7 @@ PJ::Status DerivedEngine::recompute_batch(PJ::NodeId node_id) {
   }
 
   // 4. Full replay
-  PJ::Status s = PJ::ok_status();
+  PJ::Status s = PJ::okStatus();
   if (!node.is_mimo) {
     s = run_siso_incremental(*impl_, engine_, node);
   } else {
@@ -959,7 +959,7 @@ PJ::Status DerivedEngine::recompute_batch(PJ::NodeId node_id) {
     return s;
   }
   node.dirty = false;
-  return PJ::ok_status();
+  return PJ::okStatus();
 }
 
 }  // namespace PJ

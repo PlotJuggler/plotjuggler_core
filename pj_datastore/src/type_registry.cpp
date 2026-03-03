@@ -64,7 +64,7 @@ std::vector<std::pair<std::string, PJ::PrimitiveType>> flatten_leaf_types(const 
 
 }  // namespace
 
-PJ::Expected<PJ::SchemaId> TypeRegistry::register_schema(
+PJ::Expected<PJ::SchemaId> TypeRegistry::registerSchema(
     std::string schema_name, std::shared_ptr<PJ::TypeTreeNode> type_tree) {
   if (name_to_id_.contains(schema_name)) {
     return PJ::unexpected(absl::StrCat("Schema '", schema_name, "' already registered"));
@@ -75,13 +75,13 @@ PJ::Expected<PJ::SchemaId> TypeRegistry::register_schema(
   return id;
 }
 
-PJ::Expected<PJ::SchemaId> TypeRegistry::register_or_get(
+PJ::Expected<PJ::SchemaId> TypeRegistry::registerOrGet(
     std::string schema_name, std::shared_ptr<PJ::TypeTreeNode> type_tree) {
   auto it = name_to_id_.find(schema_name);
   if (it != name_to_id_.end()) {
     return it->second;
   }
-  return register_schema(std::move(schema_name), std::move(type_tree));
+  return registerSchema(std::move(schema_name), std::move(type_tree));
 }
 
 const PJ::TypeTreeNode* TypeRegistry::lookup(PJ::SchemaId id) const {
@@ -92,7 +92,7 @@ const PJ::TypeTreeNode* TypeRegistry::lookup(PJ::SchemaId id) const {
   return it->second.get();
 }
 
-std::optional<PJ::SchemaId> TypeRegistry::find_by_name(std::string_view name) const {
+std::optional<PJ::SchemaId> TypeRegistry::findByName(std::string_view name) const {
   auto it = name_to_id_.find(name);
   if (it == name_to_id_.end()) {
     return std::nullopt;
@@ -100,7 +100,7 @@ std::optional<PJ::SchemaId> TypeRegistry::find_by_name(std::string_view name) co
   return it->second;
 }
 
-PJ::Status TypeRegistry::evolve_schema(PJ::SchemaId id, std::shared_ptr<PJ::TypeTreeNode> updated_tree) {
+PJ::Status TypeRegistry::evolveSchema(PJ::SchemaId id, std::shared_ptr<PJ::TypeTreeNode> updated_tree) {
   auto it = schemas_.find(id);
   if (it == schemas_.end()) {
     return PJ::unexpected(absl::StrCat("Schema ID ", id, " not found"));
@@ -130,7 +130,7 @@ PJ::Status TypeRegistry::evolve_schema(PJ::SchemaId id, std::shared_ptr<PJ::Type
 
   // Validation passed — replace with updated tree
   it->second = std::move(updated_tree);
-  return PJ::ok_status();
+  return PJ::okStatus();
 }
 
 }  // namespace PJ

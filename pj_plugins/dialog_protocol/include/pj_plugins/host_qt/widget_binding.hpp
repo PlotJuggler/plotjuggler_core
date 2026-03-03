@@ -12,11 +12,11 @@ using WidgetEventCallback = std::function<void(const std::string& widget_name, c
 
 /// Apply widget data from a WidgetDataView to all matching child widgets of root.
 /// Uses QSignalBlocker to prevent re-entrant signal firing during updates.
-void apply_widget_data(QWidget* root, const PJ::WidgetDataView& view);
+void applyWidgetData(QWidget* root, const PJ::WidgetDataView& view);
 
 /// Connect primary change signals of all editable widgets under root
 /// to the given callback. The callback receives the widget objectName and
 /// an event JSON string built by WidgetEventBuilder.
-void connect_widget_signals(QWidget* root, WidgetEventCallback callback);
+void connectWidgetSignals(QWidget* root, WidgetEventCallback callback);
 
 }  // namespace PJ

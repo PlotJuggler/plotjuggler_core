@@ -86,7 +86,7 @@ needed per node is `last_processed_chunk_id`.
 
 PlotJuggler SISO runs at render time inside `TransformedTimeseries::updateCache()`.
 `DerivedEngine::schedule()` runs at commit time, writes to `TopicStorage`, and
-commits via `DataEngine::commit_chunks()`. Derived topics are immediately queryable
+commits via `DataEngine::commitChunks()`. Derived topics are immediately queryable
 and usable as inputs to downstream DAG nodes.
 
 ### 2.4  MIMO: primary-driven, secondaries sampled via `latest_at`
@@ -157,7 +157,7 @@ class ISISOTransform {
   /// Declare the StorageKind of the output column. Called once at registration.
   /// Default: kFloat64 (suitable for most numeric filters).
   /// Override to preserve integer types or produce strings.
-  virtual StorageKind output_kind(StorageKind input_kind) const {
+  virtual StorageKind outputKind(StorageKind input_kind) const {
     (void)input_kind;
     return StorageKind::kFloat64;
   }
@@ -178,7 +178,7 @@ class ISISOTransform {
 };
 ```
 
-Output schema: one column, `StorageKind` as declared by `output_kind()`, column name
+Output schema: one column, `StorageKind` as declared by `outputKind()`, column name
 preserved from input. The engine creates the output topic at registration time using
 this declared kind and writes via the matching `set_float64` / `set_int64` /
 `set_string` call.
@@ -211,7 +211,7 @@ class IMIMOTransform {
   /// Declare output StorageKind for each output topic.
   /// Called once at registration with the input kinds (one per input topic).
   /// Return one StorageKind per output topic name passed to add_mimo_transform.
-  virtual std::vector<StorageKind> output_kinds(
+  virtual std::vector<StorageKind> outputKinds(
       PJ::Span<const StorageKind> input_kinds) const = 0;
 
   /// Process one joined sample. Called in strictly ascending timestamp order,
@@ -240,13 +240,13 @@ class DerivedEngine {
   DerivedEngine& operator=(const DerivedEngine&) = delete;
 
   // ---- SISO ----
-  // Creates one scalar output topic (StorageKind from op->output_kind()).
+  // Creates one scalar output topic (StorageKind from op->outputKind()).
   // Returns error if:
   //   - input_topic_id does not exist
   //   - input topic has more than one column
   //   - output_topic_name already registered within output_dataset_id
   //     (DerivedEngine enforces uniqueness via Impl name index; DataEngine does not)
-  [[nodiscard]] PJ::Expected<PJ::NodeId> add_siso_transform(
+  [[nodiscard]] PJ::Expected<PJ::NodeId> addSisoTransform(
       PJ::TopicId input_topic_id,
       std::string output_topic_name,
       PJ::DatasetId output_dataset_id,
@@ -255,29 +255,29 @@ class DerivedEngine {
   // ---- MIMO (Phase 3) ----
   // All input topics must be single-column (scalar).
   // A row is emitted only when ALL input topics share the exact same timestamp.
-  // Creates output_topic_names.size() new topics (kinds from op->output_kinds()).
+  // Creates output_topic_names.size() new topics (kinds from op->outputKinds()).
   // Returns error if any input topic has more than one column, or if any
   // output name is already registered within output_dataset_id.
-  [[nodiscard]] PJ::Expected<PJ::NodeId> add_mimo_transform(
+  [[nodiscard]] PJ::Expected<PJ::NodeId> addMimoTransform(
       std::vector<PJ::TopicId> input_topic_ids,   // flat list; no primary/secondary
       std::vector<std::string> output_topic_names,
       PJ::DatasetId output_dataset_id,
       std::unique_ptr<IMIMOTransform> op);
 
   // ---- DAG management ----
-  PJ::Status remove_node(PJ::NodeId id);
-  [[nodiscard]] bool has_node(PJ::NodeId id) const noexcept;
+  PJ::Status removeNode(PJ::NodeId id);
+  [[nodiscard]] bool hasNode(PJ::NodeId id) const noexcept;
 
   // Returns output topic IDs: 1 for SISO, M for MIMO.
-  [[nodiscard]] std::vector<PJ::TopicId> output_topics(PJ::NodeId id) const;
+  [[nodiscard]] std::vector<PJ::TopicId> outputTopics(PJ::NodeId id) const;
 
   // Kahn's topological order (upstream → downstream).
-  [[nodiscard]] std::vector<PJ::NodeId> topological_order() const;
+  [[nodiscard]] std::vector<PJ::NodeId> topologicalOrder() const;
 
   // ---- Commit-cycle hook ----
-  // Call after DataEngine::commit_chunks() with the set of changed topic IDs.
+  // Call after DataEngine::commitChunks() with the set of changed topic IDs.
   // Marks directly dependent nodes dirty.
-  void on_source_committed(PJ::Span<const PJ::TopicId> changed_topics);
+  void onSourceCommitted(PJ::Span<const PJ::TopicId> changed_topics);
 
   // ---- Scheduling ----
   // Process all dirty nodes in topological order (incremental path).
@@ -407,7 +407,7 @@ input topic of N, if that topic is produced by node M, add N to `downstream_of[M
 
 `schedule()` algorithm:
 ```
-1. order = topological_order()
+1. order = topologicalOrder()
 2. if active_nodes non-empty: filter order to (active_nodes ∪ their transitive deps)
 3. For each node N in order:
      if !N.dirty: continue
@@ -421,7 +421,7 @@ input topic of N, if that topic is produced by node M, add N to `downstream_of[M
 1. Get input TopicStorage from engine
 2. new_chunks = sealed_chunks where chunk.id > node.last_processed_chunk_id
 3. if new_chunks empty: return
-4. writer = engine.create_writer()
+4. writer = engine.createWriter()
 
 5a. SISO path:
     PJ::Timestamp out_ts; VarValue out_val;
@@ -430,9 +430,9 @@ input topic of N, if that topic is produced by node M, add N to `downstream_of[M
         ts = C.timestamps[i]
         in_val = decode_as_varvalue(C, col=0, row=i, node.siso_input_kind)
         if siso_op->calculate(ts, in_val, out_ts, out_val):
-          writer.begin_row(output_topic_ids[0], out_ts)
+          writer.beginRow(output_topic_ids[0], out_ts)
           write_varvalue(writer, output_topic_ids[0], col=0, out_val)
-          writer.finish_row(output_topic_ids[0])
+          writer.finishRow(output_topic_ids[0])
 
     // decode_as_varvalue: read_numeric_as_double → double, or read_string → string,
     //   or read int column → int64_t; determined by siso_input_kind cached at reg.
@@ -448,8 +448,8 @@ input topic of N, if that topic is produced by node M, add N to `downstream_of[M
         // Check exact timestamp match for all other inputs
         all_matched = true
         For j in [1, num_inputs):
-          sec_storage = engine.get_topic_storage(mimo_input_topic_ids[j])
-          sample = latest_at(sec_storage->sealed_chunks(), ts)
+          sec_storage = engine.getTopicStorage(mimo_input_topic_ids[j])
+          sample = latestAt(sec_storage->sealedChunks(), ts)
           if sample is null OR sample.timestamp != ts:
             all_matched = false; break
           mimo_in_buf[j] = decode_as_varvalue(sample, col=0, mimo_input_kinds[j])
@@ -457,12 +457,12 @@ input topic of N, if that topic is produced by node M, add N to `downstream_of[M
         PJ::Timestamp out_ts;
         if mimo_op->calculate(ts, mimo_in_buf, out_ts, mimo_out_buf):
           For k in [0, num_outputs):
-            writer.begin_row(output_topic_ids[k], out_ts)
+            writer.beginRow(output_topic_ids[k], out_ts)
             write_varvalue(writer, output_topic_ids[k], col=0, mimo_out_buf[k])
-            writer.finish_row(output_topic_ids[k])
+            writer.finishRow(output_topic_ids[k])
 
-6. auto chunks = writer.flush_all()
-   engine.commit_chunks(std::move(chunks))
+6. auto chunks = writer.flushAll()
+   engine.commitChunks(std::move(chunks))
 
 7. node.last_processed_chunk_id = max(chunk.id for chunk in new_chunks)
 ```
@@ -478,7 +478,7 @@ within the loop and is redundant.
 recompute_batch(node_id):
 1. node = impl_->nodes.at(node_id)
 2. Clear each output topic:
-     engine.get_topic_storage(out_id)->evict_before(
+     engine.getTopicStorage(out_id)->evictBefore(
          std::numeric_limits<PJ::Timestamp>::max())
      — evicts all chunks with t_max < INT64_MAX (i.e. all of them)
 3. if SISO: node.siso_op->reset()
@@ -506,11 +506,11 @@ class DerivativeTransform : public ISISOTransform {
  public:
   void reset() override { has_prev_ = false; }
 
-  // output_kind() returns kFloat64 (default) — derivative is always float.
+  // outputKind() returns kFloat64 (default) — derivative is always float.
 
   bool calculate(PJ::Timestamp time, const VarValue& input,
                  PJ::Timestamp& out_time, VarValue& out_value) override {
-    double v = std::get<double>(input);  // engine widens to double per output_kind()
+    double v = std::get<double>(input);  // engine widens to double per outputKind()
     if (!has_prev_) {
       prev_time_ = time;
       prev_value_ = v;
@@ -603,8 +603,8 @@ the existing API.
 | `ISISOTransform` interface | Point-at-a-time, reset(), calculate() |
 | `DerivedEngine::add_siso_transform` | Registers fresh output topic, registers node |
 | Cycle detection (guard) | DFS; trivially safe for SISO but implement correctly |
-| `topological_order()` | Kahn's algorithm |
-| `on_source_committed()` | Mark dependent nodes dirty |
+| `topologicalOrder()` | Kahn's algorithm |
+| `onSourceCommitted()` | Mark dependent nodes dirty |
 | `schedule()` incremental | Chunk-loop → row-loop → calculate() → writer |
 | `recompute_batch()` | evict_before + reset + full replay |
 | `DerivativeTransform` | Reference SISO implementation |
@@ -744,17 +744,17 @@ static PJ::TopicId make_linear_topic(DataEngine& engine, double slope, int n,
   // 1. register schema: one float64 column "value"
   // 2. create dataset + topic
   // 3. writer.begin_row / set_float64 / finish_row for each row
-  // 4. engine.commit_chunks(writer.flush_all())
+  // 4. engine.commitChunks(writer.flushAll())
   // returns topic_id
 }
 
 // Collect all float64 values from a topic's output into a flat vector.
 static std::vector<double> collect_values(const DataEngine& engine, PJ::TopicId topic_id) {
-  auto reader = engine.create_reader();
-  auto cursor = *reader.range_query({topic_id, 0, std::numeric_limits<PJ::Timestamp>::max()});
+  auto reader = engine.createReader();
+  auto cursor = *reader.rangeQuery({topic_id, 0, std::numeric_limits<PJ::Timestamp>::max()});
   std::vector<double> out;
-  cursor.for_each([&](const SampleRow& row) {
-    out.push_back(row.chunk->read_numeric_as_double(0, row.row_index));
+  cursor.forEach([&](const SampleRow& row) {
+    out.push_back(row.chunk->readNumericAsDouble(0, row.row_index));
   });
   return out;
 }
@@ -774,15 +774,15 @@ TEST(DerivedEngineTest, Schedule_ProducesCorrectDerivative) {
   // slope=2.0, 10Hz, 11 rows → 10 derivative rows (first suppressed)
   PJ::TopicId src = make_linear_topic(engine, /*slope=*/2.0, /*n=*/11);
 
-  auto node = *derived.add_siso_transform(
+  auto node = *derived.addSisoTransform(
       src, "d_linear", dataset_id,
       std::make_unique<DerivativeTransform>());
 
-  derived.on_source_committed({src});
+  derived.onSourceCommitted({src});
   ASSERT_TRUE(derived.schedule().has_value());
 
   // derivative of 2*t at 10Hz = 2.0 * 10.0 = 20.0 (units/second)
-  auto vals = collect_values(engine, derived.output_topics(node)[0]);
+  auto vals = collect_values(engine, derived.outputTopics(node)[0]);
   ASSERT_EQ(vals.size(), 10u);
   for (double v : vals) EXPECT_NEAR(v, 20.0, 1e-6);
 }
@@ -799,9 +799,9 @@ of `recompute_batch()`.
 static std::vector<double> run_incremental(DataEngine& engine, DerivedEngine& derived,
                                             PJ::TopicId src, PJ::NodeId node,
                                             /* source chunks written in caller */) {
-  derived.on_source_committed({src});
+  derived.onSourceCommitted({src});
   EXPECT_TRUE(derived.schedule().has_value());
-  return collect_values(engine, derived.output_topics(node)[0]);
+  return collect_values(engine, derived.outputTopics(node)[0]);
 }
 
 TEST(DerivedEngineTest, Parity_TwoChunks_CrossBoundary) {
@@ -810,21 +810,21 @@ TEST(DerivedEngineTest, Parity_TwoChunks_CrossBoundary) {
 
   // Write chunk 1 (rows 0..19), commit, run incremental
   PJ::TopicId src = make_linear_topic(engine, 3.0, 20);  // rows 0-19
-  PJ::NodeId node = *derived.add_siso_transform(src, "deriv", ds,
+  PJ::NodeId node = *derived.addSisoTransform(src, "deriv", ds,
                         std::make_unique<DerivativeTransform>());
-  derived.on_source_committed({src});
+  derived.onSourceCommitted({src});
   ASSERT_TRUE(derived.schedule().has_value());
 
   // Write chunk 2 (rows 20..39), commit, run incremental again
   append_linear_topic(engine, src, 3.0, 20, /*start_idx=*/20);
-  derived.on_source_committed({src});
+  derived.onSourceCommitted({src});
   ASSERT_TRUE(derived.schedule().has_value());
 
-  auto incremental = collect_values(engine, derived.output_topics(node)[0]);
+  auto incremental = collect_values(engine, derived.outputTopics(node)[0]);
 
   // Now batch recompute and compare
   ASSERT_TRUE(derived.recompute_batch(node).has_value());
-  auto batch = collect_values(engine, derived.output_topics(node)[0]);
+  auto batch = collect_values(engine, derived.outputTopics(node)[0]);
 
   ASSERT_EQ(incremental.size(), batch.size());
   for (size_t i = 0; i < batch.size(); ++i)
@@ -840,7 +840,7 @@ implementation.
 ### 10.6  Usability: writing a new SISO transform
 
 A minimal transform needs only `calculate()`. More complex ones also override
-`reset()` and `output_kind()`.
+`reset()` and `outputKind()`.
 
 ```cpp
 // Clamps values to [lo, hi]. Stateless — no reset() needed.
@@ -911,7 +911,7 @@ TEST(EMATransformTest, ConvergesOnConstantInput) {
 | ChunkTail in public API? | **No.** State lives in member variables. |
 | Transform I/O value type | **`VarValue = variant<int64_t, double, std::string>`.** Covers all engine storage kinds without the full 10-way NumericValue. |
 | SISO: single-column or multi-column? | **Single-column only.** Multi-column → use MIMO. Error on registration if input has >1 column. |
-| SISO output column type | **Declared by `output_kind(input_kind)`.** Default kFloat64; overridable to preserve integer types or produce strings. |
+| SISO output column type | **Declared by `outputKind(input_kind)`.** Default kFloat64; overridable to preserve integer types or produce strings. |
 | SISO timestamp in output | **May differ from input timestamp.** Contract: monotonically increasing. Enables time-offset and interpolation transforms. |
 | MIMO join strategy | **Exact timestamp inner join.** Row emitted only when all input topics have data at exactly the same timestamp. No primary/secondary; first topic drives iteration. |
 | MIMO vs PlotJuggler nearest-neighbor | **Exact match is stricter.** For co-published signals (same message) this is equivalent. Deliberately avoids non-causal sampling. |

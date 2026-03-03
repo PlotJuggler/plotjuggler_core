@@ -33,7 +33,7 @@ std::size_t count_leaf_fields_impl(const TypeTreeNode& node) {
 
 }  // namespace
 
-std::shared_ptr<TypeTreeNode> make_primitive(std::string name, PrimitiveType type) {
+std::shared_ptr<TypeTreeNode> makePrimitive(std::string name, PrimitiveType type) {
   return std::make_shared<TypeTreeNode>(TypeTreeNode{
       .name = std::move(name),
       .kind = TypeKind::kPrimitive,
@@ -46,7 +46,7 @@ std::shared_ptr<TypeTreeNode> make_primitive(std::string name, PrimitiveType typ
   });
 }
 
-std::shared_ptr<TypeTreeNode> make_struct(std::string name, std::vector<std::shared_ptr<TypeTreeNode>> children) {
+std::shared_ptr<TypeTreeNode> makeStruct(std::string name, std::vector<std::shared_ptr<TypeTreeNode>> children) {
   return std::make_shared<TypeTreeNode>(TypeTreeNode{
       .name = std::move(name),
       .kind = TypeKind::kStruct,
@@ -59,7 +59,7 @@ std::shared_ptr<TypeTreeNode> make_struct(std::string name, std::vector<std::sha
   });
 }
 
-std::shared_ptr<TypeTreeNode> make_array(
+std::shared_ptr<TypeTreeNode> makeArray(
     std::string name, std::shared_ptr<TypeTreeNode> element_type, std::optional<uint32_t> fixed_size) {
   return std::make_shared<TypeTreeNode>(TypeTreeNode{
       .name = std::move(name),
@@ -73,7 +73,7 @@ std::shared_ptr<TypeTreeNode> make_array(
   });
 }
 
-std::shared_ptr<TypeTreeNode> make_enum(std::string name, PrimitiveType underlying_type, EnumMapping mapping) {
+std::shared_ptr<TypeTreeNode> makeEnum(std::string name, PrimitiveType underlying_type, EnumMapping mapping) {
   return std::make_shared<TypeTreeNode>(TypeTreeNode{
       .name = std::move(name),
       .kind = TypeKind::kEnum,
@@ -86,7 +86,7 @@ std::shared_ptr<TypeTreeNode> make_enum(std::string name, PrimitiveType underlyi
   });
 }
 
-std::vector<std::string> flatten_field_paths(const TypeTreeNode& root) {
+std::vector<std::string> flattenFieldPaths(const TypeTreeNode& root) {
   std::vector<std::string> result;
   if (root.kind != TypeKind::kStruct) {
     result.emplace_back(root.name);
@@ -99,7 +99,7 @@ std::vector<std::string> flatten_field_paths(const TypeTreeNode& root) {
   return result;
 }
 
-std::size_t count_leaf_fields(const TypeTreeNode& root) {
+std::size_t countLeafFields(const TypeTreeNode& root) {
   return count_leaf_fields_impl(root);
 }
 

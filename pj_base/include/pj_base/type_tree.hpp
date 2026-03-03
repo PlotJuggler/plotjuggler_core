@@ -74,26 +74,26 @@ struct TypeTreeNode {
 
 // Factory functions
 /// Create a primitive node.
-[[nodiscard]] std::shared_ptr<TypeTreeNode> make_primitive(std::string name, PrimitiveType type);
+[[nodiscard]] std::shared_ptr<TypeTreeNode> makePrimitive(std::string name, PrimitiveType type);
 
 /// Create a struct node with ordered children.
-[[nodiscard]] std::shared_ptr<TypeTreeNode> make_struct(
+[[nodiscard]] std::shared_ptr<TypeTreeNode> makeStruct(
     std::string name, std::vector<std::shared_ptr<TypeTreeNode>> children);
 
 /// Create an array node.
-[[nodiscard]] std::shared_ptr<TypeTreeNode> make_array(
+[[nodiscard]] std::shared_ptr<TypeTreeNode> makeArray(
     std::string name, std::shared_ptr<TypeTreeNode> element_type, std::optional<uint32_t> fixed_size = std::nullopt);
 
 /// Create an enum node over a primitive wire type.
-[[nodiscard]] std::shared_ptr<TypeTreeNode> make_enum(
+[[nodiscard]] std::shared_ptr<TypeTreeNode> makeEnum(
     std::string name, PrimitiveType underlying_type, EnumMapping mapping);
 
 // Flatten a type tree into ordered list of leaf field paths
 // e.g., Pose -> ["frame_name", "position.x", "position.y", "position.z",
 //                "rotation.w", "rotation.x", "rotation.y", "rotation.z"]
-[[nodiscard]] std::vector<std::string> flatten_field_paths(const TypeTreeNode& root);
+[[nodiscard]] std::vector<std::string> flattenFieldPaths(const TypeTreeNode& root);
 
 // Count leaf (primitive/enum) fields in a type tree
-[[nodiscard]] std::size_t count_leaf_fields(const TypeTreeNode& root);
+[[nodiscard]] std::size_t countLeafFields(const TypeTreeNode& root);
 
 }  // namespace PJ

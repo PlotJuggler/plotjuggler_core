@@ -10,7 +10,7 @@ namespace PJ {
 
 RangeCursor::RangeCursor(const std::deque<TopicChunk>& chunks, Timestamp t_min, Timestamp t_max)
     : chunks_(&chunks), t_min_(t_min), t_max_(t_max) {
-  find_first_valid();
+  findFirstValid();
 }
 
 bool RangeCursor::valid() const noexcept {
@@ -20,7 +20,7 @@ bool RangeCursor::valid() const noexcept {
 SampleRow RangeCursor::current() const {
   assert(valid());
   const auto& chunk = (*chunks_)[chunk_index_];
-  return SampleRow{chunk.read_timestamp(row_index_), &chunk, row_index_};
+  return SampleRow{chunk.readTimestamp(row_index_), &chunk, row_index_};
 }
 
 void RangeCursor::advance() {
@@ -31,17 +31,17 @@ void RangeCursor::advance() {
     ++chunk_index_;
     row_index_ = 0;
   }
-  skip_to_valid();
+  skipToValid();
 }
 
-void RangeCursor::for_each(std::function<void(const SampleRow&)> callback) {
+void RangeCursor::forEach(std::function<void(const SampleRow&)> callback) {
   while (valid()) {
     callback(current());
     advance();
   }
 }
 
-void RangeCursor::for_each_chunk(std::function<void(const ChunkRowRange&)> callback) {
+void RangeCursor::forEachChunk(std::function<void(const ChunkRowRange&)> callback) {
   while (chunk_index_ < chunks_->size()) {
     const auto& chunk = (*chunks_)[chunk_index_];
 
@@ -57,13 +57,13 @@ void RangeCursor::for_each_chunk(std::function<void(const ChunkRowRange&)> callb
 
     // Find first valid row in this chunk (>= t_min_)
     std::size_t first = row_index_;
-    while (first < chunk.stats.row_count && chunk.read_timestamp(first) < t_min_) {
+    while (first < chunk.stats.row_count && chunk.readTimestamp(first) < t_min_) {
       ++first;
     }
 
     // Find one-past-last valid row in this chunk (<= t_max_)
     std::size_t end = first;
-    while (end < chunk.stats.row_count && chunk.read_timestamp(end) <= t_max_) {
+    while (end < chunk.stats.row_count && chunk.readTimestamp(end) <= t_max_) {
       ++end;
     }
 
@@ -79,7 +79,7 @@ void RangeCursor::for_each_chunk(std::function<void(const ChunkRowRange&)> callb
   chunk_index_ = chunks_->size();
 }
 
-void RangeCursor::find_first_valid() {
+void RangeCursor::findFirstValid() {
   // Linear scan to find the first chunk whose t_max >= t_min_
   // (i.e., that could contain data in our range)
   for (chunk_index_ = 0; chunk_index_ < chunks_->size(); ++chunk_index_) {
@@ -88,7 +88,7 @@ void RangeCursor::find_first_valid() {
       // This chunk might contain data in range.
       // Now find the first row where timestamp >= t_min_.
       for (row_index_ = 0; row_index_ < chunk.stats.row_count; ++row_index_) {
-        Timestamp ts = chunk.read_timestamp(row_index_);
+        Timestamp ts = chunk.readTimestamp(row_index_);
         if (ts >= t_min_) {
           // Check if this row is also within t_max
           if (ts <= t_max_) {
@@ -106,12 +106,12 @@ void RangeCursor::find_first_valid() {
   // No valid chunk found: chunk_index_ == chunks_->size() (past-end)
 }
 
-void RangeCursor::skip_to_valid() {
+void RangeCursor::skipToValid() {
   if (!valid()) {
     return;
   }
   const auto& chunk = (*chunks_)[chunk_index_];
-  Timestamp ts = chunk.read_timestamp(row_index_);
+  Timestamp ts = chunk.readTimestamp(row_index_);
   if (ts > t_max_) {
     // Past the end of the query range
     chunk_index_ = chunks_->size();
@@ -124,7 +124,7 @@ void RangeCursor::skip_to_valid() {
 // latest_at
 // ===========================================================================
 
-std::optional<SampleRow> latest_at(const std::deque<TopicChunk>& chunks, Timestamp t) {
+std::optional<SampleRow> latestAt(const std::deque<TopicChunk>& chunks, Timestamp t) {
   if (chunks.empty()) {
     return std::nullopt;
   }
@@ -138,7 +138,7 @@ std::optional<SampleRow> latest_at(const std::deque<TopicChunk>& chunks, Timesta
     // chunk.stats.t_min <= t, so there might be a row <= t in this chunk.
     // Reverse scan within the chunk to find the last row with timestamp <= t.
     for (std::size_t ri = chunk.stats.row_count; ri > 0; --ri) {
-      Timestamp ts = chunk.read_timestamp(ri - 1);
+      Timestamp ts = chunk.readTimestamp(ri - 1);
       if (ts <= t) {
         return SampleRow{ts, &chunk, ri - 1};
       }
@@ -155,7 +155,7 @@ std::optional<SampleRow> latest_at(const std::deque<TopicChunk>& chunks, Timesta
 // range_query
 // ===========================================================================
 
-RangeCursor range_query(const std::deque<TopicChunk>& chunks, Timestamp t_min, Timestamp t_max) {
+RangeCursor rangeQuery(const std::deque<TopicChunk>& chunks, Timestamp t_min, Timestamp t_max) {
   return RangeCursor(chunks, t_min, t_max);
 }
 

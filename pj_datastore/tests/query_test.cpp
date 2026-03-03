@@ -18,9 +18,9 @@ TopicChunk make_test_chunk(Timestamp t_start, uint32_t num_rows, Timestamp step)
   TopicChunkBuilder builder(1, 1, cols, num_rows);
   for (uint32_t i = 0; i < num_rows; ++i) {
     Timestamp t = t_start + static_cast<Timestamp>(i) * step;
-    builder.begin_row(t);
-    builder.set_float32(0, static_cast<float>(i) * 1.0f);
-    builder.finish_row();
+    builder.beginRow(t);
+    builder.setFloat32(0, static_cast<float>(i) * 1.0f);
+    builder.finishRow();
   }
   return builder.seal();
 }
@@ -45,7 +45,7 @@ std::deque<TopicChunk> make_standard_chunks() {
 
 TEST(QueryTest, RangeQuerySpanningTwoChunks) {
   auto chunks = make_standard_chunks();
-  auto cursor = range_query(chunks, 150, 250);
+  auto cursor = rangeQuery(chunks, 150, 250);
 
   std::vector<Timestamp> timestamps;
   while (cursor.valid()) {
@@ -64,7 +64,7 @@ TEST(QueryTest, RangeQuerySpanningTwoChunks) {
 
 TEST(QueryTest, RangeQueryWithinSingleChunk) {
   auto chunks = make_standard_chunks();
-  auto cursor = range_query(chunks, 100, 190);
+  auto cursor = rangeQuery(chunks, 100, 190);
 
   std::size_t count = 0;
   while (cursor.valid()) {
@@ -76,13 +76,13 @@ TEST(QueryTest, RangeQueryWithinSingleChunk) {
 
 TEST(QueryTest, RangeQueryHittingNoChunks) {
   auto chunks = make_standard_chunks();
-  auto cursor = range_query(chunks, 500, 600);
+  auto cursor = rangeQuery(chunks, 500, 600);
   EXPECT_FALSE(cursor.valid());
 }
 
 TEST(QueryTest, RangeQueryAllData) {
   auto chunks = make_standard_chunks();
-  auto cursor = range_query(chunks, 0, 490);
+  auto cursor = rangeQuery(chunks, 0, 490);
 
   std::size_t count = 0;
   while (cursor.valid()) {
@@ -95,7 +95,7 @@ TEST(QueryTest, RangeQueryAllData) {
 TEST(QueryTest, RangeQueryExactChunkBoundary) {
   auto chunks = make_standard_chunks();
   // query [100, 199] should return only samples from chunk 1: 100..190
-  auto cursor = range_query(chunks, 100, 199);
+  auto cursor = rangeQuery(chunks, 100, 199);
 
   std::vector<Timestamp> timestamps;
   while (cursor.valid()) {
@@ -111,10 +111,10 @@ TEST(QueryTest, RangeQueryExactChunkBoundary) {
 
 TEST(QueryTest, ForEachCallback) {
   auto chunks = make_standard_chunks();
-  auto cursor = range_query(chunks, 200, 390);
+  auto cursor = rangeQuery(chunks, 200, 390);
 
   std::size_t count = 0;
-  cursor.for_each([&count](const SampleRow& /*row*/) { ++count; });
+  cursor.forEach([&count](const SampleRow& /*row*/) { ++count; });
   EXPECT_EQ(count, 20u);  // chunks 2 and 3, 10 rows each
 }
 
@@ -124,27 +124,27 @@ TEST(QueryTest, ForEachCallback) {
 
 TEST(QueryTest, LatestAtInMiddleOfChunk) {
   auto chunks = make_standard_chunks();
-  auto result = latest_at(chunks, 155);
+  auto result = latestAt(chunks, 155);
   ASSERT_TRUE(result.has_value());
   EXPECT_EQ(result->timestamp, 150);
 }
 
 TEST(QueryTest, LatestAtExactTimestamp) {
   auto chunks = make_standard_chunks();
-  auto result = latest_at(chunks, 200);
+  auto result = latestAt(chunks, 200);
   ASSERT_TRUE(result.has_value());
   EXPECT_EQ(result->timestamp, 200);
 }
 
 TEST(QueryTest, LatestAtBeforeAllData) {
   auto chunks = make_standard_chunks();
-  auto result = latest_at(chunks, -10);
+  auto result = latestAt(chunks, -10);
   EXPECT_FALSE(result.has_value());
 }
 
 TEST(QueryTest, LatestAtAfterAllData) {
   auto chunks = make_standard_chunks();
-  auto result = latest_at(chunks, 1000);
+  auto result = latestAt(chunks, 1000);
   ASSERT_TRUE(result.has_value());
   EXPECT_EQ(result->timestamp, 490);
 }
@@ -152,7 +152,7 @@ TEST(QueryTest, LatestAtAfterAllData) {
 TEST(QueryTest, LatestAtBetweenChunks) {
   auto chunks = make_standard_chunks();
   // t=95 is between chunk 0 (t_max=90) and chunk 1 (t_min=100)
-  auto result = latest_at(chunks, 95);
+  auto result = latestAt(chunks, 95);
   ASSERT_TRUE(result.has_value());
   EXPECT_EQ(result->timestamp, 90);
 }
@@ -163,13 +163,13 @@ TEST(QueryTest, LatestAtBetweenChunks) {
 
 TEST(QueryTest, EmptyDequeRangeQuery) {
   std::deque<TopicChunk> empty;
-  auto cursor = range_query(empty, 0, 100);
+  auto cursor = rangeQuery(empty, 0, 100);
   EXPECT_FALSE(cursor.valid());
 }
 
 TEST(QueryTest, EmptyDequeLatestAt) {
   std::deque<TopicChunk> empty;
-  auto result = latest_at(empty, 50);
+  auto result = latestAt(empty, 50);
   EXPECT_FALSE(result.has_value());
 }
 
@@ -181,16 +181,16 @@ TEST(QueryTest, ForEachChunkMatchesForEach) {
   auto chunks = make_standard_chunks();
 
   // Collect per-row results via for_each
-  auto cursor1 = range_query(chunks, 150, 350);
+  auto cursor1 = rangeQuery(chunks, 150, 350);
   std::vector<Timestamp> per_row_ts;
-  cursor1.for_each([&](const SampleRow& row) { per_row_ts.push_back(row.timestamp); });
+  cursor1.forEach([&](const SampleRow& row) { per_row_ts.push_back(row.timestamp); });
 
   // Collect per-chunk results via for_each_chunk
-  auto cursor2 = range_query(chunks, 150, 350);
+  auto cursor2 = rangeQuery(chunks, 150, 350);
   std::vector<Timestamp> chunk_ts;
-  cursor2.for_each_chunk([&](const ChunkRowRange& range) {
+  cursor2.forEachChunk([&](const ChunkRowRange& range) {
     for (std::size_t r = range.row_start; r < range.row_end; ++r) {
-      chunk_ts.push_back(range.chunk->read_timestamp(r));
+      chunk_ts.push_back(range.chunk->readTimestamp(r));
     }
   });
 
@@ -202,11 +202,11 @@ TEST(QueryTest, ForEachChunkMatchesForEach) {
 
 TEST(QueryTest, ForEachChunkAllData) {
   auto chunks = make_standard_chunks();
-  auto cursor = range_query(chunks, 0, 490);
+  auto cursor = rangeQuery(chunks, 0, 490);
 
   std::size_t total_rows = 0;
   std::size_t chunk_count = 0;
-  cursor.for_each_chunk([&](const ChunkRowRange& range) {
+  cursor.forEachChunk([&](const ChunkRowRange& range) {
     ++chunk_count;
     total_rows += range.row_end - range.row_start;
   });
@@ -217,10 +217,10 @@ TEST(QueryTest, ForEachChunkAllData) {
 
 TEST(QueryTest, ForEachChunkNoResults) {
   auto chunks = make_standard_chunks();
-  auto cursor = range_query(chunks, 500, 600);
+  auto cursor = rangeQuery(chunks, 500, 600);
 
   std::size_t count = 0;
-  cursor.for_each_chunk([&](const ChunkRowRange& /*range*/) { ++count; });
+  cursor.forEachChunk([&](const ChunkRowRange& /*range*/) { ++count; });
   EXPECT_EQ(count, 0u);
 }
 

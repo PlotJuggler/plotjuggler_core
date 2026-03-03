@@ -85,18 +85,18 @@ This section binds plugin architecture to the current `pj_datastore` engine stat
 The following were listed as constraints in prior versions but have since been fully implemented:
 
 - **Derived DAG engine** — `DerivedEngine` supports SISO and MIMO transforms with topological scheduling, incremental and batch recompute. See `pj_datastore/include/pj_datastore/derived_engine.hpp`.
-- **Variable-length array expansion** — `DataWriter::expand_array()` dynamically adds element columns. See `pj_datastore/include/pj_datastore/writer.hpp`.
-- **Dynamic column addition** — `DataWriter::ensure_column()` adds columns to topics on the fly, supporting both typed and schemaless topics.
+- **Variable-length array expansion** — `DataWriter::expandArray()` dynamically adds element columns. See `pj_datastore/include/pj_datastore/writer.hpp`.
+- **Dynamic column addition** — `DataWriter::ensureColumn()` adds columns to topics on the fly, supporting both typed and schemaless topics.
 
 ## 3.3 Remaining Constraints
 
-- Writer API is row-builder based (`begin_row/set_*/finish_row`) plus bulk `append_columns()`. No `MessageView` append API.
-- Commit path is synchronous (`flush_all()` -> `commit_chunks()`); staged multi-thread queue model is deferred.
+- Writer API is row-builder based (`begin_row/set_*/finish_row`) plus bulk `appendColumns()`. No `MessageView` append API.
+- Commit path is synchronous (`flushAll()` -> `commitChunks()`); staged multi-thread queue model is deferred.
 - Timestamps are `int64_t` nanoseconds since epoch (see `PJ::Timestamp` in `pj_base/include/pj_base/types.hpp`).
 
 ## 3.4 Integration Implications
 
-- The plugin pipeline targets row-builder ingestion first, with `append_columns()` as the columnar fast path.
+- The plugin pipeline targets row-builder ingestion first, with `appendColumns()` as the columnar fast path.
 - Transform scheduling is handled by `DerivedEngine` — plugin transforms register as SISO/MIMO nodes.
 - Time ordering semantics must be explicit at the ingestion boundary.
 
@@ -459,8 +459,8 @@ Adapter responsibilities:
 1. Validate required columns by shape (wide/tall/scatter).
 2. Normalize timestamp to `int64_t` ns.
 3. Resolve/register schema and topic descriptors via `DataWriter`.
-4. Write rows via `begin_row/set_*/finish_row` or bulk `append_columns()`.
-5. Flush/commit chunks, notify `DerivedEngine::on_source_committed()`.
+4. Write rows via `begin_row/set_*/finish_row` or bulk `appendColumns()`.
+5. Flush/commit chunks, notify `DerivedEngine::onSourceCommitted()`.
 
 The primary ingestion path targets `DataWriter` directly. Legacy `PlotDataMapRef` is populated from engine reads via a compatibility bridge, not parallel writes.
 
@@ -802,7 +802,7 @@ Use phase baselines, and fail CI for defined regression thresholds.
 | nanoarrow missing features | Full Arrow C++ on host side as fallback |
 | QUiLoader limitations | Register custom widgets; fall back to standard equivalents |
 | Dialog protocol too restrictive | Plugin can always fall back to native `QWidget*` escape hatch |
-| Arrow conversion overhead | Benchmark early; `append_columns()` bulk path |
+| Arrow conversion overhead | Benchmark early; `appendColumns()` bulk path |
 | ParserProtobuf split complexity | Start with simpler parsers; Protobuf is Wave 3 |
 
 ---

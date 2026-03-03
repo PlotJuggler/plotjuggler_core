@@ -83,93 +83,93 @@ TEST(RawBufferTest, Reserve) {
 // ===========================================================================
 
 TEST(BitVectorTest, BytesForBits) {
-  EXPECT_EQ(BitVector::bytes_for_bits(0), 0u);
-  EXPECT_EQ(BitVector::bytes_for_bits(1), 1u);
-  EXPECT_EQ(BitVector::bytes_for_bits(7), 1u);
-  EXPECT_EQ(BitVector::bytes_for_bits(8), 1u);
-  EXPECT_EQ(BitVector::bytes_for_bits(9), 2u);
-  EXPECT_EQ(BitVector::bytes_for_bits(16), 2u);
-  EXPECT_EQ(BitVector::bytes_for_bits(17), 3u);
+  EXPECT_EQ(BitVector::bytesForBits(0), 0u);
+  EXPECT_EQ(BitVector::bytesForBits(1), 1u);
+  EXPECT_EQ(BitVector::bytesForBits(7), 1u);
+  EXPECT_EQ(BitVector::bytesForBits(8), 1u);
+  EXPECT_EQ(BitVector::bytesForBits(9), 2u);
+  EXPECT_EQ(BitVector::bytesForBits(16), 2u);
+  EXPECT_EQ(BitVector::bytesForBits(17), 3u);
 }
 
 TEST(BitVectorTest, InitAllValid) {
   BitVector bits;
-  bits.init_valid(16);
+  bits.initValid(16);
 
-  EXPECT_EQ(bits.size_bytes(), 2u);
+  EXPECT_EQ(bits.sizeBytes(), 2u);
   for (std::size_t i = 0; i < 16; ++i) {
-    EXPECT_TRUE(bits.is_valid(i)) << "bit " << i << " should be valid after init";
+    EXPECT_TRUE(bits.isValid(i)) << "bit " << i << " should be valid after init";
   }
 }
 
 TEST(BitVectorTest, SetNull) {
   BitVector bits;
-  bits.init_valid(16);
+  bits.initValid(16);
 
-  bits.set_null(5);
-  EXPECT_FALSE(bits.is_valid(5));
+  bits.setNull(5);
+  EXPECT_FALSE(bits.isValid(5));
 
   // All other bits should remain valid.
   for (std::size_t i = 0; i < 16; ++i) {
     if (i == 5) {
       continue;
     }
-    EXPECT_TRUE(bits.is_valid(i)) << "bit " << i << " should still be valid";
+    EXPECT_TRUE(bits.isValid(i)) << "bit " << i << " should still be valid";
   }
 }
 
 TEST(BitVectorTest, SetValidAfterNull) {
   BitVector bits;
-  bits.init_valid(16);
+  bits.initValid(16);
 
-  bits.set_null(5);
-  EXPECT_FALSE(bits.is_valid(5));
+  bits.setNull(5);
+  EXPECT_FALSE(bits.isValid(5));
 
-  bits.set_valid(5);
-  EXPECT_TRUE(bits.is_valid(5));
+  bits.setValid(5);
+  EXPECT_TRUE(bits.isValid(5));
 }
 
 TEST(BitVectorTest, CountNulls) {
   BitVector bits;
-  bits.init_valid(16);
+  bits.initValid(16);
 
-  bits.set_null(3);
-  bits.set_null(7);
-  bits.set_null(15);
+  bits.setNull(3);
+  bits.setNull(7);
+  bits.setNull(15);
 
-  EXPECT_EQ(bits.count_nulls(16), 3u);
+  EXPECT_EQ(bits.countNulls(16), 3u);
 }
 
 TEST(BitVectorTest, ByteBoundary) {
   BitVector bits;
-  bits.init_valid(16);
+  bits.initValid(16);
 
   // Bit 7 is the last bit in byte 0; bit 8 is the first bit in byte 1.
-  bits.set_null(7);
-  bits.set_null(8);
+  bits.setNull(7);
+  bits.setNull(8);
 
-  EXPECT_FALSE(bits.is_valid(7));
-  EXPECT_FALSE(bits.is_valid(8));
+  EXPECT_FALSE(bits.isValid(7));
+  EXPECT_FALSE(bits.isValid(8));
 
   // Neighbours should be unaffected.
-  EXPECT_TRUE(bits.is_valid(6));
-  EXPECT_TRUE(bits.is_valid(9));
+  EXPECT_TRUE(bits.isValid(6));
+  EXPECT_TRUE(bits.isValid(9));
 }
 
 TEST(BitVectorTest, CountNullsWithNoNulls) {
   BitVector bits;
-  bits.init_valid(32);
-  EXPECT_EQ(bits.count_nulls(32), 0u);
+  bits.initValid(32);
+  EXPECT_EQ(bits.countNulls(32), 0u);
 }
 
 TEST(BitVectorTest, BitSpanView) {
   BitVector bits;
-  bits.init_valid(8);
-  bits.set_null(1);
-  bits.set_null(6);
+  bits.initValid(8);
+  bits.setNull(1);
+  bits.setNull(6);
 
-  const BitSpan view = bits.bit_span();
-  EXPECT_EQ(view.size_bits(), 8u);
+  const BitSpan view = bits.bitSpan();
+  EXPECT_EQ(view.sizeBits(), 8u);
   EXPECT_TRUE(view.test(0));
   EXPECT_FALSE(view.test(1));
   EXPECT_FALSE(view.test(6));

@@ -16,7 +16,7 @@ class DerivativeTransform : public ISISOTransform {
 
  public:
   void reset() override;
-  StorageKind output_kind(StorageKind input_kind) const override;
+  StorageKind outputKind(StorageKind input_kind) const override;
   bool calculate(PJ::Timestamp time, const VarValue& input, PJ::Timestamp& out_time, VarValue& out_value) override;
 };
 

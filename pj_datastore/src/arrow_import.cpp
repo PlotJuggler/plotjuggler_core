@@ -108,7 +108,7 @@ struct ColumnDataWithBuffer {
 ColumnDataWithBuffer make_column_data_nanoarrow(
     const ArrowArrayView* child, const ArrowColumnMapping& mapping, int64_t length) {
   ColumnDataWithBuffer result;
-  const auto sk = storage_kind_of(mapping.pj_type);
+  const auto sk = storageKindOf(mapping.pj_type);
   const auto n = static_cast<std::size_t>(length);
 
   // Validity bitmap
@@ -259,7 +259,7 @@ std::vector<Timestamp> generate_sequential_timestamps(int64_t length) {
 // schema_from_ipc
 // ---------------------------------------------------------------------------
 
-PJ::Expected<std::pair<std::shared_ptr<PJ::TypeTreeNode>, std::vector<ArrowColumnMapping>>> schema_from_ipc(
+PJ::Expected<std::pair<std::shared_ptr<PJ::TypeTreeNode>, std::vector<ArrowColumnMapping>>> schemaFromIpc(
     PJ::Span<const uint8_t> ipc_stream) {
   ArrowIpcInputStream input;
   init_span_input_stream(&input, ipc_stream);
@@ -298,7 +298,7 @@ PJ::Expected<std::pair<std::shared_ptr<PJ::TypeTreeNode>, std::vector<ArrowColum
     m.pj_type = *pj_type;
     m.field_name = schema->children[i]->name != nullptr ? schema->children[i]->name : "";
 
-    children.push_back(PJ::make_primitive(m.field_name, *pj_type));
+    children.push_back(PJ::makePrimitive(m.field_name, *pj_type));
     mappings.push_back(std::move(m));
   }
 
@@ -306,7 +306,7 @@ PJ::Expected<std::pair<std::shared_ptr<PJ::TypeTreeNode>, std::vector<ArrowColum
     return PJ::unexpected(std::string("No supported columns found in Arrow IPC schema"));
   }
 
-  auto type_tree = PJ::make_struct("arrow_row", std::move(children));
+  auto type_tree = PJ::makeStruct("arrow_row", std::move(children));
   return std::make_pair(std::move(type_tree), std::move(mappings));
 }
 
@@ -314,7 +314,7 @@ PJ::Expected<std::pair<std::shared_ptr<PJ::TypeTreeNode>, std::vector<ArrowColum
 // import_ipc_stream
 // ---------------------------------------------------------------------------
 
-PJ::Status import_ipc_stream(
+PJ::Status importIpcStream(
     DataWriter& writer, TopicId topic_id, PJ::Span<const uint8_t> ipc_stream,
     const std::vector<ArrowColumnMapping>& mappings, int timestamp_column) {
   ArrowIpcInputStream input;
@@ -394,13 +394,13 @@ PJ::Status import_ipc_stream(
       col_data_vec.push_back(cb.col_data);
     }
 
-    auto status = writer.append_columns(topic_id, timestamps, col_data_vec);
+    auto status = writer.appendColumns(topic_id, timestamps, col_data_vec);
     if (!status.has_value()) {
       return status;
     }
   }
 
-  return PJ::ok_status();
+  return PJ::okStatus();
 }
 
 }  // namespace PJ::arrow_import

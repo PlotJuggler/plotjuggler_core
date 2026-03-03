@@ -117,7 +117,7 @@ std::vector<ColumnMemory> measure_memory(
   for (const auto& chunk : chunks) {
     for (std::size_t col = 0; col < num_columns; ++col) {
       result[col].actual_bytes += encoded_column_bytes(chunk, col);
-      result[col].actual_bytes += chunk.validity_bitmaps[col].size_bytes();
+      result[col].actual_bytes += chunk.validity_bitmaps[col].sizeBytes();
       enc_counts[col][static_cast<uint8_t>(chunk.column_encodings[col])]++;
     }
   }
@@ -303,7 +303,7 @@ int main(int argc, char* argv[]) {
 
   // ── 3. Map IPC schema → TypeTreeNode via arrow_import ──────────────────
 
-  auto schema_result = PJ::arrow_import::schema_from_ipc(ipc_bytes);
+  auto schema_result = PJ::arrow_import::schemaFromIpc(ipc_bytes);
   if (!schema_result.has_value()) {
     std::cerr << "Schema conversion failed: " << schema_result.error() << "\n";
     return 1;
@@ -326,7 +326,7 @@ int main(int argc, char* argv[]) {
 
   DataEngine engine;
 
-  auto td_or = engine.create_time_domain("default");
+  auto td_or = engine.createTimeDomain("default");
   if (!td_or.has_value()) {
     std::cerr << "Failed to create time domain: " << td_or.error() << "\n";
     return 1;
@@ -335,16 +335,16 @@ int main(int argc, char* argv[]) {
   PJ::DatasetDescriptor ds_desc;
   ds_desc.source_name = path;
   ds_desc.time_domain_id = *td_or;
-  auto ds_or = engine.create_dataset(std::move(ds_desc));
+  auto ds_or = engine.createDataset(std::move(ds_desc));
   if (!ds_or.has_value()) {
     std::cerr << "Failed to create dataset: " << ds_or.error() << "\n";
     return 1;
   }
   auto dataset_id = *ds_or;
 
-  auto writer = engine.create_writer();
+  auto writer = engine.createWriter();
 
-  auto schema_or = writer.register_schema("parquet_schema", type_tree);
+  auto schema_or = writer.registerSchema("parquet_schema", type_tree);
   if (!schema_or.has_value()) {
     std::cerr << "Failed to register schema: " << schema_or.error() << "\n";
     return 1;
@@ -356,7 +356,7 @@ int main(int argc, char* argv[]) {
   topic_desc.dataset_id = dataset_id;
   topic_desc.max_chunk_rows = chunk_rows;
 
-  auto topic_or = writer.register_topic(dataset_id, std::move(topic_desc));
+  auto topic_or = writer.registerTopic(dataset_id, std::move(topic_desc));
   if (!topic_or.has_value()) {
     std::cerr << "Failed to register topic: " << topic_or.error() << "\n";
     return 1;
@@ -367,28 +367,28 @@ int main(int argc, char* argv[]) {
 
   auto t_start = std::chrono::steady_clock::now();
 
-  auto import_st = PJ::arrow_import::import_ipc_stream(writer, topic_id, ipc_bytes, arrow_mappings);
+  auto import_st = PJ::arrow_import::importIpcStream(writer, topic_id, ipc_bytes, arrow_mappings);
   if (!import_st.has_value()) {
     std::cerr << "import_ipc_stream failed: " << import_st.error() << "\n";
     return 1;
   }
 
   // Flush and commit
-  auto flushed = writer.flush_all();
-  engine.commit_chunks(std::move(flushed));
+  auto flushed = writer.flushAll();
+  engine.commitChunks(std::move(flushed));
 
   auto t_end = std::chrono::steady_clock::now();
   double ingest_seconds = std::chrono::duration<double>(t_end - t_start).count();
 
   // ── 6. Memory report ─────────────────────────────────────────────────────
 
-  const auto* storage = engine.get_topic_storage(topic_id);
+  const auto* storage = engine.getTopicStorage(topic_id);
   if (storage == nullptr) {
     std::cerr << "Topic storage not found after commit.\n";
     return 1;
   }
 
-  auto memory = measure_memory(storage->sealed_chunks(), mappings.size(), mappings, table);
+  auto memory = measure_memory(storage->sealedChunks(), mappings.size(), mappings, table);
   print_report(mappings, memory, table, ingest_seconds);
 
   // Cross-check with TopicMetadata

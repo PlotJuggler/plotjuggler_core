@@ -29,7 +29,7 @@ The engine is organized in four layers:
 ```
 +-------------------------------------------------------------+
 |                     Plugin API (typed)                       |
-|  push_message(), register_schema(), create_transform(), ... |
+|  push_message(), registerSchema(), create_transform(), ... |
 +-------------------------------------------------------------+
 |                     Logical Layer                            |
 |  Type registry, schema management, topic/dataset metadata,  |
@@ -123,14 +123,14 @@ A hybrid approach:
 
 - ✅ **Central type registry**: schemas are registered with unique IDs. Multiple
   topics sharing the same type reference the same schema ID.
-  *Implemented in `TypeRegistry` with `register_schema()`,
-  `register_or_get()`, `lookup()`, `find_by_name()`.*
+  *Implemented in `TypeRegistry` with `registerSchema()`,
+  `registerOrGet()`, `lookup()`, `findByName()`.*
 - ⚠️ **Late discovery**: for schema-less formats (JSON, MessagePack, CBOR, XML),
   the schema is inferred from the first message and registered automatically.
   Subsequent messages may add new fields (see Schema Evolution below).
-  *Storage primitives are now in place: `DataWriter::ensure_column()` adds a
+  *Storage primitives are now in place: `DataWriter::ensureColumn()` adds a
   single typed column dynamically (any topic, typed or schemaless), and
-  `DataWriter::expand_array()` supports schemaless topics via an `element_type`
+  `DataWriter::expandArray()` supports schemaless topics via an `element_type`
   parameter. The missing piece is automatic schema inference from the first
   message and plugin-level field discovery — requires plugin integration.*
 - **Schema-based formats** (Protobuf, ROS, FlatBuffers, DDS): the schema is
@@ -171,9 +171,9 @@ This tree is stored in the registry as a recursive structure. Each node has:
   schema (e.g., Protobuf annotations, ROS message type names).
 
 **Implementation:** All of the above is implemented in `TypeTreeNode`
-(`pj_base/type_tree.hpp`) with factory functions `make_primitive()`,
-`make_struct()`, `make_array()`, `make_enum()`. Helper functions
-`flatten_field_paths()` and `count_leaf_fields()` are implemented for
+(`pj_base/type_tree.hpp`) with factory functions `makePrimitive()`,
+`makeStruct()`, `makeArray()`, `makeEnum()`. Helper functions
+`flattenFieldPaths()` and `countLeafFields()` are implemented for
 converting the tree to flat column lists.
 
 The type tree enables:
@@ -192,7 +192,7 @@ For schema-less formats, new fields may appear mid-stream:
 - The registry tracks the "current" schema version per topic.
 - Fields **cannot** change type or be removed mid-stream.
 
-**Implementation:** `TypeRegistry::evolve_schema()` validates additive-only
+**Implementation:** `TypeRegistry::evolveSchema()` validates additive-only
 changes: old fields must exist with same types in the new tree; new fields
 are allowed; type changes and removals are rejected. Tested in
 `type_registry_test.cpp`.
@@ -237,8 +237,8 @@ adaptive chunking is deferred.
 `TypedColumnBuffer` instances for accumulation, with two ingestion APIs:
 - **Row-at-a-time**: `begin_row`, `set_*`, `finish_row` -- stats are
   computed incrementally per value.
-- **Bulk columnar**: `append_timestamps()`, `append_column_*()`,
-  `append_column_validity()`, `finish_bulk_append()` -- data is memcpy'd,
+- **Bulk columnar**: `appendTimestamps()`, `append_column_*()`,
+  `appendColumnValidity()`, `finishBulkAppend()` -- data is memcpy'd,
   stats are computed in a single pass after all data and validity bitmaps
   are in place.
 
@@ -279,16 +279,16 @@ Chunk states:
   drained by the main thread.
   *Sealing is implemented. Staging queues (`PluginStagingContext`,
   `SPSCQueue`) are not yet implemented -- `DataWriter::flush()` returns
-  sealed chunks directly, and `DataEngine::commit_chunks()` appends them
+  sealed chunks directly, and `DataEngine::commitChunks()` appends them
   synchronously. The multi-threaded staging model is deferred to Phase 5
   (plugin integration).*
 - ✅ **Committed**: appended to `TopicStorage.sealed_chunks` on the main thread.
   Immutable. Readable by viewers and transforms.
-  *Implemented in `TopicStorage::append_sealed_chunk()` and
-  `DataEngine::commit_chunks()`.*
+  *Implemented in `TopicStorage::appendSealedChunk()` and
+  `DataEngine::commitChunks()`.*
 - ✅ **Evicted**: dropped when its time range falls outside the retention window.
-  *Implemented in `TopicStorage::evict_before()` and
-  `DataEngine::enforce_retention()`.*
+  *Implemented in `TopicStorage::evictBefore()` and
+  `DataEngine::enforceRetention()`.*
 
 #### Ordering contract (v1)
 
@@ -307,7 +307,7 @@ locks on the read path. The only synchronization is the staging queue
 
 > **Implementation note:** Steps 2 and 4 are implemented. Steps 1 and 3
 > require `PluginStagingContext` (not yet implemented) and the derived
-> engine (Phase 2), respectively. The current `commit_chunks()` API accepts
+> engine (Phase 2), respectively. The current `commitChunks()` API accepts
 > a vector of (topic_id, chunk) pairs and appends them synchronously.
 
 ### 5.3 Time-Based Eviction ✅
@@ -324,8 +324,8 @@ All chunks with `t_max < t_keep_min` are evicted. Eviction is O(1) per
 chunk (pop front of the chunk deque). Eviction never removes from the middle
 -- retained data is always a contiguous time range.
 
-**Implementation:** `TopicStorage::evict_before(t_keep_min)` pops chunks
-from the front of the deque. `DataEngine::enforce_retention()` iterates all
+**Implementation:** `TopicStorage::evictBefore(t_keep_min)` pops chunks
+from the front of the deque. `DataEngine::enforceRetention()` iterates all
 topics and calls evict. Tested in `topic_storage_test.cpp`.
 
 ### 5.4 Variable-Length Arrays ✅
@@ -343,13 +343,13 @@ Validity bitmaps track which indices exist at each timestamp (sparse table).
 This reuses the additive schema evolution mechanism.
 
 **Implementation:** `flatten_columns_impl` in `writer.cpp` now correctly handles `kArray` nodes:
-- Fixed-size arrays (`make_array(..., N)`) expand fully at schema registration time (e.g., `float32[3]` → `accel[0]`, `accel[1]`, `accel[2]`)
-- Variable-length arrays (`make_array(..., std::nullopt)`) start with 0 columns; callers use `DataWriter::expand_array(topic_id, field_path, new_length)` to add element columns dynamically
-- `expand_array()` seals the current builder, appends new `ColumnDescriptor` entries (using `generate_array_element_columns`), and persists the layout in `TopicStorage`; old chunks retain their original column count (cross-chunk column count handled via per-chunk `column_descriptors`)
+- Fixed-size arrays (`makeArray(..., N)`) expand fully at schema registration time (e.g., `float32[3]` → `accel[0]`, `accel[1]`, `accel[2]`)
+- Variable-length arrays (`makeArray(..., std::nullopt)`) start with 0 columns; callers use `DataWriter::expandArray(topic_id, field_path, new_length)` to add element columns dynamically
+- `expandArray()` seals the current builder, appends new `ColumnDescriptor` entries (using `generate_array_element_columns`), and persists the layout in `TopicStorage`; old chunks retain their original column count (cross-chunk column count handled via per-chunk `column_descriptors`)
 - Struct element arrays supported recursively (e.g., `Pose[]` → `poses[0].x`, `poses[0].y`, ...)
-- **Schemaless expand_array**: `expand_array(topic_id, path, N, element_type=kFloat64)` now works on `schema_id=0` topics; skips schema validation and uses `element_type` for new columns
-- **`DataWriter::ensure_column(topic_id, field_path, PrimitiveType)`**: new low-level primitive that adds a single typed column by path, independent of any schema; idempotent (returns existing `FieldId` on same type, error on type mismatch); works on typed and schemaless topics; seals any pending builder before modifying the layout; returns error if a row is in progress for a new column
-- Mixed usage of `ensure_column` and `expand_array` is safe and idempotent — no duplicate columns regardless of call order; both methods use `ensure_cols_loaded()` to share column-loading logic
+- **Schemaless expand_array**: `expandArray(topic_id, path, N, element_type=kFloat64)` now works on `schema_id=0` topics; skips schema validation and uses `element_type` for new columns
+- **`DataWriter::ensureColumn(topic_id, field_path, PrimitiveType)`**: new low-level primitive that adds a single typed column by path, independent of any schema; idempotent (returns existing `FieldId` on same type, error on type mismatch); works on typed and schemaless topics; seals any pending builder before modifying the layout; returns error if a row is in progress for a new column
+- Mixed usage of `ensure_column` and `expand_array` is safe and idempotent — no duplicate columns regardless of call order; both methods use `ensureColsLoaded()` to share column-loading logic
 
 #### Column explosion guard
 
@@ -588,7 +588,7 @@ Batch recompute serves as the **correctness oracle** for incremental mode.
 // reset() is the only path that clears state; called before batch recompute.
 class ISISOTransform {
 public:
-    virtual StorageKind output_kind(StorageKind input_kind) const;  // default kFloat64
+    virtual StorageKind outputKind(StorageKind input_kind) const;  // default kFloat64
     virtual void reset() {}
     virtual bool calculate(PJ::Timestamp time, const VarValue& input,
                            PJ::Timestamp& out_time, VarValue& out_value) = 0;
@@ -597,7 +597,7 @@ public:
 // Multi-input / multi-output transform. Inner join on exact timestamps.
 class IMIMOTransform {
 public:
-    virtual std::vector<StorageKind> output_kinds(Span<const StorageKind> input_kinds) const = 0;
+    virtual std::vector<StorageKind> outputKinds(Span<const StorageKind> input_kinds) const = 0;
     virtual void reset() {}
     virtual bool calculate(PJ::Timestamp time, Span<const VarValue> inputs,
                            PJ::Timestamp& out_time, std::vector<VarValue>& output) = 0;
@@ -650,8 +650,8 @@ The offset can be:
 This is intentionally **visual-only**. It does not change stored source
 timestamps. No cross-domain algebra or join semantics.
 
-**Implementation:** `TimeDomain` struct and `DataEngine::create_time_domain()`,
-`get_time_domain()`, `set_display_offset()` are implemented. Automatic t0
+**Implementation:** `TimeDomain` struct and `DataEngine::createTimeDomain()`,
+`getTimeDomain()`, `setDisplayOffset()` are implemented. Automatic t0
 alignment and GUI visual alignment controls are not yet implemented.
 
 ### 8.2 Cross-Dataset Comparison
@@ -680,9 +680,9 @@ internal buffers are used, but Arrow objects are not exposed as public
 plugin API types.
 
 **Implementation:** `DataWriter` and `DataReader` expose typed APIs. Writers
-use `begin_row()` / `set_*()` / `finish_row()` or `append_scalar()` for
-row-at-a-time ingestion, and `append_columns()` for bulk columnar ingestion.
-Readers use `range_query()` and `latest_at()`. Internal encoding and chunk
+use `beginRow()` / `set_*()` / `finishRow()` or `appendScalar()` for
+row-at-a-time ingestion, and `appendColumns()` for bulk columnar ingestion.
+Readers use `rangeQuery()` and `latestAt()`. Internal encoding and chunk
 details are fully hidden.
 
 ### 9.2 Core Interfaces ⚠️
@@ -702,38 +702,38 @@ struct ScalarSeriesHandle {
 
 class IDataWriter {
 public:
-    virtual SchemaId register_schema(const TypeTree& type_tree) = 0;
-    virtual TopicId register_topic(DatasetId, const TopicDescriptor&) = 0;
-    virtual TopicWriteHandle bind_topic_writer(TopicId) = 0;
-    virtual FieldId resolve_field(TopicId, std::string_view field_path) = 0;
+    virtual SchemaId registerSchema(const TypeTree& type_tree) = 0;
+    virtual TopicId registerTopic(DatasetId, const TopicDescriptor&) = 0;
+    virtual TopicWriteHandle bindTopicWriter(TopicId) = 0;
+    virtual FieldId resolveField(TopicId, std::string_view field_path) = 0;
     virtual void append(TopicId, const MessageView&) = 0;
     virtual void append_fast(const TopicWriteHandle&, const MessageView&) = 0;
     virtual void append_batch(TopicId, span<const MessageView>) = 0;
     virtual void append_batch_fast(const TopicWriteHandle&, span<const MessageView>) = 0;
 
     // Scalar convenience API.
-    virtual ScalarSeriesHandle register_scalar_series(
+    virtual ScalarSeriesHandle registerScalarSeries(
         DatasetId, std::string_view topic_name, NumericType value_type) = 0;
-    virtual void append_scalar(const ScalarSeriesHandle&, Timestamp t, NumericValue v) = 0;
+    virtual void appendScalar(const ScalarSeriesHandle&, Timestamp t, NumericValue v) = 0;
 };
 
 class IDataReader {
 public:
     // List / inspect
-    virtual vector<DatasetId> list_datasets() const = 0;
-    virtual vector<TopicId> list_topics(DatasetId) const = 0;
-    virtual const TypeTree& get_type_tree(TopicId) const = 0;
-    virtual TopicMetadata get_metadata(TopicId) const = 0;
+    virtual vector<DatasetId> listDatasets() const = 0;
+    virtual vector<TopicId> listTopics(DatasetId) const = 0;
+    virtual const TypeTree& getTypeTree(TopicId) const = 0;
+    virtual TopicMetadata getMetadata(TopicId) const = 0;
 
     // Query
-    virtual RangeCursor range_query(const QueryRange&) const = 0;
-    virtual LatestValue latest_at(const QueryPoint&) const = 0;
+    virtual RangeCursor rangeQuery(const QueryRange&) const = 0;
+    virtual LatestValue latestAt(const QueryPoint&) const = 0;
 };
 
 class IDerivedEngine {
 public:
     virtual NodeId add_transform(const TransformDescriptor&) = 0;
-    virtual void remove_node(NodeId) = 0;
+    virtual void removeNode(NodeId) = 0;
     virtual void recompute(NodeId, RecomputeMode) = 0;
 };
 ```
@@ -742,39 +742,39 @@ public:
 >
 > **IDataWriter:** Implemented as concrete `DataWriter` class (not a virtual
 > interface). The API deviates from the plan:
-> - ✅ `register_schema()`, `register_topic()`, `bind_topic_writer()`,
->   `resolve_field()` -- implemented as planned.
-> - ✅ `ensure_column(topic_id, field_path, PrimitiveType)` -- not in the
+> - ✅ `registerSchema()`, `registerTopic()`, `bindTopicWriter()`,
+>   `resolveField()` -- implemented as planned.
+> - ✅ `ensureColumn(topic_id, field_path, PrimitiveType)` -- not in the
 >   original plan; added to support dynamic/schemaless column registration.
-> - ✅ `expand_array(topic_id, path, N, element_type=kFloat64)` -- extended
+> - ✅ `expandArray(topic_id, path, N, element_type=kFloat64)` -- extended
 >   from plan; now supports schemaless topics via `element_type` parameter.
 > - ⚠️ `append()` / `append_fast()` / `append_batch()` /
 >   `append_batch_fast()` with `MessageView` -- **not implemented**. Instead,
 >   the writer provides two ingestion APIs:
->   1. **Row-at-a-time**: `begin_row(topic_id, timestamp)`,
->      `set_float32()`, `set_string()`, etc., `finish_row()`.
->   2. **Bulk columnar**: `append_columns(topic_id, timestamps, columns)`
+>   1. **Row-at-a-time**: `beginRow(topic_id, timestamp)`,
+>      `setFloat32()`, `setString()`, etc., `finishRow()`.
+>   2. **Bulk columnar**: `appendColumns(topic_id, timestamps, columns)`
 >      accepts raw pointers to contiguous column data via `ColumnData`
 >      descriptors. Handles chunk boundary splitting transparently.
 >   Both are more explicit than the planned `MessageView`-based API.
-> - ✅ `register_scalar_series()`, `append_scalar()` -- implemented as
+> - ✅ `registerScalarSeries()`, `appendScalar()` -- implemented as
 >   planned.
-> - ✅ `flush()` / `flush_all()` -- additional methods for explicit chunk
+> - ✅ `flush()` / `flushAll()` -- additional methods for explicit chunk
 >   sealing (not in the plan's interface but needed for the commit cycle).
 >
 > **IDataReader:** Implemented as concrete `DataReader` class (not a virtual
 > interface).
-> - ✅ `list_datasets()`, `list_topics()`, `get_type_tree()`,
->   `get_metadata()` -- implemented as planned.
-> - ✅ `range_query()`, `latest_at()` -- implemented as planned, returning
+> - ✅ `listDatasets()`, `listTopics()`, `getTypeTree()`,
+>   `getMetadata()` -- implemented as planned.
+> - ✅ `rangeQuery()`, `latestAt()` -- implemented as planned, returning
 >   `absl::StatusOr` for error handling.
 >
 > **IDerivedEngine:** ✅ Implemented as concrete `DerivedEngine` class
 > (not a virtual interface). API:
-> - `add_siso_transform(input_topic_id, output_name, dataset_id, op)` → NodeId
-> - `add_mimo_transform(input_topic_ids, output_names, dataset_id, op)` → NodeId
-> - `remove_node(id)`, `has_node(id)`, `output_topics(id)`, `topological_order()`
-> - `on_source_committed(changed_topics)` — dirty propagation hook
+> - `addSisoTransform(input_topic_id, output_name, dataset_id, op)` → NodeId
+> - `addMimoTransform(input_topic_ids, output_names, dataset_id, op)` → NodeId
+> - `removeNode(id)`, `hasNode(id)`, `outputTopics(id)`, `topologicalOrder()`
+> - `onSourceCommitted(changed_topics)` — dirty propagation hook
 > - `schedule(active_nodes={})` — incremental lazy scheduling
 > - `recompute_batch(node_id)` — full history recompute / correctness oracle
 
@@ -785,9 +785,9 @@ Write-path ergonomics are intentionally split:
 - ✅ **Fast path**: resolve/bind once (`bind_topic_writer`, `FieldId`) and use
   `append_fast()` / `append_batch_fast()`. No per-message field-name string
   comparisons in the hot loop.
-  *The `bind_topic_writer()` / `resolve_field()` pattern is implemented.
+  *The `bindTopicWriter()` / `resolveField()` pattern is implemented.
   The row-builder uses field indices internally after binding.*
-- ✅ **Scalar path**: `register_scalar_series()` + `append_scalar()` for the
+- ✅ **Scalar path**: `registerScalarSeries()` + `appendScalar()` for the
   current PlotJuggler-style time/value append workflow.
 
 Row construction may be performed field-by-field by the writer, but v1
@@ -795,7 +795,7 @@ commit semantics are still full-row: at row finalization, every field must
 have a defined state for that row (explicit value, explicit null, or writer
 error per policy). Missing fields never imply carry-forward from prior rows.
 
-**Implementation:** `TopicChunkBuilder::finish_row()` auto-fills any unset
+**Implementation:** `TopicChunkBuilder::finishRow()` auto-fills any unset
 columns with null, enforcing full-row semantics.
 
 Two query modes (inspired by Rerun):
@@ -803,11 +803,11 @@ Two query modes (inspired by Rerun):
   t_max]. Binary search on chunk time bounds, scan only intersecting chunks.
   Primary path for time-series plotting.
   *Implemented as `RangeCursor` with per-row (`advance()`) and per-chunk
-  (`for_each_chunk()`) iteration paths.*
+  (`forEachChunk()`) iteration paths.*
 - ✅ **LatestAtQuery**: returns the most recent value at or before time t.
   Binary search on chunk max times + per-chunk binary search. Useful for
   dashboard views and MIMO transforms needing aligned inputs.
-  *Implemented as `latest_at()` with reverse chunk/row scan.*
+  *Implemented as `latestAt()` with reverse chunk/row scan.*
 
 Renderers should consume iterators/cursors, not materialize full vectors.
 
@@ -900,13 +900,13 @@ struct EnumMapping {          // ✅ Implemented in pj/base/type_tree.hpp
 // lack columns added in later versions.
 struct SchemaVersionEntry {   // ❌ Not implemented as a standalone struct.
     SchemaId schema_id;       //    Schema evolution is handled inside
-    uint32_t version;         //    TypeRegistry::evolve_schema() which
+    uint32_t version;         //    TypeRegistry::evolveSchema() which
     std::shared_ptr<TypeTreeNode> type_tree; // replaces the tree in-place.
     std::vector<FieldId> field_ids;
 };
 
 struct SchemaVersionHistory { // ❌ Not implemented. No version history
-    TopicId topic_id;         //    tracking per topic. evolve_schema()
+    TopicId topic_id;         //    tracking per topic. evolveSchema()
     std::vector<SchemaVersionEntry> versions; // validates and replaces.
     // current() returns versions.back()
 };
@@ -983,7 +983,7 @@ Notes:
    *Implemented in `DerivedEngine::schedule()` and `recompute_batch()`.*
 4. ✅ **Variable-length arrays**: Expand to indexed columns at ingest, with
    configurable max expansion limit. Viewer may additionally filter.
-   *Implemented: `flatten_columns_impl` + `DataWriter::expand_array()` with limit guard and metadata tracking.*
+   *Implemented: `flatten_columns_impl` + `DataWriter::expandArray()` with limit guard and metadata tracking.*
 5. ✅ **Update semantics**: Column-by-column write APIs are allowed, but row
    commit semantics are full-row in v1. No implicit field-level carry-forward
    from prior rows.
@@ -1009,11 +1009,11 @@ Notes:
     *Fast path is implemented. Simple path uses row-builder instead of
     `MessageView`.*
 13. ✅ **Scalar convenience API**: v1 includes a first-class scalar
-    `append_scalar(time, value)` path for single-value time-series ingestion.
+    `appendScalar(time, value)` path for single-value time-series ingestion.
 14. ✅ **Semantic tags**: Type tree nodes carry an optional set of string tags
     for semantic role discovery by transforms (e.g., `"quaternion"`), distinct
     from the struct name.
-15. ✅ **Bulk ingest API**: `DataWriter::append_columns()` accepts raw
+15. ✅ **Bulk ingest API**: `DataWriter::appendColumns()` accepts raw
     columnar data pointers. Engine core is Arrow-free; Arrow adapter is a
     separate layer linked PRIVATE. See Section 17.
 
@@ -1030,7 +1030,7 @@ Notes:
 - ✅ Chunk lifecycle (build, seal, commit, evict)
 - ✅ Per-chunk statistics (row-at-a-time + bulk with null-aware computation)
 - ✅ Range and latest-at queries
-- ✅ Bulk columnar ingest API (`DataWriter::append_columns()`)
+- ✅ Bulk columnar ingest API (`DataWriter::appendColumns()`)
 - ✅ Arrow import utilities (`arrow_import.hpp`)
 - **Baseline encodings** (locked v1 decisions, not deferred):
   - ✅ Dictionary encoding for string columns
@@ -1051,11 +1051,11 @@ Notes:
 - ✅ SISO interface (`ISISOTransform`) with sequential `calculate()` contract
 - ✅ MIMO interface (`IMIMOTransform`) with N-input / M-output scheduling
 - ✅ Built-in: `DerivativeTransform`
-- ✅ `on_source_committed()` dirty propagation hook
-- ✅ `TopicStorage::set_column_descriptors()` — schema_id==0 topics require
+- ✅ `onSourceCommitted()` dirty propagation hook
+- ✅ `TopicStorage::setColumnDescriptors()` — schema_id==0 topics require
   no committed chunks before transform registration
-- ✅ `DataEngine::commit_chunks()` returns changed topic IDs for one-liner
-  frame loop: `derived.on_source_committed(engine.commit_chunks(writer.flush_all()))`
+- ✅ `DataEngine::commitChunks()` returns changed topic IDs for one-liner
+  frame loop: `derived.onSourceCommitted(engine.commitChunks(writer.flushAll()))`
 
 ### Phase 3: Time domains + UI integration (engine-time) -- ⚠️ PARTIALLY STARTED
 
@@ -1235,11 +1235,11 @@ Explicitly deferred items that should not block v1:
 |---|---|
 | `engine/src/derived_engine.cpp` | `DerivedEngine` implementation (DAG, scheduling, recompute) |
 | `engine/src/builtin_transforms.cpp` | `DerivativeTransform` implementation |
-| `engine/include/pj_datastore/topic_storage.hpp` | Added `set_column_descriptors()` / `column_descriptors()` / `clear_chunks()` |
+| `engine/include/pj_datastore/topic_storage.hpp` | Added `setColumnDescriptors()` / `columnDescriptors()` / `clearChunks()` |
 | `engine/src/topic_storage.cpp` | Implementations of the above |
 | `engine/src/writer.cpp` | `register_scalar_series` now propagates column layout to `TopicStorage`; `get_or_create_builder` checks stored layout before sealed chunks |
-| `engine/include/pj_datastore/writer.hpp` | Added `ensure_column()`; added `element_type` param to `expand_array()`; added private `ensure_cols_loaded()` helper |
-| `engine/src/writer.cpp` | Extracted `ensure_cols_loaded()` private helper shared by all three column-layout methods; implemented `ensure_column()`; added schemaless branch to `expand_array()` |
+| `engine/include/pj_datastore/writer.hpp` | Added `ensureColumn()`; added `element_type` param to `expandArray()`; added private `ensureColsLoaded()` helper |
+| `engine/src/writer.cpp` | Extracted `ensureColsLoaded()` private helper shared by all three column-layout methods; implemented `ensureColumn()`; added schemaless branch to `expandArray()` |
 | `data/conanfile.txt` | abseil/20240722.0, gtest/1.15.0, benchmark/1.8.3, arrow/18.1.0, nanoarrow/0.7.0 |
 
 ---
@@ -1271,10 +1271,10 @@ Arrow IPC bytes (ABI-safe serialization boundary)
 nanoarrow ArrowArrayView (in adapter layer, depends on nanoarrow)
         |  extract raw pointers (arrow_import.hpp)
         v
-DataWriter::append_columns(timestamps, columns)   <-- ENGINE API
+DataWriter::appendColumns(timestamps, columns)   <-- ENGINE API
         |  memcpy + deferred stats
         v
-TopicChunkBuilder → seal() → commit_chunks()
+TopicChunkBuilder → seal() → commitChunks()
 ```
 
 The engine core uses nanoarrow (a lightweight, ABI-stable Arrow C
@@ -1289,11 +1289,11 @@ data for bulk append. Supports all 7 storage kinds via typed factory
 methods: `Float32()`, `Float64()`, `Int32()`, `Int64()`, `Uint64()`,
 `Bool()`, `String()`. Each accepts optional validity bitmap.
 
-**`DataWriter::append_columns()`**: Bulk columnar append with automatic
+**`DataWriter::appendColumns()`**: Bulk columnar append with automatic
 chunk boundary splitting:
 
 ```cpp
-absl::Status append_columns(
+absl::Status appendColumns(
     TopicId topic_id,
     absl::Span<const Timestamp> timestamps,
     absl::Span<const ColumnData> columns);
@@ -1304,15 +1304,15 @@ absl::Status append_columns(
 - Columns are provided as `ColumnData` descriptors pointing to raw
   contiguous arrays (no copy for the caller).
 - When a batch exceeds the current chunk's remaining capacity,
-  `append_columns()` transparently slices the batch across chunk
+  `appendColumns()` transparently slices the batch across chunk
   boundaries using pointer arithmetic (no extra copy).
 - Null positions are tracked via Arrow-compatible validity bitmaps
   and correctly excluded from stats computation.
 
 **`TopicChunkBuilder` bulk methods**: The builder exposes per-type bulk
-append methods (`append_timestamps()`, `append_column_float32()`, etc.)
-plus `append_column_validity()` and `finish_bulk_append()`. Stats are
-computed in `finish_bulk_append()` after both data and validity are set.
+append methods (`appendTimestamps()`, `appendColumnFloat32()`, etc.)
+plus `appendColumnValidity()` and `finishBulkAppend()`. Stats are
+computed in `finishBulkAppend()` after both data and validity are set.
 
 **Arrow import adapter** (`pj_datastore/arrow_import.hpp`): Higher-level
 utilities for importing Arrow IPC data via nanoarrow:
@@ -1320,10 +1320,10 @@ utilities for importing Arrow IPC data via nanoarrow:
 ```cpp
 // Parse schema from Arrow IPC stream bytes → PJ type tree + column mappings
 StatusOr<pair<shared_ptr<TypeTreeNode>, vector<ArrowColumnMapping>>>
-    schema_from_ipc(Span<const uint8_t> ipc_stream);
+    schemaFromIpc(Span<const uint8_t> ipc_stream);
 
 // Import all record batches from Arrow IPC stream into a topic
-Status import_ipc_stream(writer, topic_id, ipc_stream, mappings, ts_col);
+Status importIpcStream(writer, topic_id, ipc_stream, mappings, ts_col);
 ```
 
 Handles type widening (int8/int16 → int64, uint8-32 → uint64), bool
@@ -1332,14 +1332,14 @@ offset narrowing (int64 → uint32).
 
 ### 17.4 Stats Computation
 
-The bulk path defers stats computation to `finish_bulk_append()`, which
+The bulk path defers stats computation to `finishBulkAppend()`, which
 performs a single pass per column after both data and validity bitmaps
 are in place. This is critical for correctness: null positions must be
 excluded from min/max/is_constant/run_count stats.
 
-For numeric columns, `compute_bulk_numeric_stats()` reads from the
-`TypedColumnBuffer` using `col.has_nulls()` and `col.is_valid(row)` to
-skip null positions. For string columns, `compute_bulk_string_stats()`
+For numeric columns, `computeBulkNumericStats()` reads from the
+`TypedColumnBuffer` using `col.hasNulls()` and `col.isValid(row)` to
+skip null positions. For string columns, `computeBulkStringStats()`
 counts null entries and tracks uniqueness.
 
 This produces identical stats to the row-at-a-time path, ensuring
@@ -1397,12 +1397,12 @@ eliminates per-field timestamp duplication.
    `writer.hpp` which combines column index, storage kind, data
    pointer, count, string offsets, and validity bitmap in a single
    struct with typed factory methods. The `TopicChunkBuilder` bulk
-   methods are called directly by `DataWriter::append_columns()`
+   methods are called directly by `DataWriter::appendColumns()`
    using `ColumnData` fields.
 
 5. **Deferred stats, not skipped stats**: The plan proposed a
    `stats_deferred_` flag with stats computed in `seal()`. The
-   implementation computes stats eagerly in `finish_bulk_append()`
+   implementation computes stats eagerly in `finishBulkAppend()`
    (called by `DataWriter` after each chunk-filling batch). This
    ensures stats are ready before seal time and matches the
    row-at-a-time pattern where stats are finalized before encoding.
