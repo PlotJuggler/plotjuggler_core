@@ -1,6 +1,7 @@
 # PlotJuggler Core
 
-[![CI](https://github.com/PlotJuggler/plotjuggler_core/actions/workflows/ci.yml/badge.svg)](https://github.com/PlotJuggler/plotjuggler_core/actions/workflows/ci.yml)
+[![Linux CI](https://github.com/PlotJuggler/plotjuggler_core/actions/workflows/linux-ci.yml/badge.svg)](https://github.com/PlotJuggler/plotjuggler_core/actions/workflows/linux-ci.yml)
+[![Windows CI](https://github.com/PlotJuggler/plotjuggler_core/actions/workflows/windows-ci.yml/badge.svg)](https://github.com/PlotJuggler/plotjuggler_core/actions/workflows/windows-ci.yml)
 
 C++20 foundation libraries for [PlotJuggler](https://github.com/facontidavide/PlotJuggler).
 
