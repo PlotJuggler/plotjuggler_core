@@ -1,6 +1,6 @@
 # PlotJuggler Data Engine Architecture Overview
 
-Last updated: 2026-02-19
+Last updated: 2026-03-03
 
 ## 1. Purpose and scope
 
@@ -103,7 +103,7 @@ Defined in `pj_base/include/pj_base/type_tree.hpp` and managed by `TypeRegistry`
 - primitives, structs, arrays, enums
 - semantic tags on type nodes
 - flatten helpers for leaf path extraction
-- additive-only schema evolution in `TypeRegistry::evolve_schema`
+- additive-only schema evolution in `TypeRegistry::evolveSchema()`
 
 ### Chunk and columns
 
@@ -159,8 +159,8 @@ Important behavior:
 - timestamps must be monotonic per topic
 - missing row fields are auto-filled as null at row finalization
 - bulk ingest can span chunk boundaries automatically
-- `ensure_column` returns error on type mismatch for an existing path; safe no-op on same-type re-call even mid-row
-- columns added via `ensure_column` on typed topics are NOT reflected in `getTypeTree()` — physical layout and schema tree can diverge intentionally
+- `ensureColumn` returns error on type mismatch for an existing path; safe no-op on same-type re-call even mid-row
+- columns added via `ensureColumn` on typed topics are NOT reflected in `getTypeTree()` — physical layout and schema tree can diverge intentionally
 
 ## 5.3 `TopicChunkBuilder` and `TopicChunk`
 
@@ -200,7 +200,7 @@ Responsibilities:
 Current query behavior:
 
 - `RangeCursor` scans chunk bounds and rows to produce matching rows
-- `latest_at` reverse-scans chunks and rows
+- `latestAt` reverse-scans chunks and rows
 
 ## 5.6 `DerivedEngine`
 
@@ -238,7 +238,7 @@ Responsibilities:
 
 1. Caller obtains `DataWriter` from `DataEngine`.
 2. Caller registers schema/topic or scalar series.
-3. Caller appends rows through `begin_row` -> `set_*` -> `finish_row`.
+3. Caller appends rows through `beginRow` -> `set*` -> `finishRow`.
 4. Builder auto-seals when `max_chunk_rows` is reached.
 5. Caller calls `flush()` or `flushAll()`.
 6. Caller commits via `DataEngine::commitChunks()`.
@@ -373,7 +373,7 @@ Notable gaps relative to the broader plan documents:
 - run-length encoding (RLE) for low-cardinality / constant-run columns is not implemented (Phase 4)
 - plugin staging queue model (`PluginStagingContext`, SPSC queue) is not implemented; commit is synchronous (Phase 5 deferred)
 - advanced time-domain alignment controls and automatic t0 alignment are not implemented (Phase 3)
-- automatic schema inference from first message for schemaless formats (JSON, CBOR, MessagePack) is not implemented; the storage primitives (`ensure_column`, schemaless `expand_array`) are ready, but plugin-level discovery and field auto-registration are not
+- automatic schema inference from first message for schemaless formats (JSON, CBOR, MessagePack) is not implemented; the storage primitives (`ensureColumn`, schemaless `expandArray`) are ready, but plugin-level discovery and field auto-registration are not
 - `SchemaVersionHistory` per topic (tracking schema version entries over time) is not implemented; schema evolution replaces the tree in-place via `TypeRegistry::evolveSchema()`
 - full plugin migration/integration is out of scope in this repository stage
 
@@ -383,7 +383,7 @@ Notable gaps relative to the broader plan documents:
 
 Recommended order:
 
-1. Read `data/data_implementation_plan.md`.
+1. Read `pj_datastore/docs/data_implementation_plan.md`.
 2. Read public headers in `pj_base/include/pj_base/` and `pj_datastore/include/pj_datastore/`.
 3. Trace `writer.cpp` -> `chunk.cpp` -> `topic_storage.cpp`.
 4. Trace `reader.cpp` -> `query.cpp`.

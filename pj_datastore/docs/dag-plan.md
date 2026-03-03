@@ -1,6 +1,7 @@
 # DerivedEngine: DAG Architecture and Implementation Plan
 
-> **Status:** Design finalized. Supersedes the Phase 2 section of `data_implementation_plan.md`.
+> **Status:** Fully implemented (SISO + MIMO). Supersedes the Phase 2 section of `data_implementation_plan.md`.
+> Phase 2 (SISO) and Phase 3 (MIMO) are both complete as of 2026-03-03.
 > See that document for the broader project context.
 
 
@@ -89,16 +90,16 @@ PlotJuggler SISO runs at render time inside `TransformedTimeseries::updateCache(
 commits via `DataEngine::commitChunks()`. Derived topics are immediately queryable
 and usable as inputs to downstream DAG nodes.
 
-### 2.4  MIMO: primary-driven, secondaries sampled via `latest_at`
+### 2.4  MIMO: primary-driven, secondaries sampled via `latestAt`
 
 MIMO nodes have one **primary** input (drives timestamps) and N **secondary** inputs
-(sampled at each primary timestamp via `latest_at` — most recent sample at or before
+(sampled at each primary timestamp via `latestAt` — most recent sample at or before
 `t`, or NaN if none exists).
 
 **Deliberate divergence from PlotJuggler:** `CustomFunction` uses `getIndexFromX`
 (nearest-neighbor: lower_bounds on `t`, then picks the closer of `[index-1]` or
 `[index]`). This is non-causal — it can return a sample slightly *after* `t`. For a
-data engine where derived series must not depend on future inputs, causal `latest_at`
+data engine where derived series must not depend on future inputs, causal `latestAt`
 is the correct choice. Results will differ only when the nearest secondary sample
 falls after the primary timestamp.
 
@@ -613,11 +614,11 @@ the existing API.
 | Tests: chaining | A → B: topological order, both nodes run correctly |
 | Tests: lazy | `active_nodes` filter skips non-requested nodes |
 
-### Phase 3 (future)
+### Phase 3 (complete as of 2026-03-03)
 
 | Item | Notes |
 |---|---|
-| `IMIMOTransform` interface | MIMORow, secondary sampling via latest_at |
+| `IMIMOTransform` interface | MIMORow, secondary sampling via `latestAt` |
 | `DerivedEngine::add_mimo_transform` | N inputs → M output topics |
 | `QuaternionToRPYTransform` | Built-in MIMO, validates interface |
 | `MovingAverageTransform` | SISO, circular buffer |
@@ -743,7 +744,7 @@ static PJ::TopicId make_linear_topic(DataEngine& engine, double slope, int n,
                                      PJ::Timestamp step_ns = 100'000'000LL /*10Hz*/) {
   // 1. register schema: one float64 column "value"
   // 2. create dataset + topic
-  // 3. writer.begin_row / set_float64 / finish_row for each row
+  // 3. writer.beginRow / setFloat64 / finishRow for each row
   // 4. engine.commitChunks(writer.flushAll())
   // returns topic_id
 }

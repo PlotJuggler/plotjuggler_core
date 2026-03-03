@@ -235,9 +235,9 @@ adaptive chunking is deferred.
 **Implementation:** `TopicChunk` (sealed, immutable) and `TopicChunkBuilder`
 (mutable, building) in `pj_datastore/chunk.hpp`. The builder uses
 `TypedColumnBuffer` instances for accumulation, with two ingestion APIs:
-- **Row-at-a-time**: `begin_row`, `set_*`, `finish_row` -- stats are
+- **Row-at-a-time**: `beginRow`, `set*`, `finishRow` -- stats are
   computed incrementally per value.
-- **Bulk columnar**: `appendTimestamps()`, `append_column_*()`,
+- **Bulk columnar**: `appendTimestamps()`, `appendColumnFloat32()` etc.,
   `appendColumnValidity()`, `finishBulkAppend()` -- data is memcpy'd,
   stats are computed in a single pass after all data and validity bitmaps
   are in place.
@@ -347,9 +347,9 @@ This reuses the additive schema evolution mechanism.
 - Variable-length arrays (`makeArray(..., std::nullopt)`) start with 0 columns; callers use `DataWriter::expandArray(topic_id, field_path, new_length)` to add element columns dynamically
 - `expandArray()` seals the current builder, appends new `ColumnDescriptor` entries (using `generate_array_element_columns`), and persists the layout in `TopicStorage`; old chunks retain their original column count (cross-chunk column count handled via per-chunk `column_descriptors`)
 - Struct element arrays supported recursively (e.g., `Pose[]` → `poses[0].x`, `poses[0].y`, ...)
-- **Schemaless expand_array**: `expandArray(topic_id, path, N, element_type=kFloat64)` now works on `schema_id=0` topics; skips schema validation and uses `element_type` for new columns
+- **Schemaless `expandArray`**: `expandArray(topic_id, path, N, element_type=kFloat64)` now works on `schema_id=0` topics; skips schema validation and uses `element_type` for new columns
 - **`DataWriter::ensureColumn(topic_id, field_path, PrimitiveType)`**: new low-level primitive that adds a single typed column by path, independent of any schema; idempotent (returns existing `FieldId` on same type, error on type mismatch); works on typed and schemaless topics; seals any pending builder before modifying the layout; returns error if a row is in progress for a new column
-- Mixed usage of `ensure_column` and `expand_array` is safe and idempotent — no duplicate columns regardless of call order; both methods use `ensureColsLoaded()` to share column-loading logic
+- Mixed usage of `ensureColumn` and `expandArray` is safe and idempotent — no duplicate columns regardless of call order; both methods use `ensureColsLoaded()` to share column-loading logic
 
 #### Column explosion guard
 
@@ -1205,7 +1205,7 @@ Explicitly deferred items that should not block v1:
 | `tests/chunk_test.cpp` | Builder API, sealing, stats, encoding selection, bulk append + deferred stats |
 | `tests/topic_storage_test.cpp` | Chunk append, eviction, metadata |
 | `tests/type_registry_test.cpp` | Register, lookup, duplicate detection, schema evolution |
-| `tests/query_test.cpp` | Range queries, latest_at, multi-chunk, boundaries |
+| `tests/query_test.cpp` | Range queries, `latestAt`, multi-chunk, boundaries |
 | `tests/engine_integration_test.cpp` | End-to-end: scalar + structured write/read, bulk ingest |
 | `tests/arrow_import_test.cpp` | nanoarrow IPC stream import, schema parsing, type widening |
 | `tests/derived_engine_test.cpp` | DerivedEngine DAG, scheduling, parity (incremental==batch), regression |
@@ -1251,7 +1251,7 @@ Explicitly deferred items that should not block v1:
 
 ### 17.1 Motivation
 
-The row-at-a-time writer API (`begin_row`/`set_*`/`finish_row`) incurs
+The row-at-a-time writer API (`beginRow`/`set*`/`finishRow`) incurs
 per-value overhead that becomes prohibitive for large batch imports.
 For a Parquet file with 17K rows and 10K columns, the row-at-a-time
 path takes ~10 seconds due to:

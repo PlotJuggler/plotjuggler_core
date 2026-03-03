@@ -131,7 +131,7 @@ class DerivedEngine {
       PJ::TopicId input_topic_id, std::string output_topic_name, PJ::DatasetId output_dataset_id,
       std::unique_ptr<ISISOTransform> op);
 
-  // ---- MIMO (Phase 3) -------------------------------------------------------
+  // ---- MIMO -----------------------------------------------------------------
   // All input topics must be single-column (scalar).
   // A row is emitted only when ALL input topics share the exact same timestamp.
   // Creates output_topic_names.size() new topics (kinds from op->outputKinds()).
