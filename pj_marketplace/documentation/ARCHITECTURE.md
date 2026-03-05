@@ -10,31 +10,37 @@
 
 ### 1.1 High-Level Architecture
 
+![Architecture](diagrams/architecture.png)
+
+<details>
+<summary>PlantUML source</summary>
+
+```plantuml
+@startuml
+skinparam backgroundColor white
+
+title PlotJuggler Marketplace Architecture
+
+rectangle "GitHub" {
+  database "Registry\nregistry.json" as reg
+  rectangle "Extension Repos" as ext
+  ext -right-> reg : Automatic PR
+}
+
+rectangle "PlotJuggler" {
+  component "Marketplace UI" as ui
+  component "Extension Manager" as em
+  database "installed.json" as local
+  ui --> em
+  em --> local
+}
+
+reg ..> ui : HTTPS fetch
+ext ..> em : Download ZIP
+
+@enduml
 ```
-┌─────────────────────────────────────────────────────────────────────────┐
-│                           PLOTJUGGLER                                    │
-│  ┌─────────────────────────────────────────────────────────────────┐   │
-│  │                    MARKETPLACE MODULE                            │   │
-│  │  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐          │   │
-│  │  │ Registry     │  │ Extension    │  │ Download     │          │   │
-│  │  │ Manager      │  │ Manager      │  │ Manager      │          │   │
-│  │  └──────┬───────┘  └──────┬───────┘  └──────┬───────┘          │   │
-│  │         │                 │                 │                   │   │
-│  │         └─────────────────┼─────────────────┘                   │   │
-│  │                           │                                      │   │
-│  │  ┌────────────────────────┴────────────────────────────────┐   │   │
-│  │  │                    UI LAYER                              │   │   │
-│  │  │  MarketplaceWindow │ ExtensionList │ ExtensionDetail    │   │   │
-│  │  └─────────────────────────────────────────────────────────┘   │   │
-│  └─────────────────────────────────────────────────────────────────┘   │
-└─────────────────────────────────────────────────────────────────────────┘
-         │                           │                           │
-         ▼                           ▼                           ▼
-┌─────────────────┐      ┌─────────────────┐      ┌─────────────────┐
-│ GitHub Registry │      │ GitHub Releases │      │ Local Storage   │
-│ (JSON file)     │      │ (ZIP artifacts) │      │ (installed.json)│
-└─────────────────┘      └─────────────────┘      └─────────────────┘
-```
+</details>
 
 ### 1.2 Design Principles
 
@@ -101,7 +107,6 @@ struct Extension {
     struct Platform {
         QString url;
         QString checksum;     // sha256:...
-        qint64 size_bytes;
     };
     QMap<QString, Platform> platforms;  // linux-x86_64, windows-x86_64, etc.
 
@@ -138,126 +143,105 @@ struct InstalledExtension {
 
 ### 3.1 Installation Flow
 
+![Installation Flow](diagrams/installation-flow.png)
+
+<details>
+<summary>PlantUML source</summary>
+
+```plantuml
+@startuml
+skinparam backgroundColor white
+title Installation Flow
+
+start
+:Click Install;
+:Detect platform;
+:Download ZIP;
+:Verify SHA256;
+if (Checksum OK?) then (yes)
+  :Extract to temp;
+  :Validate manifest;
+  if (Is update?) then (yes)
+    :Backup current;
+  endif
+  :Move to extensions/;
+  :Update installed.json;
+else (no)
+  :Error: invalid checksum;
+endif
+stop
+@enduml
 ```
-┌────────────┐     ┌────────────────┐     ┌─────────────────┐
-│ User clicks│     │ DownloadManager│     │ ExtensionManager│
-│  "Install" │     │                │     │                 │
-└─────┬──────┘     └───────┬────────┘     └────────┬────────┘
-      │                    │                       │
-      │ install(id)        │                       │
-      │───────────────────────────────────────────>│
-      │                    │                       │
-      │                    │  download(url)        │
-      │                    │<──────────────────────│
-      │                    │                       │
-      │                    │  progress(%)          │
-      │<───────────────────│                       │
-      │                    │                       │
-      │                    │  completed(data)      │
-      │                    │──────────────────────>│
-      │                    │                       │
-      │                    │         verifyChecksum(data, sha256)
-      │                    │                       │
-      │                    │         extract(data, path)
-      │                    │                       │
-      │                    │         updateLocalState()
-      │                    │                       │
-      │ installed(success) │                       │
-      │<───────────────────────────────────────────│
-```
+</details>
 
 ### 3.2 Windows Staging Flow
 
+![Windows Staging Flow](diagrams/windows-staging.png)
+
+<details>
+<summary>PlantUML source</summary>
+
+```plantuml
+@startuml
+skinparam backgroundColor white
+
+title Windows Staging Flow
+
+start
+:Download ZIP;
+:Extract to .pending/{id}/;
+note right: Staging folder
+:Notify "Restart required";
+stop
+
+start
+:PlotJuggler restarts;
+:Move .pending/{id}/ to extensions/{id}/;
+note right: Previous backup in\n.backup/{id}-{ver}/
+:Load plugin;
+if (Load successful?) then (yes)
+  :Plugin active;
+else (no)
+  :Restore from backup;
+  :Notify rollback;
+endif
+stop
+@enduml
 ```
-┌─────────────────────────────────────────────────────────────────────┐
-│                    INSTALL/UPDATE REQUEST                            │
-└─────────────────────────────────────────────────────────────────────┘
-                              │
-                              ▼
-                    ┌─────────────────┐
-                    │ Is Windows?     │
-                    └────────┬────────┘
-                             │
-              ┌──────────────┴──────────────┐
-              │ YES                         │ NO
-              ▼                             ▼
-    ┌─────────────────┐           ┌─────────────────┐
-    │ Download to     │           │ Download and    │
-    │ .pending/       │           │ install directly│
-    └────────┬────────┘           └─────────────────┘
-             │
-             ▼
-    ┌─────────────────┐
-    │ Show "Restart   │
-    │ required"       │
-    └────────┬────────┘
-             │
-             ▼
-    ┌─────────────────────────────────────────────────────────────────┐
-    │                    ON NEXT STARTUP                               │
-    └─────────────────────────────────────────────────────────────────┘
-             │
-             ▼
-    ┌─────────────────┐
-    │ Check .pending/ │
-    │ for updates     │
-    └────────┬────────┘
-             │
-             ▼
-    ┌─────────────────┐
-    │ Backup current  │
-    │ to .backup/     │
-    └────────┬────────┘
-             │
-             ▼
-    ┌─────────────────┐
-    │ Move .pending/  │
-    │ to extensions/  │
-    └────────┬────────┘
-             │
-             ▼
-    ┌─────────────────┐
-    │ Load plugin     │
-    └────────┬────────┘
-             │
-    ┌────────┴────────┐
-    │ Success?        │
-    └────────┬────────┘
-             │
-    ┌────────┴────────┐
-    │ YES        NO   │
-    ▼                 ▼
-  Done         ┌─────────────────┐
-               │ Restore from    │
-               │ .backup/        │
-               └─────────────────┘
-```
+</details>
 
 ### 3.3 Rollback Flow
 
+![Rollback Flow](diagrams/rollback-flow.png)
+
+<details>
+<summary>PlantUML source</summary>
+
+```plantuml
+@startuml
+skinparam backgroundColor white
+title Rollback Flow
+
+start
+:PlotJuggler starts;
+:Load plugins;
+while (More plugins?) is (yes)
+  :Load next plugin;
+  if (Load OK?) then (yes)
+    :Plugin active;
+  else (no)
+    if (Backup exists?) then (yes)
+      :Restore backup;
+    else (no)
+      :Disable extension;
+    endif
+  endif
+endwhile (no)
+:System ready;
+stop
+@enduml
 ```
-┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐
-│  PlotJuggler    │     │ ExtensionManager│     │  Plugin Loader  │
-│    Startup      │     │                 │     │                 │
-└────────┬────────┘     └────────┬────────┘     └────────┬────────┘
-         │                       │                       │
-         │ loadExtensions()      │                       │
-         │──────────────────────>│                       │
-         │                       │                       │
-         │                       │  loadPlugin(path)     │
-         │                       │──────────────────────>│
-         │                       │                       │
-         │                       │  CRASH/FAIL           │
-         │                       │<──────────────────────│
-         │                       │                       │
-         │                       │  hasBackup(id)?       │
-         │                       │                       │
-         │                       │  YES: restore(backup) │
-         │                       │  NO: disable(id)      │
-         │                       │                       │
-         │ rollbackNotification  │                       │
-         │<──────────────────────│                       │
-```
+</details>
 
 ---
 

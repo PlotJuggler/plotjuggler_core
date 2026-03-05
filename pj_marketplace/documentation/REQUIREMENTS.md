@@ -309,8 +309,7 @@ The minimum viable product is successful if:
       "platforms": {
         "linux-x86_64": {
           "url": "https://...",
-          "checksum": "sha256:...",
-          "size_bytes": 12345
+          "checksum": "sha256:..."
         }
       },
       "changelog": {
