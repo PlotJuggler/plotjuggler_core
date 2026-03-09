@@ -6,7 +6,7 @@
 //   [3] Emits fetchStarted, fetchFinished, and fetchError with the right values
 //   [4] Handles network errors gracefully (connection refused, invalid JSON, missing fields)
 
-#include "core/RegistryManager.h"
+#include <gtest/gtest.h>
 
 #include <QByteArray>
 #include <QCoreApplication>
@@ -17,7 +17,7 @@
 #include <QTcpSocket>
 #include <QUrl>
 
-#include <gtest/gtest.h>
+#include "core/RegistryManager.h"
 
 // ---------------------------------------------------------------------------
 // Minimal HTTP/1.1 server — serves one fixed JSON body per connection
@@ -29,10 +29,14 @@ class TestHttpServer : public QTcpServer {
     connect(this, &QTcpServer::newConnection, this, &TestHttpServer::on_new_connection);
   }
 
-  void set_response_body(const QByteArray& body) { body_ = body; }
+  void set_response_body(const QByteArray& body) {
+    body_ = body;
+  }
 
   // Returns the base URL after a successful listen()
-  QUrl url() const { return QUrl(QString("http://127.0.0.1:%1").arg(serverPort())); }
+  QUrl url() const {
+    return QUrl(QString("http://127.0.0.1:%1").arg(serverPort()));
+  }
 
  private:
   void on_new_connection() {
