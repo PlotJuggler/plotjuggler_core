@@ -16,8 +16,7 @@ add_library(pj_datastore STATIC
   src/arrow_import.cpp
   src/derived_engine.cpp
   src/builtin_transforms.cpp
-  src/plugin_host_write.cpp
-  src/plugin_host_read.cpp
+  src/plugin_data_host.cpp
 )
 target_include_directories(pj_datastore PUBLIC include)
 target_compile_features(pj_datastore PUBLIC cxx_std_20)

@@ -23,6 +23,7 @@ set(PJ_BASE_TESTS
   tests/type_tree_test.cpp
   tests/span_test.cpp
   tests/expected_test.cpp
+  tests/plugin_data_api_test.cpp
 )
 
 foreach(test_src ${PJ_BASE_TESTS})

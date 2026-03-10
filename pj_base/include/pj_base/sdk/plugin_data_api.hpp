@@ -1,0 +1,493 @@
+#pragma once
+
+#include "pj_base/plugin_data_api.h"
+
+#include <string>
+#include <string_view>
+#include <type_traits>
+#include <utility>
+#include <variant>
+#include <vector>
+
+#include "pj_base/expected.hpp"
+#include "pj_base/span.hpp"
+#include "pj_base/type_tree.hpp"
+#include "pj_base/types.hpp"
+
+namespace PJ::sdk {
+
+using DataSourceHandle = PJ_data_source_handle_t;
+using TopicHandle = PJ_topic_handle_t;
+using FieldHandle = PJ_field_handle_t;
+
+[[nodiscard]] inline PJ_primitive_type_t toAbiType(PrimitiveType type) {
+  return static_cast<PJ_primitive_type_t>(type);
+}
+
+[[nodiscard]] inline PrimitiveType fromAbiType(PJ_primitive_type_t type) {
+  return static_cast<PrimitiveType>(type);
+}
+
+inline bool operator==(DataSourceHandle a, DataSourceHandle b) {
+  return a.id == b.id;
+}
+
+inline bool operator==(TopicHandle a, TopicHandle b) {
+  return a.id == b.id;
+}
+
+inline bool operator==(FieldHandle a, FieldHandle b) {
+  return a.topic == b.topic && a.id == b.id;
+}
+
+inline bool operator!=(DataSourceHandle a, DataSourceHandle b) {
+  return !(a == b);
+}
+
+inline bool operator!=(TopicHandle a, TopicHandle b) {
+  return !(a == b);
+}
+
+inline bool operator!=(FieldHandle a, FieldHandle b) {
+  return !(a == b);
+}
+
+using ValueRef = std::variant<float,
+                              double,
+                              int8_t,
+                              int16_t,
+                              int32_t,
+                              int64_t,
+                              uint8_t,
+                              uint16_t,
+                              uint32_t,
+                              uint64_t,
+                              bool,
+                              std::string_view>;
+
+struct NamedFieldValue {
+  std::string_view name;
+  bool is_null = false;
+  ValueRef value;
+};
+
+struct BoundFieldValue {
+  FieldHandle field;
+  bool is_null = false;
+  ValueRef value;
+};
+
+class CatalogSnapshot {
+ public:
+  CatalogSnapshot() = default;
+  explicit CatalogSnapshot(PJ_catalog_snapshot_t raw) : raw_(raw) {}
+  ~CatalogSnapshot() {
+    reset();
+  }
+
+  CatalogSnapshot(const CatalogSnapshot&) = delete;
+  CatalogSnapshot& operator=(const CatalogSnapshot&) = delete;
+
+  CatalogSnapshot(CatalogSnapshot&& other) noexcept : raw_(other.release()) {}
+
+  CatalogSnapshot& operator=(CatalogSnapshot&& other) noexcept {
+    if (this != &other) {
+      reset();
+      raw_ = other.release();
+    }
+    return *this;
+  }
+
+  [[nodiscard]] Span<const PJ_data_source_info_t> dataSources() const {
+    return Span<const PJ_data_source_info_t>(raw_.data_sources, raw_.data_source_count);
+  }
+
+  [[nodiscard]] Span<const PJ_topic_info_t> topics() const {
+    return Span<const PJ_topic_info_t>(raw_.topics, raw_.topic_count);
+  }
+
+  [[nodiscard]] Span<const PJ_field_info_t> fields() const {
+    return Span<const PJ_field_info_t>(raw_.fields, raw_.field_count);
+  }
+
+ private:
+  PJ_catalog_snapshot_t raw_{};
+
+  [[nodiscard]] PJ_catalog_snapshot_t release() noexcept {
+    auto raw = raw_;
+    raw_ = {};
+    return raw;
+  }
+
+  void reset() {
+    if (raw_.release != nullptr) {
+      raw_.release(raw_.release_ctx);
+      raw_ = {};
+    }
+  }
+};
+
+class MaterializedSeries {
+ public:
+  MaterializedSeries() = default;
+  explicit MaterializedSeries(PJ_materialized_series_t raw) : raw_(raw) {}
+  ~MaterializedSeries() {
+    reset();
+  }
+
+  MaterializedSeries(const MaterializedSeries&) = delete;
+  MaterializedSeries& operator=(const MaterializedSeries&) = delete;
+
+  MaterializedSeries(MaterializedSeries&& other) noexcept : raw_(other.release()) {}
+
+  MaterializedSeries& operator=(MaterializedSeries&& other) noexcept {
+    if (this != &other) {
+      reset();
+      raw_ = other.release();
+    }
+    return *this;
+  }
+
+  [[nodiscard]] DataSourceHandle source() const {
+    return raw_.source;
+  }
+
+  [[nodiscard]] TopicHandle topic() const {
+    return raw_.topic;
+  }
+
+  [[nodiscard]] FieldHandle field() const {
+    return raw_.field;
+  }
+
+  [[nodiscard]] PrimitiveType type() const {
+    return fromAbiType(raw_.type);
+  }
+
+  [[nodiscard]] Span<const Timestamp> timestamps() const {
+    return Span<const Timestamp>(raw_.timestamps, raw_.row_count);
+  }
+
+  [[nodiscard]] Span<const uint8_t> validityBits() const {
+    return Span<const uint8_t>(raw_.validity_bits, raw_.validity_size);
+  }
+
+  [[nodiscard]] const PJ_materialized_series_t& raw() const {
+    return raw_;
+  }
+
+ private:
+  PJ_materialized_series_t raw_{};
+
+  [[nodiscard]] PJ_materialized_series_t release() noexcept {
+    auto raw = raw_;
+    raw_ = {};
+    return raw;
+  }
+
+  void reset() {
+    if (raw_.release != nullptr) {
+      raw_.release(raw_.release_ctx);
+      raw_ = {};
+    }
+  }
+};
+
+[[nodiscard]] inline std::string_view toStringView(PJ_string_view_t view) {
+  return std::string_view(view.data == nullptr ? "" : view.data, view.size);
+}
+
+[[nodiscard]] inline PJ_string_view_t toAbiString(std::string_view view) {
+  return PJ_string_view_t{view.data(), view.size()};
+}
+
+[[nodiscard]] inline PJ_bytes_view_t toAbiBytes(Span<const uint8_t> bytes) {
+  return PJ_bytes_view_t{bytes.data(), bytes.size()};
+}
+
+[[nodiscard]] inline PrimitiveType typeOf(const ValueRef& value) {
+  switch (value.index()) {
+    case 0: return PrimitiveType::kFloat32;
+    case 1: return PrimitiveType::kFloat64;
+    case 2: return PrimitiveType::kInt8;
+    case 3: return PrimitiveType::kInt16;
+    case 4: return PrimitiveType::kInt32;
+    case 5: return PrimitiveType::kInt64;
+    case 6: return PrimitiveType::kUint8;
+    case 7: return PrimitiveType::kUint16;
+    case 8: return PrimitiveType::kUint32;
+    case 9: return PrimitiveType::kUint64;
+    case 10: return PrimitiveType::kBool;
+    case 11: return PrimitiveType::kString;
+  }
+  return PrimitiveType::kFloat64;
+}
+
+[[nodiscard]] inline PJ_scalar_value_t toAbiScalar(const ValueRef& value) {
+  PJ_scalar_value_t out{};
+  out.type = toAbiType(typeOf(value));
+  std::visit(
+      [&](auto&& v) {
+        using T = std::decay_t<decltype(v)>;
+        if constexpr (std::is_same_v<T, float>) {
+          out.data.as_float32 = v;
+        } else if constexpr (std::is_same_v<T, double>) {
+          out.data.as_float64 = v;
+        } else if constexpr (std::is_same_v<T, int8_t>) {
+          out.data.as_int8 = v;
+        } else if constexpr (std::is_same_v<T, int16_t>) {
+          out.data.as_int16 = v;
+        } else if constexpr (std::is_same_v<T, int32_t>) {
+          out.data.as_int32 = v;
+        } else if constexpr (std::is_same_v<T, int64_t>) {
+          out.data.as_int64 = v;
+        } else if constexpr (std::is_same_v<T, uint8_t>) {
+          out.data.as_uint8 = v;
+        } else if constexpr (std::is_same_v<T, uint16_t>) {
+          out.data.as_uint16 = v;
+        } else if constexpr (std::is_same_v<T, uint32_t>) {
+          out.data.as_uint32 = v;
+        } else if constexpr (std::is_same_v<T, uint64_t>) {
+          out.data.as_uint64 = v;
+        } else if constexpr (std::is_same_v<T, bool>) {
+          out.data.as_bool = v ? 1 : 0;
+        } else if constexpr (std::is_same_v<T, std::string_view>) {
+          out.data.as_string = toAbiString(v);
+        }
+      },
+      value);
+  return out;
+}
+
+class SourceWriteHostView {
+ public:
+  explicit SourceWriteHostView(PJ_source_write_host_t host) : host_(host) {}
+
+  [[nodiscard]] Expected<TopicHandle> ensureTopic(std::string_view topic_name) const {
+    TopicHandle handle{};
+    if (!host_.vtable->ensure_topic(host_.ctx, toAbiString(topic_name), &handle)) {
+      return unexpected(std::string(lastError()));
+    }
+    return handle;
+  }
+
+  [[nodiscard]] Expected<FieldHandle> ensureField(
+      TopicHandle topic, std::string_view field_name, PrimitiveType type) const {
+    FieldHandle handle{};
+    if (!host_.vtable->ensure_field(host_.ctx, topic, toAbiString(field_name), toAbiType(type), &handle)) {
+      return unexpected(std::string(lastError()));
+    }
+    return handle;
+  }
+
+  [[nodiscard]] Status appendRecord(
+      TopicHandle topic, Timestamp timestamp, Span<const NamedFieldValue> fields) const {
+    std::vector<PJ_named_field_value_t> raw_fields;
+    raw_fields.reserve(fields.size());
+    for (const auto& field : fields) {
+      raw_fields.push_back(PJ_named_field_value_t{
+          .name = toAbiString(field.name),
+          .is_null = field.is_null,
+          .value = toAbiScalar(field.value),
+      });
+    }
+    if (!host_.vtable->append_record(host_.ctx, topic, timestamp, raw_fields.data(), raw_fields.size())) {
+      return unexpected(std::string(lastError()));
+    }
+    return okStatus();
+  }
+
+  [[nodiscard]] Status appendRecordFast(
+      TopicHandle topic, Timestamp timestamp, Span<const BoundFieldValue> fields) const {
+    std::vector<PJ_bound_field_value_t> raw_fields;
+    raw_fields.reserve(fields.size());
+    for (const auto& field : fields) {
+      raw_fields.push_back(PJ_bound_field_value_t{
+          .field = field.field,
+          .is_null = field.is_null,
+          .value = toAbiScalar(field.value),
+      });
+    }
+    if (!host_.vtable->append_record_fast(host_.ctx, topic, timestamp, raw_fields.data(), raw_fields.size())) {
+      return unexpected(std::string(lastError()));
+    }
+    return okStatus();
+  }
+
+  [[nodiscard]] Status appendArrowIpc(
+      TopicHandle topic, Span<const uint8_t> ipc_stream, std::string_view timestamp_column = "_timestamp") const {
+    if (!host_.vtable->append_arrow_ipc(
+            host_.ctx, topic, toAbiBytes(ipc_stream), toAbiString(timestamp_column))) {
+      return unexpected(std::string(lastError()));
+    }
+    return okStatus();
+  }
+
+  [[nodiscard]] std::string_view lastError() const {
+    const char* err = host_.vtable->get_last_error(host_.ctx);
+    return err == nullptr ? std::string_view{} : std::string_view(err);
+  }
+
+ private:
+  PJ_source_write_host_t host_;
+};
+
+class ParserWriteHostView {
+ public:
+  explicit ParserWriteHostView(PJ_parser_write_host_t host) : host_(host) {}
+
+  [[nodiscard]] Expected<FieldHandle> ensureField(std::string_view field_name, PrimitiveType type) const {
+    FieldHandle handle{};
+    if (!host_.vtable->ensure_field(host_.ctx, toAbiString(field_name), toAbiType(type), &handle)) {
+      return unexpected(std::string(lastError()));
+    }
+    return handle;
+  }
+
+  [[nodiscard]] Status appendRecord(Timestamp timestamp, Span<const NamedFieldValue> fields) const {
+    std::vector<PJ_named_field_value_t> raw_fields;
+    raw_fields.reserve(fields.size());
+    for (const auto& field : fields) {
+      raw_fields.push_back(PJ_named_field_value_t{
+          .name = toAbiString(field.name),
+          .is_null = field.is_null,
+          .value = toAbiScalar(field.value),
+      });
+    }
+    if (!host_.vtable->append_record(host_.ctx, timestamp, raw_fields.data(), raw_fields.size())) {
+      return unexpected(std::string(lastError()));
+    }
+    return okStatus();
+  }
+
+  [[nodiscard]] Status appendRecordFast(Timestamp timestamp, Span<const BoundFieldValue> fields) const {
+    std::vector<PJ_bound_field_value_t> raw_fields;
+    raw_fields.reserve(fields.size());
+    for (const auto& field : fields) {
+      raw_fields.push_back(PJ_bound_field_value_t{
+          .field = field.field,
+          .is_null = field.is_null,
+          .value = toAbiScalar(field.value),
+      });
+    }
+    if (!host_.vtable->append_record_fast(host_.ctx, timestamp, raw_fields.data(), raw_fields.size())) {
+      return unexpected(std::string(lastError()));
+    }
+    return okStatus();
+  }
+
+  [[nodiscard]] Status appendArrowIpc(
+      Span<const uint8_t> ipc_stream, std::string_view timestamp_column = "_timestamp") const {
+    if (!host_.vtable->append_arrow_ipc(host_.ctx, toAbiBytes(ipc_stream), toAbiString(timestamp_column))) {
+      return unexpected(std::string(lastError()));
+    }
+    return okStatus();
+  }
+
+  [[nodiscard]] std::string_view lastError() const {
+    const char* err = host_.vtable->get_last_error(host_.ctx);
+    return err == nullptr ? std::string_view{} : std::string_view(err);
+  }
+
+ private:
+  PJ_parser_write_host_t host_;
+};
+
+class ToolboxHostView {
+ public:
+  explicit ToolboxHostView(PJ_toolbox_host_t host) : host_(host) {}
+
+  [[nodiscard]] Expected<DataSourceHandle> createDataSource(std::string_view name) const {
+    DataSourceHandle handle{};
+    if (!host_.vtable->create_data_source(host_.ctx, toAbiString(name), &handle)) {
+      return unexpected(std::string(lastError()));
+    }
+    return handle;
+  }
+
+  [[nodiscard]] Expected<TopicHandle> ensureTopic(DataSourceHandle source, std::string_view topic_name) const {
+    TopicHandle handle{};
+    if (!host_.vtable->ensure_topic(host_.ctx, source, toAbiString(topic_name), &handle)) {
+      return unexpected(std::string(lastError()));
+    }
+    return handle;
+  }
+
+  [[nodiscard]] Expected<FieldHandle> ensureField(
+      TopicHandle topic, std::string_view field_name, PrimitiveType type) const {
+    FieldHandle handle{};
+    if (!host_.vtable->ensure_field(host_.ctx, topic, toAbiString(field_name), toAbiType(type), &handle)) {
+      return unexpected(std::string(lastError()));
+    }
+    return handle;
+  }
+
+  [[nodiscard]] Status appendRecord(
+      TopicHandle topic, Timestamp timestamp, Span<const NamedFieldValue> fields) const {
+    std::vector<PJ_named_field_value_t> raw_fields;
+    raw_fields.reserve(fields.size());
+    for (const auto& field : fields) {
+      raw_fields.push_back(PJ_named_field_value_t{
+          .name = toAbiString(field.name),
+          .is_null = field.is_null,
+          .value = toAbiScalar(field.value),
+      });
+    }
+    if (!host_.vtable->append_record(host_.ctx, topic, timestamp, raw_fields.data(), raw_fields.size())) {
+      return unexpected(std::string(lastError()));
+    }
+    return okStatus();
+  }
+
+  [[nodiscard]] Status appendRecordFast(
+      TopicHandle topic, Timestamp timestamp, Span<const BoundFieldValue> fields) const {
+    std::vector<PJ_bound_field_value_t> raw_fields;
+    raw_fields.reserve(fields.size());
+    for (const auto& field : fields) {
+      raw_fields.push_back(PJ_bound_field_value_t{
+          .field = field.field,
+          .is_null = field.is_null,
+          .value = toAbiScalar(field.value),
+      });
+    }
+    if (!host_.vtable->append_record_fast(host_.ctx, topic, timestamp, raw_fields.data(), raw_fields.size())) {
+      return unexpected(std::string(lastError()));
+    }
+    return okStatus();
+  }
+
+  [[nodiscard]] Status appendArrowIpc(
+      TopicHandle topic, Span<const uint8_t> ipc_stream, std::string_view timestamp_column = "_timestamp") const {
+    if (!host_.vtable->append_arrow_ipc(
+            host_.ctx, topic, toAbiBytes(ipc_stream), toAbiString(timestamp_column))) {
+      return unexpected(std::string(lastError()));
+    }
+    return okStatus();
+  }
+
+  [[nodiscard]] Expected<CatalogSnapshot> catalogSnapshot() const {
+    PJ_catalog_snapshot_t raw{};
+    if (!host_.vtable->acquire_catalog_snapshot(host_.ctx, &raw)) {
+      return unexpected(std::string(lastError()));
+    }
+    return CatalogSnapshot(raw);
+  }
+
+  [[nodiscard]] Expected<MaterializedSeries> readSeries(FieldHandle field) const {
+    PJ_materialized_series_t raw{};
+    if (!host_.vtable->read_series(host_.ctx, field, &raw)) {
+      return unexpected(std::string(lastError()));
+    }
+    return MaterializedSeries(raw);
+  }
+
+  [[nodiscard]] std::string_view lastError() const {
+    const char* err = host_.vtable->get_last_error(host_.ctx);
+    return err == nullptr ? std::string_view{} : std::string_view(err);
+  }
+
+ private:
+  PJ_toolbox_host_t host_;
+};
+
+}  // namespace PJ::sdk
