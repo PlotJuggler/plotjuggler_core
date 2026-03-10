@@ -93,6 +93,10 @@ This section defines plugin-facing capabilities only. Detailed data semantics be
 
 - UI-capable plugin families use the same host-rendered dialog protocol.
 - UI state must integrate with the common save/load interface.
+- In delegated-ingestion workflows, the host may embed parser selection and parser
+  configuration controls inside a `DataSource` dialog.
+- Those parser controls are host-owned, not parser-owned, even when they appear in
+  the same integrated dialog as source-specific controls.
 
 ## 4. Family-Specific Requirements
 
@@ -121,6 +125,11 @@ This section defines plugin-facing capabilities only. Detailed data semantics be
 - A `MessageParser` is headless in v1.
 - Its purpose is to convert raw payloads plus metadata into writes through the common write contract.
 - The host must be able to instantiate and invoke a `MessageParser` independently of any particular `DataSource` implementation.
+- Parser configuration remains first-class and host-managed even though parser
+  plugins are headless in v1.
+- Parser configuration remains logically independent from `DataSource`
+  configuration even when delegated-source dialogs present both in one integrated
+  UI.
 - Parser instances may maintain per-instance runtime state across messages.
 - A `MessageParser` may extend the set of fields within its bound topic as needed, subject to the host data model defined elsewhere.
 - `MessageParser` configuration is independent of `DataSource` configuration.
