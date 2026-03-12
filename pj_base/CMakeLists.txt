@@ -24,6 +24,8 @@ set(PJ_BASE_TESTS
   tests/span_test.cpp
   tests/expected_test.cpp
   tests/plugin_data_api_test.cpp
+  tests/data_source_protocol_test.cpp
+  tests/data_source_plugin_base_test.cpp
 )
 
 foreach(test_src ${PJ_BASE_TESTS})
