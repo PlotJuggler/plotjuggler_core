@@ -140,7 +140,7 @@ class MockStreamer : public PJ::DialogPluginTyped {
     return false;
   }
 
-  bool onValueChanged(std::string_view widget_name, int value) {
+  bool onValueChanged(std::string_view widget_name, int value) override {
     if (widget_name == "port_input") {
       port_ = value;
       return true;

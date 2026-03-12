@@ -756,11 +756,12 @@ struct ToolboxCore {
                 is_null ? 0 : decodeNumericExact<uint64_t>(chunk, static_cast<std::size_t>(col_index), row));
             break;
           case PrimitiveType::kBool:
-            state->bool_values.push_back(is_null ? 0 : static_cast<uint8_t>(chunk.readBool(col_index, row)));
+            state->bool_values.push_back(
+                is_null ? 0 : static_cast<uint8_t>(chunk.readBool(static_cast<std::size_t>(col_index), row)));
             break;
           case PrimitiveType::kString: {
             if (!is_null) {
-              const auto text = chunk.readString(col_index, row);
+              const auto text = chunk.readString(static_cast<std::size_t>(col_index), row);
               state->string_bytes.insert(state->string_bytes.end(), text.begin(), text.end());
             }
             state->string_offsets.push_back(static_cast<uint32_t>(state->string_bytes.size()));

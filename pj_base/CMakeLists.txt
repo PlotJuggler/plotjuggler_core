@@ -5,13 +5,32 @@
 add_library(pj_base STATIC
   src/type_tree.cpp
 )
-target_include_directories(pj_base PUBLIC include)
+target_include_directories(pj_base PUBLIC
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  $<INSTALL_INTERFACE:include>
+)
 target_compile_features(pj_base PUBLIC cxx_std_20)
 target_compile_options(pj_base PRIVATE
   ${PJ_WARNING_FLAGS} ${PJ_SANITIZER_FLAGS}
 )
+set_target_properties(pj_base PROPERTIES
+  POSITION_INDEPENDENT_CODE ON
+  EXPORT_NAME DataSource
+)
 if(PJ_ASSERT_THROWS)
   target_compile_definitions(pj_base PUBLIC PJ_ASSERT_THROWS)
+endif()
+
+# ---------------------------------------------------------------------------
+# Install (guarded by PJ_INSTALL_SDK in root CMakeLists.txt)
+# ---------------------------------------------------------------------------
+
+if(PJ_INSTALL_SDK)
+  install(TARGETS pj_base EXPORT PlotJugglerSDKTargets
+    ARCHIVE DESTINATION lib
+    LIBRARY DESTINATION lib
+  )
+  install(DIRECTORY include/ DESTINATION include)
 endif()
 
 # ---------------------------------------------------------------------------

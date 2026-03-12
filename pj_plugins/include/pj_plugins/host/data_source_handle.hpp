@@ -68,7 +68,7 @@ class DataSourceHandle {
 
   [[nodiscard]] bool valid() const { return vt_ != nullptr && ctx_ != nullptr; }
 
-  [[nodiscard]] std::string manifest() const { return safeString(vt_->get_manifest(ctx_)); }
+  [[nodiscard]] std::string manifest() const { return safeString(vt_->manifest_json); }
 
   [[nodiscard]] uint64_t capabilities() const { return vt_->capabilities(ctx_); }
 

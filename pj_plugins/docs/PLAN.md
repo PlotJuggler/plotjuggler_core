@@ -119,7 +119,7 @@ Define one raw ABI plus one C++ SDK wrapper for the `DataSource` family.
 The exported DataSource instance surface must include:
 
 - `create` / `destroy`
-- `get_manifest`
+- `manifest_json` (static compile-time constant in vtable, not a function)
 - `bind_write_host`
 - `bind_runtime_host`
 - `load_config`

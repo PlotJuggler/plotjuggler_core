@@ -6,14 +6,6 @@ namespace {
 
 class MockDataSource : public PJ::DataSourcePluginBase {
  public:
-  std::string manifest() const override {
-    return R"({
-      "name": "Mock DataSource",
-      "version": "1.0.0",
-      "description": "Test data source for protocol and host integration"
-    })";
-  }
-
   uint64_t capabilities() const override {
     return PJ::kCapabilityContinuousStream | PJ::kCapabilityDirectIngest |
            PJ::kCapabilityDelegatedIngest | PJ::kCapabilitySupportsPause;
@@ -21,21 +13,19 @@ class MockDataSource : public PJ::DataSourcePluginBase {
 
   std::string saveConfig() const override { return config_; }
 
-  bool loadConfig(std::string_view config_json) override {
+  PJ::Status loadConfig(std::string_view config_json) override {
     config_ = std::string(config_json);
-    return true;
+    return PJ::okStatus();
   }
 
-  bool start() override {
+  PJ::Status start() override {
     if (!writeHostBound()) {
-      setLastError("write host not bound");
       state_ = PJ::DataSourceState::kFailed;
-      return false;
+      return PJ::unexpected(std::string("write host not bound"));
     }
     if (!runtimeHostBound()) {
-      setLastError("runtime host not bound");
       state_ = PJ::DataSourceState::kFailed;
-      return false;
+      return PJ::unexpected(std::string("runtime host not bound"));
     }
 
     state_ = PJ::DataSourceState::kStarting;
@@ -47,10 +37,9 @@ class MockDataSource : public PJ::DataSourcePluginBase {
         for (uint64_t step = 1; step <= 3; ++step) {
           if (!runtimeHost().progressUpdate(step)) {
             runtimeHost().progressFinish();
-            setLastError("progress canceled");
             state_ = PJ::DataSourceState::kFailed;
             runtimeHost().notifyState(state_);
-            return false;
+            return PJ::unexpected(std::string("progress canceled"));
           }
         }
         runtimeHost().progressFinish();
@@ -59,10 +48,9 @@ class MockDataSource : public PJ::DataSourcePluginBase {
 
     auto topic = writeHost().ensureTopic("mock/topic");
     if (!topic) {
-      setLastError(topic.error());
       state_ = PJ::DataSourceState::kFailed;
       runtimeHost().notifyState(state_);
-      return false;
+      return PJ::unexpected(topic.error());
     }
 
     const PJ::sdk::NamedFieldValue fields[] = {
@@ -70,10 +58,9 @@ class MockDataSource : public PJ::DataSourcePluginBase {
     auto write_status = writeHost().appendRecord(
         *topic, PJ::Timestamp{123}, PJ::Span<const PJ::sdk::NamedFieldValue>(fields, 1));
     if (!write_status) {
-      setLastError(write_status.error());
       state_ = PJ::DataSourceState::kFailed;
       runtimeHost().notifyState(state_);
-      return false;
+      return PJ::unexpected(write_status.error());
     }
 
     if (config_.find("delegated") != std::string::npos) {
@@ -86,26 +73,24 @@ class MockDataSource : public PJ::DataSourcePluginBase {
           .parser_config_json = R"({"mode":"test"})",
       });
       if (!binding) {
-        setLastError(binding.error());
         state_ = PJ::DataSourceState::kFailed;
         runtimeHost().notifyState(state_);
-        return false;
+        return PJ::unexpected(binding.error());
       }
 
       const uint8_t payload[] = {'{', '}'};
       auto push_status = runtimeHost().pushRawMessage(
           *binding, PJ::Timestamp{456}, PJ::Span<const uint8_t>(payload, sizeof(payload)));
       if (!push_status) {
-        setLastError(push_status.error());
         state_ = PJ::DataSourceState::kFailed;
         runtimeHost().notifyState(state_);
-        return false;
+        return PJ::unexpected(push_status.error());
       }
     }
 
     state_ = PJ::DataSourceState::kRunning;
     runtimeHost().notifyState(state_);
-    return true;
+    return PJ::okStatus();
   }
 
   void stop() override {
@@ -113,29 +98,27 @@ class MockDataSource : public PJ::DataSourcePluginBase {
     runtimeHost().notifyState(state_);
   }
 
-  bool pause() override {
+  PJ::Status pause() override {
     if (state_ != PJ::DataSourceState::kRunning) {
-      setLastError("pause requires running state");
-      return false;
+      return PJ::unexpected(std::string("pause requires running state"));
     }
     state_ = PJ::DataSourceState::kPaused;
     runtimeHost().notifyState(state_);
-    return true;
+    return PJ::okStatus();
   }
 
-  bool resume() override {
+  PJ::Status resume() override {
     if (state_ != PJ::DataSourceState::kPaused) {
-      setLastError("resume requires paused state");
-      return false;
+      return PJ::unexpected(std::string("resume requires paused state"));
     }
     state_ = PJ::DataSourceState::kRunning;
     runtimeHost().notifyState(state_);
-    return true;
+    return PJ::okStatus();
   }
 
-  bool poll() override {
+  PJ::Status poll() override {
     ++poll_count_;
-    return true;
+    return PJ::okStatus();
   }
 
   PJ::DataSourceState currentState() const override { return state_; }
@@ -148,4 +131,6 @@ class MockDataSource : public PJ::DataSourcePluginBase {
 
 }  // namespace
 
-PJ_DATA_SOURCE_PLUGIN(MockDataSource)
+PJ_DATA_SOURCE_PLUGIN(MockDataSource,
+                      R"({"name":"Mock DataSource","version":"1.0.0",)"
+                      R"("description":"Test data source for protocol and host integration"})")

@@ -9,9 +9,10 @@ internals) and communicate through a stable C ABI.
 
 ## Quick Start
 
-1. Subclass `PJ::DataSourcePluginBase`
-2. Override five methods: `manifest`, `capabilities`, `start`, `stop`, `currentState`
-3. Export with `PJ_DATA_SOURCE_PLUGIN(YourClass)`
+1. Subclass `PJ::FileSourceBase` (file importer) or `PJ::StreamSourceBase`
+   (live stream), or `PJ::DataSourcePluginBase` for full control.
+2. Implement the required virtuals (see Common Patterns below).
+3. Export with `PJ_DATA_SOURCE_PLUGIN(YourClass, R"({"name":"...","version":"..."})")`
 4. Build as a shared library linking `pj_base`
 
 A complete example lives at `pj_plugins/examples/mock_data_source.cpp`.
@@ -21,43 +22,30 @@ A complete example lives at `pj_plugins/examples/mock_data_source.cpp`.
 ### 1. Declare your class
 
 ```cpp
-#include <pj_base/sdk/data_source_plugin_base.hpp>
+#include <pj_base/sdk/data_source_patterns.hpp>
 
-class MySource : public PJ::DataSourcePluginBase {
+class MyCsvLoader : public PJ::FileSourceBase {
  public:
-  std::string manifest() const override {
-    return R"({"name": "My Source", "version": "1.0.0"})";
+  uint64_t extraCapabilities() const override {
+    return PJ::kCapabilityDirectIngest;
   }
 
-  uint64_t capabilities() const override {
-    return PJ::kCapabilityContinuousStream | PJ::kCapabilityDirectIngest;
-  }
-
-  bool start() override;
-  void stop() override;
-  PJ::DataSourceState currentState() const override { return state_; }
-
- private:
-  PJ::DataSourceState state_ = PJ::DataSourceState::kIdle;
+  PJ::Status importData() override;
 };
 ```
 
-### 2. Implement start() and stop()
+### 2. Implement the work method
 
-When `start()` is called, both host bindings are already available via the
-protected accessors `writeHost()` and `runtimeHost()`.
+When `importData()` (or `onStart()`/`onPoll()` for streams) is called, both
+host bindings are already available via `writeHost()` and `runtimeHost()`.
+Return `okStatus()` on success, or `unexpected("reason")` on failure.
 
 ```cpp
-bool MySource::start() {
-  state_ = PJ::DataSourceState::kStarting;
-  runtimeHost().notifyState(state_);
-
+PJ::Status MyCsvLoader::importData() {
   // Create a topic and write data
   auto topic = writeHost().ensureTopic("my/topic");
   if (!topic) {
-    setLastError(topic.error());
-    state_ = PJ::DataSourceState::kFailed;
-    return false;
+    return PJ::unexpected(topic.error());
   }
 
   const PJ::sdk::NamedFieldValue fields[] = {
@@ -66,31 +54,26 @@ bool MySource::start() {
   auto status = writeHost().appendRecord(
       *topic, PJ::Timestamp{1000}, PJ::Span(fields));
   if (!status) {
-    setLastError(status.error());
-    state_ = PJ::DataSourceState::kFailed;
-    return false;
+    return PJ::unexpected(status.error());
   }
 
-  state_ = PJ::DataSourceState::kRunning;
-  runtimeHost().notifyState(state_);
-  return true;
-}
-
-void MySource::stop() {
-  state_ = PJ::DataSourceState::kStopped;
-  runtimeHost().notifyState(state_);
+  return PJ::okStatus();
 }
 ```
 
 ### 3. Export the plugin
 
-At file scope, after the class definition:
+At file scope, after the class definition. The second argument is a JSON
+manifest string literal (see Manifest Schema below):
 
 ```cpp
-PJ_DATA_SOURCE_PLUGIN(MySource)
+PJ_DATA_SOURCE_PLUGIN(MyCsvLoader,
+    R"({"name":"CSV Loader","version":"1.0.0","file_extensions":[".csv"]})")
 ```
 
 This generates the `extern "C"` entry point that the host resolves via dlsym.
+The manifest is embedded as a compile-time constant in the vtable, so the host
+can read it without creating an instance.
 
 ### 4. Build
 
@@ -100,6 +83,174 @@ target_link_libraries(my_source_plugin PRIVATE pj_base)
 ```
 
 No other dependencies are needed.
+
+## Common Patterns
+
+DataSource plugins fall into two families. A **finite importer** reads a file
+or snapshot, writes all records, then self-terminates. A **continuous streamer**
+connects to a live source, does incremental work in `onPoll()`, and runs until
+the host calls `stop()`.
+
+The SDK provides two derived base classes that manage the lifecycle state
+machine for you: `FileSourceBase` and `StreamSourceBase`. Both live in
+`<pj_base/sdk/data_source_patterns.hpp>`. For full manual control, subclass
+`DataSourcePluginBase` directly (see `pj_plugins/examples/mock_data_source.cpp`).
+
+### Finite importer — CSV file loader
+
+Subclass `FileSourceBase` and implement `importData()`. The base class handles
+state transitions, host notifications, and `requestStop()` automatically.
+
+```cpp
+#include <pj_base/sdk/data_source_patterns.hpp>
+
+// File I/O and JSON parsing — use whatever libraries you prefer.
+// #include <fstream>
+// #include <my_json_lib.h>
+
+class CsvFileLoader : public PJ::FileSourceBase {
+ public:
+  uint64_t extraCapabilities() const override {
+    return PJ::kCapabilityDirectIngest;
+  }
+
+  PJ::Status loadConfig(std::string_view json) override {
+    config_ = std::string(json);
+    // Extract "filepath" from the JSON config envelope.
+    // Use whatever JSON library your plugin links.
+    // path_ = parse(json)["filepath"];
+    return PJ::okStatus();
+  }
+
+  std::string saveConfig() const override { return config_; }
+
+  PJ::Status importData() override {
+    // Open the file at path_.
+    // std::ifstream file(path_);
+    // if (!file) return PJ::unexpected("cannot open " + path_);
+
+    auto topic = writeHost().ensureTopic("csv");
+    if (!topic) return PJ::unexpected(topic.error());
+
+    // Count rows for progress, then iterate.
+    uint64_t total_rows = 100;  // placeholder
+    runtimeHost().progressStart("Importing CSV", total_rows, true);
+
+    for (uint64_t row = 0; row < total_rows; ++row) {
+      if (!runtimeHost().progressUpdate(row)) {
+        runtimeHost().progressFinish();
+        return PJ::okStatus();  // clean cancellation
+      }
+
+      // Parse each row and write it.
+      double value = 0;  // = parse_row(...)
+      const PJ::sdk::NamedFieldValue fields[] = {
+          {.name = "value", .is_null = false,
+           .value = PJ::sdk::ValueRef{value}}};
+      auto status = writeHost().appendRecord(
+          *topic, PJ::Timestamp{static_cast<int64_t>(row)},
+          PJ::Span<const PJ::sdk::NamedFieldValue>(fields, 1));
+      if (!status) {
+        runtimeHost().progressFinish();
+        return PJ::unexpected(status.error());
+      }
+    }
+
+    runtimeHost().progressFinish();
+    return PJ::okStatus();
+  }
+
+ private:
+  std::string config_;
+  std::string path_;
+};
+
+PJ_DATA_SOURCE_PLUGIN(CsvFileLoader,
+    R"({"name":"CSV File Loader","version":"1.0.0",)"
+    R"("description":"Import numeric CSV files",)"
+    R"("file_extensions":[".csv",".tsv"]})")
+```
+
+Key traits of `FileSourceBase`:
+- `capabilities()` automatically includes `kCapabilityFiniteImport`; you
+  provide additional flags via `extraCapabilities()`.
+- All work goes in `importData()` — the base class calls it from `start()`,
+  manages state transitions, and calls `requestStop()` on success.
+- Return `okStatus()` on success, `unexpected("reason")` on failure.
+- `stop()` and `currentState()` are managed by the base class.
+- **Filepath contract**: the host passes `{"filepath":"/path/to/file", ...}`
+  via `loadConfig()`. Extract and preserve the `"filepath"` key.
+
+### Continuous streamer — UDP receiver
+
+Subclass `StreamSourceBase` and implement `onStart()`, `onPoll()`, and
+`onStop()`. The base class manages the state machine.
+
+```cpp
+#include <pj_base/sdk/data_source_patterns.hpp>
+
+// Socket headers — platform-specific.
+// #include <arpa/inet.h>
+// #include <sys/socket.h>
+
+class UdpReceiver : public PJ::StreamSourceBase {
+ public:
+  uint64_t extraCapabilities() const override {
+    return PJ::kCapabilityDirectIngest;
+  }
+
+  PJ::Status onStart() override {
+    // Open a non-blocking UDP socket.
+    // fd_ = socket(AF_INET, SOCK_DGRAM | SOCK_NONBLOCK, 0);
+    // if (fd_ < 0) return PJ::unexpected("socket() failed");
+    // bind(fd_, ...);
+
+    topic_ = writeHost().ensureTopic("udp/data");
+    if (!topic_) return PJ::unexpected(topic_.error());
+
+    runtimeHost().reportMessage(
+        PJ::DataSourceMessageLevel::kInfo, "listening on :9870");
+    return PJ::okStatus();
+  }
+
+  PJ::Status onPoll() override {
+    // Drain all available datagrams (must not block).
+    // while (auto n = recv(fd_, buf, sizeof(buf), MSG_DONTWAIT) > 0) {
+    //   double value = parse(buf, n);
+    //   ... appendRecord ...
+    // }
+    return PJ::okStatus();
+  }
+
+  void onStop() override {
+    // Close the socket. Must be idempotent.
+    // if (fd_ >= 0) { close(fd_); fd_ = -1; }
+  }
+
+ private:
+  int fd_ = -1;
+  int64_t seq_ = 0;
+  PJ::Expected<PJ::sdk::TopicHandle> topic_ =
+      PJ::unexpected(std::string("unset"));
+};
+
+PJ_DATA_SOURCE_PLUGIN(UdpReceiver,
+    R"({"name":"UDP Receiver","version":"1.0.0",)"
+    R"("description":"Receive numeric datagrams on UDP 9870"})")
+```
+
+Key traits of `StreamSourceBase`:
+- `capabilities()` automatically includes `kCapabilityContinuousStream`; you
+  provide additional flags via `extraCapabilities()`.
+- `onStart()` opens connections and creates topics.
+- `onPoll()` does incremental work — drain what is available and return
+  immediately. Must not block.
+- `onStop()` tears down connections. Must be idempotent.
+- `stop()`, `start()`, `poll()`, and `currentState()` are managed by the
+  base class.
+- **Pause/resume** are NOT wired by `StreamSourceBase`. To support pause,
+  override `pause()`/`resume()` from `DataSourcePluginBase` directly and
+  add `kCapabilitySupportsPause` to `extraCapabilities()`.
 
 ## Host Services Available to Plugins
 
@@ -141,28 +292,26 @@ Override `pause()` and `resume()`, and declare `kCapabilitySupportsPause` in
 your capabilities:
 
 ```cpp
-uint64_t capabilities() const override {
-  return PJ::kCapabilityContinuousStream | PJ::kCapabilityDirectIngest
-       | PJ::kCapabilitySupportsPause;
+uint64_t extraCapabilities() const override {
+  return PJ::kCapabilityDirectIngest | PJ::kCapabilitySupportsPause;
 }
 
-bool pause() override {
-  state_ = PJ::DataSourceState::kPaused;
-  runtimeHost().notifyState(state_);
-  return true;
+PJ::Status pause() override {
+  // Suspend your data source...
+  return PJ::okStatus();
 }
 
-bool resume() override {
-  state_ = PJ::DataSourceState::kRunning;
-  runtimeHost().notifyState(state_);
-  return true;
+PJ::Status resume() override {
+  // Resume your data source...
+  return PJ::okStatus();
 }
 ```
 
 ### Periodic polling
 
-Override `poll()` for streaming sources. The host calls it periodically while
-the plugin is running. Return `false` to signal an error.
+Override `onPoll()` (via `StreamSourceBase`) or `poll()` (via
+`DataSourcePluginBase`) for streaming sources. The host calls it periodically
+while the plugin is running. Return an error `Status` to signal failure.
 
 ### Configuration persistence
 
@@ -170,9 +319,9 @@ Override `saveConfig()` / `loadConfig()` to support layout save/restore:
 
 ```cpp
 std::string saveConfig() const override { return my_config_json_; }
-bool loadConfig(std::string_view json) override {
+PJ::Status loadConfig(std::string_view json) override {
   my_config_json_ = std::string(json);
-  return true;
+  return PJ::okStatus();
 }
 ```
 
@@ -186,7 +335,7 @@ for (uint64_t i = 0; i < total_rows; ++i) {
   if (!runtimeHost().progressUpdate(i)) {
     // User cancelled
     runtimeHost().progressFinish();
-    return false;
+    return PJ::okStatus();  // clean cancellation
   }
   // ... process row ...
 }
@@ -207,7 +356,7 @@ auto binding = runtimeHost().ensureParserBinding({
     .type_name = "imu_sample",
     .schema = schema_bytes,
 });
-if (!binding) { setLastError(binding.error()); return false; }
+if (!binding) { return PJ::unexpected(binding.error()); }
 
 // 2. Push raw payloads — the host parses and stores them
 auto status = runtimeHost().pushRawMessage(*binding, timestamp_ns, payload);
@@ -246,18 +395,46 @@ Any state --> failed
 
 Combine with bitwise OR.
 
+## Manifest Schema
+
+The manifest is a JSON string literal embedded in the vtable. The host reads
+it without instantiating the plugin.
+
+| Key | Type | Required | Description |
+|-----|------|----------|-------------|
+| `name` | string | yes | Human-readable plugin name. |
+| `version` | string | yes | Semver version string. |
+| `description` | string | no | Short description of the plugin. |
+| `file_extensions` | string[] | no | File extensions this source handles, e.g. `[".csv", ".tsv"]`. Plugins declaring `kCapabilityFiniteImport` SHOULD include this so the host can build file-dialog filters. |
+
+Example:
+```json
+{
+  "name": "CSV Loader",
+  "version": "1.0.0",
+  "description": "Import numeric CSV files",
+  "file_extensions": [".csv", ".tsv"]
+}
+```
+
 ## Error Handling
 
-- Call `setLastError(msg)` before returning `false` from any method.
+- All fallible SDK virtuals (`start`, `loadConfig`, `pause`, `resume`, `poll`,
+  `bindWriteHost`, `bindRuntimeHost`) return `PJ::Status`. Return
+  `okStatus()` on success, `unexpected("reason")` on failure.
+- `setLastError(msg)` is still available for `void` methods (e.g. `stop()`).
 - The base class catches all exceptions thrown from virtual methods and stores
-  them via `setLastError()` automatically — you never need to worry about
-  exceptions crossing the C ABI boundary.
+  them automatically — you never need to worry about exceptions crossing the
+  C ABI boundary.
 - Check host operations: `writeHost().appendRecord()` and
   `runtimeHost().ensureParserBinding()` return `Expected<T>` / `Status` —
   always check before proceeding.
 
-## Example
+## Examples
 
-`pj_plugins/examples/mock_data_source.cpp` is a complete reference that
-demonstrates: manifest, capabilities, direct ingest, delegated ingest, progress
-reporting, pause/resume, and config persistence.
+- **Finite import** and **continuous stream** patterns are documented above
+  in the "Common Patterns" section using `FileSourceBase` and `StreamSourceBase`.
+- `pj_plugins/examples/mock_data_source.cpp` is a comprehensive test fixture
+  that exercises the full `DataSourcePluginBase` API surface: capabilities,
+  direct ingest, delegated ingest, progress reporting, pause/resume, and
+  config persistence.

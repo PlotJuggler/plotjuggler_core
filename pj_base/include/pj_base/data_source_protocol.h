@@ -1,6 +1,6 @@
 /**
  * @file data_source_protocol.h
- * @brief C ABI protocol for DataSource plugins (version 1).
+ * @brief C ABI protocol for DataSource plugins (version 2).
  *
  * Defines the vtable contracts that a DataSource shared library must export.
  * The host loads the library, calls PJ_get_data_source_vtable() to obtain a
@@ -29,7 +29,7 @@ extern "C" {
 #endif
 
 /** Protocol version. Host and plugin must agree on the same major version. */
-#define PJ_DATA_SOURCE_PROTOCOL_VERSION 1
+#define PJ_DATA_SOURCE_PROTOCOL_VERSION 2
 
 #if defined(_WIN32)
 #define PJ_DATA_SOURCE_EXPORT __declspec(dllexport)
@@ -181,8 +181,22 @@ typedef struct PJ_data_source_vtable_t {
   /** Destroy an instance previously created by create(). */
   void (*destroy)(void* ctx);
 
-  /** Return JSON manifest (name, version, description). Plugin-owned string. */
-  const char* (*get_manifest)(void* ctx);
+  /**
+   * Static JSON manifest. Compile-time constant string literal.
+   *
+   * Required keys:
+   *   "name"    — human-readable plugin name (string).
+   *   "version" — semver version string (string).
+   *
+   * Optional keys:
+   *   "description"     — short description of the plugin (string).
+   *   "file_extensions" — array of file extensions this source handles,
+   *                       e.g. [".csv", ".tsv"]. Plugins declaring
+   *                       FINITE_IMPORT SHOULD include this so the host
+   *                       can build file-dialog filters without
+   *                       instantiating the plugin.
+   */
+  const char* manifest_json;
   /** Return capability bitmask (PJ_DATA_SOURCE_CAPABILITY_* flags). */
   uint64_t (*capabilities)(void* ctx);
 

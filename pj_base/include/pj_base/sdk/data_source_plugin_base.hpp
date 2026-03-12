@@ -3,7 +3,7 @@
  * @brief C++ SDK for implementing DataSource plugins.
  *
  * Plugin authors subclass DataSourcePluginBase, override the required virtuals,
- * and export with the PJ_DATA_SOURCE_PLUGIN(ClassName) macro. The SDK handles
+ * and export with the PJ_DATA_SOURCE_PLUGIN(ClassName, manifest) macro. The SDK handles
  * C ABI trampoline generation and exception safety.
  *
  * See pj_plugins/examples/mock_data_source.cpp for a complete example.
@@ -191,12 +191,12 @@ class DataSourceRuntimeHostView {
 /**
  * Base class for DataSource plugins.
  *
- * Subclass and override the pure-virtual methods: manifest(), capabilities(),
- * start(), stop(), and currentState(). Optionally override pause/resume, poll,
+ * Subclass and override the pure-virtual methods: capabilities(), start(),
+ * stop(), and currentState(). Optionally override pause/resume, poll,
  * saveConfig/loadConfig for richer behaviour.
  *
  * Use writeHost() and runtimeHost() (protected) to interact with the host
- * during start() and poll(). Export with PJ_DATA_SOURCE_PLUGIN(YourClass).
+ * during start() and poll(). Export with PJ_DATA_SOURCE_PLUGIN(YourClass, manifest).
  *
  * The base class generates C ABI trampolines with full exception safety —
  * any exception thrown from a virtual is caught, stored via setLastError(),
@@ -206,30 +206,25 @@ class DataSourcePluginBase {
  public:
   virtual ~DataSourcePluginBase() = default;
 
-  /// Return a JSON manifest with at least "name" and "version" keys.
-  virtual std::string manifest() const = 0;
-
   /// Return a bitmask of kCapability* flags describing this source's features.
   virtual uint64_t capabilities() const = 0;
 
   /// Bind the data-plane write host. Override only if you need custom validation.
-  virtual bool bindWriteHost(PJ_source_write_host_t write_host) {
+  virtual Status bindWriteHost(PJ_source_write_host_t write_host) {
     if (write_host.ctx == nullptr || write_host.vtable == nullptr) {
-      setLastError("write host is not bound");
-      return false;
+      return unexpected(std::string("write host is not bound"));
     }
     write_host_ = write_host;
-    return true;
+    return okStatus();
   }
 
   /// Bind the control-plane runtime host. Override only if you need custom validation.
-  virtual bool bindRuntimeHost(PJ_data_source_runtime_host_t runtime_host) {
+  virtual Status bindRuntimeHost(PJ_data_source_runtime_host_t runtime_host) {
     if (runtime_host.ctx == nullptr || runtime_host.vtable == nullptr) {
-      setLastError("runtime host is not bound");
-      return false;
+      return unexpected(std::string("runtime host is not bound"));
     }
     runtime_host_ = runtime_host;
-    return true;
+    return okStatus();
   }
 
   /// Serialize plugin configuration to JSON. Default returns "{}".
@@ -238,32 +233,30 @@ class DataSourcePluginBase {
   }
 
   /// Restore plugin configuration from JSON. Default accepts any input.
-  virtual bool loadConfig(std::string_view config_json) {
+  virtual Status loadConfig(std::string_view config_json) {
     (void)config_json;
-    return true;
+    return okStatus();
   }
 
   /// Begin data acquisition. Hosts are already bound when this is called.
-  virtual bool start() = 0;
+  virtual Status start() = 0;
 
   /// Stop data acquisition. Must be idempotent.
   virtual void stop() = 0;
 
-  /// Pause a running source. Default returns false (unsupported).
-  virtual bool pause() {
-    setLastError("pause is not supported");
-    return false;
+  /// Pause a running source. Default returns error (unsupported).
+  virtual Status pause() {
+    return unexpected(std::string("pause is not supported"));
   }
 
-  /// Resume a paused source. Default returns false (unsupported).
-  virtual bool resume() {
-    setLastError("resume is not supported");
-    return false;
+  /// Resume a paused source. Default returns error (unsupported).
+  virtual Status resume() {
+    return unexpected(std::string("resume is not supported"));
   }
 
   /// Called periodically while running. Override for streaming sources. Default is no-op.
-  virtual bool poll() {
-    return true;
+  virtual Status poll() {
+    return okStatus();
   }
 
   /// Return the current lifecycle state.
@@ -275,13 +268,13 @@ class DataSourcePluginBase {
   }
 
   template <typename CreateFn>
-  static const PJ_data_source_vtable_t* vtableWithCreate(CreateFn create_fn) {
+  static const PJ_data_source_vtable_t* vtableWithCreate(CreateFn create_fn, const char* manifest) {
     static const PJ_data_source_vtable_t vt = {
         PJ_DATA_SOURCE_PROTOCOL_VERSION,
         sizeof(PJ_data_source_vtable_t),
         create_fn,
         trampoline_destroy,
-        trampoline_get_manifest,
+        manifest,
         trampoline_capabilities,
         trampoline_bind_write_host,
         trampoline_bind_runtime_host,
@@ -322,7 +315,6 @@ class DataSourcePluginBase {
  private:
   PJ_source_write_host_t write_host_{};
   PJ_data_source_runtime_host_t runtime_host_{};
-  std::string manifest_buf_;
   std::string config_buf_;
   mutable std::string last_error_;
 
@@ -330,20 +322,6 @@ class DataSourcePluginBase {
     try {
       delete static_cast<DataSourcePluginBase*>(ctx);
     } catch (...) {
-    }
-  }
-
-  static const char* trampoline_get_manifest(void* ctx) {
-    auto* self = static_cast<DataSourcePluginBase*>(ctx);
-    try {
-      self->manifest_buf_ = self->manifest();
-      return self->manifest_buf_.c_str();
-    } catch (const std::exception& e) {
-      self->last_error_ = e.what();
-      return "{}";
-    } catch (...) {
-      self->last_error_ = "Unknown exception in get_manifest";
-      return "{}";
     }
   }
 
@@ -363,7 +341,12 @@ class DataSourcePluginBase {
   static bool trampoline_bind_write_host(void* ctx, PJ_source_write_host_t write_host) {
     auto* self = static_cast<DataSourcePluginBase*>(ctx);
     try {
-      return self->bindWriteHost(write_host);
+      auto status = self->bindWriteHost(write_host);
+      if (!status) {
+        self->last_error_ = std::move(status).error();
+        return false;
+      }
+      return true;
     } catch (const std::exception& e) {
       self->last_error_ = e.what();
       return false;
@@ -377,7 +360,12 @@ class DataSourcePluginBase {
       void* ctx, PJ_data_source_runtime_host_t runtime_host) {
     auto* self = static_cast<DataSourcePluginBase*>(ctx);
     try {
-      return self->bindRuntimeHost(runtime_host);
+      auto status = self->bindRuntimeHost(runtime_host);
+      if (!status) {
+        self->last_error_ = std::move(status).error();
+        return false;
+      }
+      return true;
     } catch (const std::exception& e) {
       self->last_error_ = e.what();
       return false;
@@ -404,8 +392,13 @@ class DataSourcePluginBase {
   static bool trampoline_load_config(void* ctx, const char* config_json) {
     auto* self = static_cast<DataSourcePluginBase*>(ctx);
     try {
-      return self->loadConfig(
+      auto status = self->loadConfig(
           config_json == nullptr ? std::string_view{} : std::string_view(config_json));
+      if (!status) {
+        self->last_error_ = std::move(status).error();
+        return false;
+      }
+      return true;
     } catch (const std::exception& e) {
       self->last_error_ = e.what();
       return false;
@@ -418,7 +411,12 @@ class DataSourcePluginBase {
   static bool trampoline_start(void* ctx) {
     auto* self = static_cast<DataSourcePluginBase*>(ctx);
     try {
-      return self->start();
+      auto status = self->start();
+      if (!status) {
+        self->last_error_ = std::move(status).error();
+        return false;
+      }
+      return true;
     } catch (const std::exception& e) {
       self->last_error_ = e.what();
       return false;
@@ -442,7 +440,12 @@ class DataSourcePluginBase {
   static bool trampoline_pause(void* ctx) {
     auto* self = static_cast<DataSourcePluginBase*>(ctx);
     try {
-      return self->pause();
+      auto status = self->pause();
+      if (!status) {
+        self->last_error_ = std::move(status).error();
+        return false;
+      }
+      return true;
     } catch (const std::exception& e) {
       self->last_error_ = e.what();
       return false;
@@ -455,7 +458,12 @@ class DataSourcePluginBase {
   static bool trampoline_resume(void* ctx) {
     auto* self = static_cast<DataSourcePluginBase*>(ctx);
     try {
-      return self->resume();
+      auto status = self->resume();
+      if (!status) {
+        self->last_error_ = std::move(status).error();
+        return false;
+      }
+      return true;
     } catch (const std::exception& e) {
       self->last_error_ = e.what();
       return false;
@@ -468,7 +476,12 @@ class DataSourcePluginBase {
   static bool trampoline_poll(void* ctx) {
     auto* self = static_cast<DataSourcePluginBase*>(ctx);
     try {
-      return self->poll();
+      auto status = self->poll();
+      if (!status) {
+        self->last_error_ = std::move(status).error();
+        return false;
+      }
+      return true;
     } catch (const std::exception& e) {
       self->last_error_ = e.what();
       return false;
@@ -512,14 +525,19 @@ class DataSourcePluginBase {
  * Place at file scope (after the class definition). Generates the extern "C"
  * entry point `PJ_get_data_source_vtable` that the host resolves via dlsym.
  *
+ * @param ClassName   The DataSourcePluginBase subclass to instantiate.
+ * @param manifest    A string literal containing the JSON manifest
+ *                    (must have at least "name" and "version" keys).
+ *
  * Usage:
  * @code
- *   PJ_DATA_SOURCE_PLUGIN(MyDataSource)
+ *   PJ_DATA_SOURCE_PLUGIN(MyDataSource, R"({"name":"My Source","version":"1.0.0"})")
  * @endcode
  */
-#define PJ_DATA_SOURCE_PLUGIN(ClassName)                                                         \
+#define PJ_DATA_SOURCE_PLUGIN(ClassName, manifest)                                               \
   extern "C" PJ_DATA_SOURCE_EXPORT const PJ_data_source_vtable_t* PJ_get_data_source_vtable() { \
     static const PJ_data_source_vtable_t* vt =                                                  \
-        PJ::DataSourcePluginBase::vtableWithCreate([]() -> void* { return new ClassName(); });    \
+        PJ::DataSourcePluginBase::vtableWithCreate(                                              \
+            []() -> void* { return new ClassName(); }, manifest);                                \
     return vt;                                                                                   \
   }

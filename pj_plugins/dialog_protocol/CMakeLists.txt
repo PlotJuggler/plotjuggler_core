@@ -9,14 +9,21 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 # Pure C ABI header (no deps)
 add_library(pj_dialog_protocol INTERFACE)
-target_include_directories(pj_dialog_protocol INTERFACE include)
+target_include_directories(pj_dialog_protocol INTERFACE
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  $<INSTALL_INTERFACE:include>
+)
 
 # C++ SDK (adds nlohmann/json for widget_data/widget_event)
 find_package(nlohmann_json REQUIRED)
 
 add_library(pj_dialog_sdk INTERFACE)
 target_link_libraries(pj_dialog_sdk INTERFACE pj_dialog_protocol nlohmann_json::nlohmann_json)
-target_include_directories(pj_dialog_sdk INTERFACE include)
+target_include_directories(pj_dialog_sdk INTERFACE
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  $<INSTALL_INTERFACE:include>
+)
+set_target_properties(pj_dialog_sdk PROPERTIES EXPORT_NAME Dialog)
 
 # Host-side C++ API (depends on protocol header + nlohmann/json)
 add_library(pj_dialog_host INTERFACE)
@@ -79,6 +86,18 @@ add_test(NAME widget_event_builder_test COMMAND widget_event_builder_test)
 foreach(_test ${PJ_PLUGIN_TESTS})
   target_compile_options(${_test} PRIVATE ${PJ_WARNING_FLAGS})
 endforeach()
+
+# --- Install (guarded by PJ_INSTALL_SDK in root CMakeLists.txt) ---
+
+if(PJ_INSTALL_SDK)
+  install(TARGETS pj_dialog_protocol pj_dialog_sdk EXPORT PlotJugglerSDKTargets)
+  install(FILES include/pj_plugins/dialog_protocol.h
+    DESTINATION include/pj_plugins
+  )
+  install(DIRECTORY include/pj_plugins/sdk/
+    DESTINATION include/pj_plugins/sdk
+  )
+endif()
 
 # --- Qt Dialog Engine (optional — requires Qt6) ---
 
