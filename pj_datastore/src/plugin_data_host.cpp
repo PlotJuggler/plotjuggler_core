@@ -399,19 +399,34 @@ struct WriteCore {
         setError(absl::StrCat("duplicate field name '", name, "'"));
         return false;
       }
-      auto type_or = fromAbiType(field.value.type);
-      if (!type_or.has_value()) {
-        setError(type_or.error());
-        return false;
+      if (field.is_null) {
+        // Null values: look up existing field by name (type from scalar is ignored).
+        TopicFieldKey key{.topic_id = topic.id, .field_name = std::string(name)};
+        auto it = field_cache_.find(key);
+        if (it == field_cache_.end()) {
+          setError(absl::StrCat("null value for unknown field '", name, "'"));
+          return false;
+        }
+        PrimitiveType existing{};
+        if (!lookupFieldType(topic, it->second.id, &existing)) {
+          return false;
+        }
+        resolved.push_back({it->second, existing, &field});
+      } else {
+        auto type_or = fromAbiType(field.value.type);
+        if (!type_or.has_value()) {
+          setError(type_or.error());
+          return false;
+        }
+        FieldHandle handle{};
+        if (!ensureField(topic, name, field.value.type, &handle)) {
+          return false;
+        }
+        if (!validateScalar(field.value, *type_or, "appendRecord")) {
+          return false;
+        }
+        resolved.push_back({handle, *type_or, &field});
       }
-      FieldHandle handle{};
-      if (!ensureField(topic, name, field.value.type, &handle)) {
-        return false;
-      }
-      if (!field.is_null && !validateScalar(field.value, *type_or, "appendRecord")) {
-        return false;
-      }
-      resolved.push_back({handle, *type_or, &field});
     }
 
     auto begin_status = writer_.beginRow(topic.id, timestamp);
@@ -435,7 +450,7 @@ struct WriteCore {
     return true;
   }
 
-  [[nodiscard]] bool appendRecordFast(
+  [[nodiscard]] bool appendBoundRecord(
       TopicHandle topic, Timestamp timestamp, const PJ_bound_field_value_t* fields, std::size_t field_count) {
     if (engine_.getTopicStorage(topic.id) == nullptr) {
       setError(absl::StrCat("topic ", topic.id, " not found"));
@@ -463,7 +478,7 @@ struct WriteCore {
       if (!lookupFieldType(topic, field.field.id, &type)) {
         return false;
       }
-      if (!field.is_null && !validateScalar(field.value, type, "appendRecordFast")) {
+      if (!field.is_null && !validateScalar(field.value, type, "appendBoundRecord")) {
         return false;
       }
       resolved.push_back({type, &field});
@@ -847,7 +862,7 @@ bool sourceAppendRecord(
 
 bool sourceAppendRecordFast(
     void* ctx, TopicHandle topic, int64_t timestamp, const PJ_bound_field_value_t* fields, std::size_t field_count) {
-  return static_cast<DatastoreSourceWriteHostState*>(ctx)->core.appendRecordFast(topic, timestamp, fields, field_count);
+  return static_cast<DatastoreSourceWriteHostState*>(ctx)->core.appendBoundRecord(topic, timestamp, fields, field_count);
 }
 
 bool sourceAppendArrowIpc(
@@ -872,7 +887,7 @@ bool parserAppendRecord(void* ctx, int64_t timestamp, const PJ_named_field_value
 bool parserAppendRecordFast(
     void* ctx, int64_t timestamp, const PJ_bound_field_value_t* fields, std::size_t field_count) {
   auto* impl = static_cast<DatastoreParserWriteHostState*>(ctx);
-  return impl->core.appendRecordFast(impl->topic, timestamp, fields, field_count);
+  return impl->core.appendBoundRecord(impl->topic, timestamp, fields, field_count);
 }
 
 bool parserAppendArrowIpc(void* ctx, PJ_bytes_view_t ipc_stream, PJ_string_view_t timestamp_column) {
@@ -907,7 +922,7 @@ bool toolboxAppendRecord(
 
 bool toolboxAppendRecordFast(
     void* ctx, TopicHandle topic, int64_t timestamp, const PJ_bound_field_value_t* fields, std::size_t field_count) {
-  return static_cast<DatastoreToolboxHostState*>(ctx)->core.write.appendRecordFast(
+  return static_cast<DatastoreToolboxHostState*>(ctx)->core.write.appendBoundRecord(
       topic, timestamp, fields, field_count);
 }
 

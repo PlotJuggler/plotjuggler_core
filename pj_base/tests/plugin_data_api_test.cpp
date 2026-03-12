@@ -28,6 +28,7 @@ TEST(PluginDataApiTest, ValueRefRetainsExactPrimitiveType) {
   EXPECT_EQ(sdk::typeOf(sdk::ValueRef{uint16_t{5}}), PrimitiveType::kUint16);
   EXPECT_EQ(sdk::typeOf(sdk::ValueRef{uint32_t{9}}), PrimitiveType::kUint32);
   EXPECT_EQ(sdk::typeOf(sdk::ValueRef{std::string_view("abc")}), PrimitiveType::kString);
+  EXPECT_EQ(sdk::typeOf(sdk::ValueRef{NullValue{}}), PrimitiveType::kFloat64);
 }
 
 TEST(PluginDataApiTest, HandleEqualityAndInequality) {

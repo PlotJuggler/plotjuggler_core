@@ -180,15 +180,12 @@ Use a record-oriented API, not direct access to row builders:
 ```cpp
 struct NamedFieldValue {
   std::string_view name;
-  FieldType type;
-  bool is_null = false;
-  ValueRef value;
+  ValueRef value;  // NullValue variant encodes null
 };
 
 struct BoundFieldValue {
   FieldHandle field;
-  bool is_null = false;
-  ValueRef value;
+  ValueRef value;  // NullValue variant encodes null
 };
 
 class IPluginHostWrite {
@@ -196,7 +193,7 @@ public:
   [[nodiscard]] PJ::Status appendRecord(
       TopicHandle topic, PJ::Timestamp timestamp, PJ::Span<const NamedFieldValue> fields);
 
-  [[nodiscard]] PJ::Status appendRecordFast(
+  [[nodiscard]] PJ::Status appendBoundRecord(
       TopicHandle topic, PJ::Timestamp timestamp, PJ::Span<const BoundFieldValue> fields);
 };
 ```
@@ -204,15 +201,15 @@ public:
 Decision:
 
 - `appendRecord()` is the canonical simple incremental write API.
-- `appendRecordFast()` is the canonical high-rate incremental write API.
+- `appendBoundRecord()` is the canonical high-rate incremental write API.
 
 Rules:
 
 - `appendRecord()` resolves or creates fields by name+type on demand.
-- `appendRecordFast()` requires all fields to be pre-resolved.
+- `appendBoundRecord()` requires all fields to be pre-resolved.
 - Both APIs write exactly one logical topic record at one timestamp.
 - Both APIs allow sparse input: only present fields are passed in.
-- `appendRecord()` is intentionally permissive and may create new fields on first sight. Callers that need strict schema control should pre-resolve fields and use `appendRecordFast()`.
+- `appendRecord()` is intentionally permissive and may create new fields on first sight. Callers that need strict schema control should pre-resolve fields and use `appendBoundRecord()`.
 - Duplicate field names/handles within one call are invalid.
 - A field handle belonging to another topic is invalid.
 - Callers do not manage chunking, flushing, or commit steps.
@@ -414,7 +411,7 @@ The desired host data API does not exist yet. The current datastore already prov
 ### 10.2 Missing pieces to add
 
 - idempotent `ensureTopic()` by `(data_source, topic_name)`
-- high-level `appendRecord()` and `appendRecordFast()`
+- high-level `appendRecord()` and `appendBoundRecord()`
 - host-owned hidden commit/flush behavior
 - field-handle-aware write wrappers
 - host-facing `appendArrowIpc()` with timestamp-column-by-name behavior

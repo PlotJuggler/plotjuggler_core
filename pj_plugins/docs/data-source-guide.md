@@ -49,8 +49,7 @@ PJ::Status MyCsvLoader::importData() {
   }
 
   const PJ::sdk::NamedFieldValue fields[] = {
-      {.name = "temperature", .is_null = false,
-       .value = PJ::sdk::ValueRef{double(23.5)}}};
+      {.name = "temperature", .value = 23.5}};
   auto status = writeHost().appendRecord(
       *topic, PJ::Timestamp{1000}, PJ::Span(fields));
   if (!status) {
@@ -143,9 +142,7 @@ class CsvFileLoader : public PJ::FileSourceBase {
 
       // Parse each row and write it.
       double value = 0;  // = parse_row(...)
-      const PJ::sdk::NamedFieldValue fields[] = {
-          {.name = "value", .is_null = false,
-           .value = PJ::sdk::ValueRef{value}}};
+      const PJ::sdk::NamedFieldValue fields[] = {{.name = "value", .value = value}};
       auto status = writeHost().appendRecord(
           *topic, PJ::Timestamp{static_cast<int64_t>(row)},
           PJ::Span<const PJ::sdk::NamedFieldValue>(fields, 1));
@@ -265,7 +262,7 @@ engine.
 | `ensureTopic(name)` | Create or look up a topic. Returns a handle. |
 | `ensureField(topic, name, type)` | Pre-register a field for fast writes. |
 | `appendRecord(topic, timestamp, fields)` | Write a row of named field values. |
-| `appendRecordFast(topic, timestamp, fields)` | Write using pre-resolved field handles. |
+| `appendBoundRecord(topic, timestamp, fields)` | Write using pre-resolved field handles. |
 
 ### Runtime host — control plane
 

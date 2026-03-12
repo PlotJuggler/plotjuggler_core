@@ -2,6 +2,7 @@
 
 #include "pj_base/plugin_data_api.h"
 
+#include <initializer_list>
 #include <string>
 #include <string_view>
 #include <type_traits>
@@ -52,7 +53,8 @@ inline bool operator!=(FieldHandle a, FieldHandle b) {
   return !(a == b);
 }
 
-using ValueRef = std::variant<float,
+using ValueRef = std::variant<NullValue,
+                              float,
                               double,
                               int8_t,
                               int16_t,
@@ -67,13 +69,11 @@ using ValueRef = std::variant<float,
 
 struct NamedFieldValue {
   std::string_view name;
-  bool is_null = false;
   ValueRef value;
 };
 
 struct BoundFieldValue {
   FieldHandle field;
-  bool is_null = false;
   ValueRef value;
 };
 
@@ -206,21 +206,24 @@ class MaterializedSeries {
 }
 
 [[nodiscard]] inline PrimitiveType typeOf(const ValueRef& value) {
-  switch (value.index()) {
-    case 0: return PrimitiveType::kFloat32;
-    case 1: return PrimitiveType::kFloat64;
-    case 2: return PrimitiveType::kInt8;
-    case 3: return PrimitiveType::kInt16;
-    case 4: return PrimitiveType::kInt32;
-    case 5: return PrimitiveType::kInt64;
-    case 6: return PrimitiveType::kUint8;
-    case 7: return PrimitiveType::kUint16;
-    case 8: return PrimitiveType::kUint32;
-    case 9: return PrimitiveType::kUint64;
-    case 10: return PrimitiveType::kBool;
-    case 11: return PrimitiveType::kString;
-  }
-  return PrimitiveType::kFloat64;
+  return std::visit(
+      [](auto&& v) -> PrimitiveType {
+        using T = std::decay_t<decltype(v)>;
+        if constexpr (std::is_same_v<T, NullValue>) return PrimitiveType::kFloat64;
+        else if constexpr (std::is_same_v<T, float>) return PrimitiveType::kFloat32;
+        else if constexpr (std::is_same_v<T, double>) return PrimitiveType::kFloat64;
+        else if constexpr (std::is_same_v<T, int8_t>) return PrimitiveType::kInt8;
+        else if constexpr (std::is_same_v<T, int16_t>) return PrimitiveType::kInt16;
+        else if constexpr (std::is_same_v<T, int32_t>) return PrimitiveType::kInt32;
+        else if constexpr (std::is_same_v<T, int64_t>) return PrimitiveType::kInt64;
+        else if constexpr (std::is_same_v<T, uint8_t>) return PrimitiveType::kUint8;
+        else if constexpr (std::is_same_v<T, uint16_t>) return PrimitiveType::kUint16;
+        else if constexpr (std::is_same_v<T, uint32_t>) return PrimitiveType::kUint32;
+        else if constexpr (std::is_same_v<T, uint64_t>) return PrimitiveType::kUint64;
+        else if constexpr (std::is_same_v<T, bool>) return PrimitiveType::kBool;
+        else if constexpr (std::is_same_v<T, std::string_view>) return PrimitiveType::kString;
+      },
+      value);
 }
 
 [[nodiscard]] inline PJ_scalar_value_t toAbiScalar(const ValueRef& value) {
@@ -229,7 +232,9 @@ class MaterializedSeries {
   std::visit(
       [&](auto&& v) {
         using T = std::decay_t<decltype(v)>;
-        if constexpr (std::is_same_v<T, float>) {
+        if constexpr (std::is_same_v<T, NullValue>) {
+          // zeroed scalar — type is a safe default, value is unused
+        } else if constexpr (std::is_same_v<T, float>) {
           out.data.as_float32 = v;
         } else if constexpr (std::is_same_v<T, double>) {
           out.data.as_float64 = v;
@@ -263,7 +268,13 @@ class SourceWriteHostView {
  public:
   explicit SourceWriteHostView(PJ_source_write_host_t host) : host_(host) {}
 
+  /// Returns true if both context and vtable pointers are set.
+  [[nodiscard]] bool valid() const { return host_.ctx != nullptr && host_.vtable != nullptr; }
+
   [[nodiscard]] Expected<TopicHandle> ensureTopic(std::string_view topic_name) const {
+    if (!valid()) {
+      return unexpected("write host is not bound");
+    }
     TopicHandle handle{};
     if (!host_.vtable->ensure_topic(host_.ctx, toAbiString(topic_name), &handle)) {
       return unexpected(std::string(lastError()));
@@ -273,6 +284,9 @@ class SourceWriteHostView {
 
   [[nodiscard]] Expected<FieldHandle> ensureField(
       TopicHandle topic, std::string_view field_name, PrimitiveType type) const {
+    if (!valid()) {
+      return unexpected("write host is not bound");
+    }
     FieldHandle handle{};
     if (!host_.vtable->ensure_field(host_.ctx, topic, toAbiString(field_name), toAbiType(type), &handle)) {
       return unexpected(std::string(lastError()));
@@ -282,12 +296,15 @@ class SourceWriteHostView {
 
   [[nodiscard]] Status appendRecord(
       TopicHandle topic, Timestamp timestamp, Span<const NamedFieldValue> fields) const {
+    if (!valid()) {
+      return unexpected("write host is not bound");
+    }
     std::vector<PJ_named_field_value_t> raw_fields;
     raw_fields.reserve(fields.size());
     for (const auto& field : fields) {
       raw_fields.push_back(PJ_named_field_value_t{
           .name = toAbiString(field.name),
-          .is_null = field.is_null,
+          .is_null = std::holds_alternative<NullValue>(field.value),
           .value = toAbiScalar(field.value),
       });
     }
@@ -297,25 +314,41 @@ class SourceWriteHostView {
     return okStatus();
   }
 
-  [[nodiscard]] Status appendRecordFast(
+  [[nodiscard]] Status appendBoundRecord(
       TopicHandle topic, Timestamp timestamp, Span<const BoundFieldValue> fields) const {
+    if (!valid()) {
+      return unexpected("write host is not bound");
+    }
     std::vector<PJ_bound_field_value_t> raw_fields;
     raw_fields.reserve(fields.size());
     for (const auto& field : fields) {
       raw_fields.push_back(PJ_bound_field_value_t{
           .field = field.field,
-          .is_null = field.is_null,
+          .is_null = std::holds_alternative<NullValue>(field.value),
           .value = toAbiScalar(field.value),
       });
     }
-    if (!host_.vtable->append_record_fast(host_.ctx, topic, timestamp, raw_fields.data(), raw_fields.size())) {
+    if (!host_.vtable->append_bound_record(host_.ctx, topic, timestamp, raw_fields.data(), raw_fields.size())) {
       return unexpected(std::string(lastError()));
     }
     return okStatus();
   }
 
+  [[nodiscard]] Status appendRecord(
+      TopicHandle topic, Timestamp timestamp, std::initializer_list<NamedFieldValue> fields) const {
+    return appendRecord(topic, timestamp, Span<const NamedFieldValue>(fields.begin(), fields.size()));
+  }
+
+  [[nodiscard]] Status appendBoundRecord(
+      TopicHandle topic, Timestamp timestamp, std::initializer_list<BoundFieldValue> fields) const {
+    return appendBoundRecord(topic, timestamp, Span<const BoundFieldValue>(fields.begin(), fields.size()));
+  }
+
   [[nodiscard]] Status appendArrowIpc(
       TopicHandle topic, Span<const uint8_t> ipc_stream, std::string_view timestamp_column = "_timestamp") const {
+    if (!valid()) {
+      return unexpected("write host is not bound");
+    }
     if (!host_.vtable->append_arrow_ipc(
             host_.ctx, topic, toAbiBytes(ipc_stream), toAbiString(timestamp_column))) {
       return unexpected(std::string(lastError()));
@@ -324,6 +357,9 @@ class SourceWriteHostView {
   }
 
   [[nodiscard]] std::string_view lastError() const {
+    if (!valid()) {
+      return {};
+    }
     const char* err = host_.vtable->get_last_error(host_.ctx);
     return err == nullptr ? std::string_view{} : std::string_view(err);
   }
@@ -350,7 +386,7 @@ class ParserWriteHostView {
     for (const auto& field : fields) {
       raw_fields.push_back(PJ_named_field_value_t{
           .name = toAbiString(field.name),
-          .is_null = field.is_null,
+          .is_null = std::holds_alternative<NullValue>(field.value),
           .value = toAbiScalar(field.value),
       });
     }
@@ -360,20 +396,29 @@ class ParserWriteHostView {
     return okStatus();
   }
 
-  [[nodiscard]] Status appendRecordFast(Timestamp timestamp, Span<const BoundFieldValue> fields) const {
+  [[nodiscard]] Status appendBoundRecord(Timestamp timestamp, Span<const BoundFieldValue> fields) const {
     std::vector<PJ_bound_field_value_t> raw_fields;
     raw_fields.reserve(fields.size());
     for (const auto& field : fields) {
       raw_fields.push_back(PJ_bound_field_value_t{
           .field = field.field,
-          .is_null = field.is_null,
+          .is_null = std::holds_alternative<NullValue>(field.value),
           .value = toAbiScalar(field.value),
       });
     }
-    if (!host_.vtable->append_record_fast(host_.ctx, timestamp, raw_fields.data(), raw_fields.size())) {
+    if (!host_.vtable->append_bound_record(host_.ctx, timestamp, raw_fields.data(), raw_fields.size())) {
       return unexpected(std::string(lastError()));
     }
     return okStatus();
+  }
+
+  [[nodiscard]] Status appendRecord(Timestamp timestamp, std::initializer_list<NamedFieldValue> fields) const {
+    return appendRecord(timestamp, Span<const NamedFieldValue>(fields.begin(), fields.size()));
+  }
+
+  [[nodiscard]] Status appendBoundRecord(
+      Timestamp timestamp, std::initializer_list<BoundFieldValue> fields) const {
+    return appendBoundRecord(timestamp, Span<const BoundFieldValue>(fields.begin(), fields.size()));
   }
 
   [[nodiscard]] Status appendArrowIpc(
@@ -429,7 +474,7 @@ class ToolboxHostView {
     for (const auto& field : fields) {
       raw_fields.push_back(PJ_named_field_value_t{
           .name = toAbiString(field.name),
-          .is_null = field.is_null,
+          .is_null = std::holds_alternative<NullValue>(field.value),
           .value = toAbiScalar(field.value),
       });
     }
@@ -439,21 +484,31 @@ class ToolboxHostView {
     return okStatus();
   }
 
-  [[nodiscard]] Status appendRecordFast(
+  [[nodiscard]] Status appendBoundRecord(
       TopicHandle topic, Timestamp timestamp, Span<const BoundFieldValue> fields) const {
     std::vector<PJ_bound_field_value_t> raw_fields;
     raw_fields.reserve(fields.size());
     for (const auto& field : fields) {
       raw_fields.push_back(PJ_bound_field_value_t{
           .field = field.field,
-          .is_null = field.is_null,
+          .is_null = std::holds_alternative<NullValue>(field.value),
           .value = toAbiScalar(field.value),
       });
     }
-    if (!host_.vtable->append_record_fast(host_.ctx, topic, timestamp, raw_fields.data(), raw_fields.size())) {
+    if (!host_.vtable->append_bound_record(host_.ctx, topic, timestamp, raw_fields.data(), raw_fields.size())) {
       return unexpected(std::string(lastError()));
     }
     return okStatus();
+  }
+
+  [[nodiscard]] Status appendRecord(
+      TopicHandle topic, Timestamp timestamp, std::initializer_list<NamedFieldValue> fields) const {
+    return appendRecord(topic, timestamp, Span<const NamedFieldValue>(fields.begin(), fields.size()));
+  }
+
+  [[nodiscard]] Status appendBoundRecord(
+      TopicHandle topic, Timestamp timestamp, std::initializer_list<BoundFieldValue> fields) const {
+    return appendBoundRecord(topic, timestamp, Span<const BoundFieldValue>(fields.begin(), fields.size()));
   }
 
   [[nodiscard]] Status appendArrowIpc(

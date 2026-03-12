@@ -96,7 +96,7 @@ TEST(PluginDataHostReadTest, ReadSeriesPreservesExactPrimitiveTypesAndNulls) {
       {.name = "label", .value = std::string_view("alpha")},
   };
   const std::vector<NamedFieldValue> row2 = {
-      {.name = "i8", .is_null = true, .value = int8_t{0}},
+      {.name = "i8", .value = PJ::kNull},
       {.name = "u32", .value = uint32_t{42}},
       {.name = "u64", .value = uint64_t{9}},
       {.name = "flag", .value = false},
@@ -311,7 +311,7 @@ TEST(PluginDataHostReadTest, ReadSeriesStringWithNulls) {
   const auto field = *f.toolbox.ensureField(topic, "label", PrimitiveType::kString);
 
   const std::vector<NamedFieldValue> row0 = {{.name = "label", .value = std::string_view("abc")}};
-  const std::vector<NamedFieldValue> row1 = {{.name = "label", .is_null = true, .value = std::string_view("")}};
+  const std::vector<NamedFieldValue> row1 = {{.name = "label", .value = PJ::kNull}};
   const std::vector<NamedFieldValue> row2 = {{.name = "label", .value = std::string_view("de")}};
   ASSERT_TRUE(f.toolbox.appendRecord(topic, 0, row0).has_value());
   ASSERT_TRUE(f.toolbox.appendRecord(topic, 1, row1).has_value());

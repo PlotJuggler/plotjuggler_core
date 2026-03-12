@@ -103,7 +103,7 @@ TEST(PluginDataHostWriteTest, AppendRecordFastRejectsUnknownFieldHandle) {
 
   const FieldHandle bad_field{.topic = topic, .id = 999};
   const std::vector<BoundFieldValue> fields = {{.field = bad_field, .value = 1.0}};
-  const auto status = writer.appendRecordFast(topic, 1, fields);
+  const auto status = writer.appendBoundRecord(topic, 1, fields);
   EXPECT_FALSE(status.has_value());
 }
 
@@ -122,7 +122,7 @@ TEST(PluginDataHostWriteTest, ParserHostIsBoundToSingleTopic) {
   ASSERT_TRUE(parser.appendRecord(100, good_fields).has_value());
 
   const std::vector<BoundFieldValue> bad_fields = {{.field = foreign_field, .value = int32_t{9}}};
-  const auto status = parser.appendRecordFast(101, bad_fields);
+  const auto status = parser.appendBoundRecord(101, bad_fields);
   EXPECT_FALSE(status.has_value());
 
   parser_impl.flushPending();
@@ -357,7 +357,7 @@ TEST(PluginDataHostWriteTest, AppendRecordFastHappyPath) {
   const auto field = *writer.ensureField(topic, "ax", PrimitiveType::kFloat64);
 
   const std::vector<BoundFieldValue> fields = {{.field = field, .value = double{2.5}}};
-  ASSERT_TRUE(writer.appendRecordFast(topic, 10, fields).has_value());
+  ASSERT_TRUE(writer.appendBoundRecord(topic, 10, fields).has_value());
   source_impl.flushPending();
 
   auto series = std::move(*f.toolbox.readSeries(field));
@@ -379,7 +379,7 @@ TEST(PluginDataHostWriteTest, AppendRecordFastRejectsWrongTopic) {
 
   // Use field from topic_a with topic_b.
   const std::vector<BoundFieldValue> fields = {{.field = field_a, .value = double{1.0}}};
-  const auto status = writer.appendRecordFast(topic_b, 1, fields);
+  const auto status = writer.appendBoundRecord(topic_b, 1, fields);
   EXPECT_FALSE(status.has_value());
 }
 
@@ -397,7 +397,7 @@ TEST(PluginDataHostWriteTest, AppendRecordFastRejectsDuplicateFieldIds) {
       {.field = field, .value = double{1.0}},
       {.field = field, .value = double{2.0}},
   };
-  const auto status = writer.appendRecordFast(topic, 1, fields);
+  const auto status = writer.appendBoundRecord(topic, 1, fields);
   EXPECT_FALSE(status.has_value());
 }
 
@@ -413,7 +413,7 @@ TEST(PluginDataHostWriteTest, AppendRecordFastRejectsValueTypeMismatch) {
 
   // Pass int32_t value for a kFloat64 field.
   const std::vector<BoundFieldValue> fields = {{.field = field, .value = int32_t{42}}};
-  const auto status = writer.appendRecordFast(topic, 1, fields);
+  const auto status = writer.appendBoundRecord(topic, 1, fields);
   EXPECT_FALSE(status.has_value());
 }
 
@@ -427,14 +427,14 @@ TEST(PluginDataHostWriteTest, AppendRecordNullValueViaIsNull) {
   const auto topic = *writer.ensureTopic("imu");
   const auto field = *writer.ensureField(topic, "ax", PrimitiveType::kFloat64);
 
-  const std::vector<NamedFieldValue> fields = {{.name = "ax", .is_null = true, .value = double{0.0}}};
+  const std::vector<NamedFieldValue> fields = {{.name = "ax", .value = PJ::kNull}};
   ASSERT_TRUE(writer.appendRecord(topic, 10, fields).has_value());
   source_impl.flushPending();
 
   auto series = std::move(*f.toolbox.readSeries(field));
   ASSERT_EQ(series.timestamps().size(), 1U);
   ASSERT_GE(series.validityBits().size(), 1U);
-  EXPECT_EQ(series.validityBits()[0] & 0x01, 0) << "Expected null for is_null=true field";
+  EXPECT_EQ(series.validityBits()[0] & 0x01, 0) << "Expected null for NullValue field";
 }
 
 TEST(PluginDataHostWriteTest, AppendRecordFastNullValue) {
@@ -447,14 +447,14 @@ TEST(PluginDataHostWriteTest, AppendRecordFastNullValue) {
   const auto topic = *writer.ensureTopic("imu");
   const auto field = *writer.ensureField(topic, "ax", PrimitiveType::kFloat64);
 
-  const std::vector<BoundFieldValue> fields = {{.field = field, .is_null = true, .value = double{0.0}}};
-  ASSERT_TRUE(writer.appendRecordFast(topic, 10, fields).has_value());
+  const std::vector<BoundFieldValue> fields = {{.field = field, .value = PJ::kNull}};
+  ASSERT_TRUE(writer.appendBoundRecord(topic, 10, fields).has_value());
   source_impl.flushPending();
 
   auto series = std::move(*f.toolbox.readSeries(field));
   ASSERT_EQ(series.timestamps().size(), 1U);
   ASSERT_GE(series.validityBits().size(), 1U);
-  EXPECT_EQ(series.validityBits()[0] & 0x01, 0) << "Expected null for is_null=true field via fast path";
+  EXPECT_EQ(series.validityBits()[0] & 0x01, 0) << "Expected null for NullValue field via fast path";
 }
 
 TEST(PluginDataHostWriteTest, ArrowIpcFloat64RoundTrip) {
