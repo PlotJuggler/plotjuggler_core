@@ -82,6 +82,32 @@ target_compile_options(mock_schema_parser_plugin PRIVATE ${PJ_WARNING_FLAGS})
 target_link_libraries(mock_schema_parser_plugin PRIVATE pj_base)
 
 # ---------------------------------------------------------------------------
+# pj_toolbox_host — host-side Toolbox library loader
+# ---------------------------------------------------------------------------
+
+add_library(pj_toolbox_host STATIC
+  src/toolbox_library.cpp
+)
+target_include_directories(pj_toolbox_host PUBLIC include)
+target_compile_features(pj_toolbox_host PUBLIC cxx_std_20)
+target_compile_options(pj_toolbox_host PRIVATE ${PJ_WARNING_FLAGS})
+target_link_libraries(pj_toolbox_host
+  PUBLIC
+    pj_base
+  PRIVATE
+    ${CMAKE_DL_LIBS}
+)
+
+# ---------------------------------------------------------------------------
+# Mock Toolbox plugin (shared library, for dlopen tests)
+# ---------------------------------------------------------------------------
+
+add_library(mock_toolbox_plugin SHARED examples/mock_toolbox.cpp)
+target_compile_features(mock_toolbox_plugin PRIVATE cxx_std_20)
+target_compile_options(mock_toolbox_plugin PRIVATE ${PJ_WARNING_FLAGS})
+target_link_libraries(mock_toolbox_plugin PRIVATE pj_base)
+
+# ---------------------------------------------------------------------------
 # Tests
 # ---------------------------------------------------------------------------
 
@@ -140,3 +166,14 @@ target_link_libraries(delegated_ingest_integration_test PRIVATE
   pj_data_source_host pj_message_parser_host pj_base GTest::gtest_main
 )
 add_test(NAME delegated_ingest_integration_test COMMAND delegated_ingest_integration_test)
+
+# Integration test: Toolbox library loader
+add_executable(toolbox_plugin_test tests/toolbox_plugin_test.cpp)
+target_compile_definitions(toolbox_plugin_test PRIVATE
+  PJ_MOCK_TOOLBOX_PLUGIN_PATH="$<TARGET_FILE:mock_toolbox_plugin>"
+)
+target_compile_options(toolbox_plugin_test PRIVATE ${PJ_WARNING_FLAGS})
+target_link_libraries(toolbox_plugin_test PRIVATE
+  pj_toolbox_host pj_base GTest::gtest_main
+)
+add_test(NAME toolbox_plugin_test COMMAND toolbox_plugin_test)

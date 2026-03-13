@@ -1,0 +1,105 @@
+/**
+ * @file toolbox_handle.hpp
+ * @brief RAII wrapper around a single Toolbox plugin instance.
+ *
+ * Obtained from ToolboxLibrary::createHandle(). Owns the plugin context
+ * and destroys it on scope exit. Move-only; not copyable.
+ *
+ * Typical usage:
+ * @code
+ *   auto handle = library.createHandle();
+ *   handle.bindToolboxHost(toolbox_host);
+ *   handle.bindRuntimeHost(runtime_host);
+ *   handle.loadConfig(json);
+ *   // user interacts with dialog
+ *   auto config = handle.saveConfig();
+ * @endcode
+ */
+#pragma once
+
+#include <pj_base/toolbox_protocol.h>
+
+#include <cassert>
+#include <string>
+#include <string_view>
+#include <utility>
+
+namespace PJ {
+
+/**
+ * RAII handle owning a Toolbox plugin instance.
+ *
+ * Each method delegates to the corresponding vtable function pointer.
+ * The destructor calls vt_->destroy(ctx_).
+ */
+class ToolboxHandle {
+ public:
+  explicit ToolboxHandle(const PJ_toolbox_vtable_t* vt) : vt_(vt) {
+    if (vt_ != nullptr) {
+      assert(vt_->protocol_version == PJ_TOOLBOX_PLUGIN_PROTOCOL_VERSION);
+      ctx_ = vt_->create();
+    }
+  }
+
+  ~ToolboxHandle() {
+    if (vt_ != nullptr && ctx_ != nullptr) {
+      vt_->destroy(ctx_);
+    }
+  }
+
+  ToolboxHandle(ToolboxHandle&& other) noexcept : vt_(other.vt_), ctx_(other.ctx_) {
+    other.vt_ = nullptr;
+    other.ctx_ = nullptr;
+  }
+
+  ToolboxHandle& operator=(ToolboxHandle&& other) noexcept {
+    if (this != &other) {
+      std::swap(vt_, other.vt_);
+      std::swap(ctx_, other.ctx_);
+    }
+    return *this;
+  }
+
+  ToolboxHandle(const ToolboxHandle&) = delete;
+  ToolboxHandle& operator=(const ToolboxHandle&) = delete;
+
+  [[nodiscard]] bool valid() const { return vt_ != nullptr && ctx_ != nullptr; }
+
+  [[nodiscard]] std::string manifest() const { return safeString(vt_->manifest_json); }
+
+  [[nodiscard]] uint64_t capabilities() const { return vt_->capabilities(ctx_); }
+
+  [[nodiscard]] bool bindToolboxHost(PJ_toolbox_host_t toolbox_host) {
+    return vt_->bind_toolbox_host(ctx_, toolbox_host);
+  }
+
+  [[nodiscard]] bool bindRuntimeHost(PJ_toolbox_runtime_host_t runtime_host) {
+    return vt_->bind_runtime_host(ctx_, runtime_host);
+  }
+
+  [[nodiscard]] std::string saveConfig() const { return safeString(vt_->save_config(ctx_)); }
+
+  [[nodiscard]] bool loadConfig(std::string_view config_json) {
+    return vt_->load_config(ctx_, std::string(config_json).c_str());
+  }
+
+  [[nodiscard]] void* dialogContext() const {
+    return vt_->get_dialog_context ? vt_->get_dialog_context(ctx_) : nullptr;
+  }
+
+  [[nodiscard]] std::string lastError() const { return safeString(vt_->get_last_error(ctx_)); }
+
+  [[nodiscard]] const PJ_toolbox_vtable_t* vtable() const { return vt_; }
+
+  [[nodiscard]] void* context() const { return ctx_; }
+
+ private:
+  const PJ_toolbox_vtable_t* vt_ = nullptr;
+  void* ctx_ = nullptr;
+
+  static std::string safeString(const char* str) {
+    return str != nullptr ? std::string(str) : std::string();
+  }
+};
+
+}  // namespace PJ
