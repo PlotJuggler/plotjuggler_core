@@ -149,6 +149,20 @@ const PJ::sdk::BoundFieldValue fields[] = {
 writeHost().appendBoundRecord(timestamp_ns, PJ::Span(fields));
 ```
 
+### Arrow IPC bulk writes
+
+For parsers that decode into Arrow columnar format (e.g. a Parquet-to-Arrow
+parser), use `appendArrowIpc()` to write an entire IPC stream in one call:
+
+```cpp
+// ipc_buffer is a Span<const uint8_t> containing a valid Arrow IPC stream.
+auto status = writeHost().appendArrowIpc(ipc_buffer, "_timestamp");
+```
+
+The `timestamp_column` parameter names the column holding nanosecond
+timestamps (defaults to `"_timestamp"`). Prefer this when your decoded data
+is already columnar — it avoids per-row overhead.
+
 ## Optional Features
 
 ### Schema binding
@@ -219,13 +233,82 @@ This is a parser-internal decision, controlled via `loadConfig()`.
 ### Dialog integration
 
 A MessageParser can provide a configuration dialog by exporting a dialog vtable
-from the same `.so` (same pattern as DataSource+Dialog). This is useful for
-parsers that need GUI-based schema selection (e.g. Protobuf `.proto` file
-loading).
+from the same `.so`. This is useful for parsers that need GUI-based schema
+selection (e.g. Protobuf `.proto` file loading, include-path management,
+message-type selection).
 
 The host resolves the dialog via `MessageParserLibrary::resolveDialogVtable()`.
-See `pj_plugins/docs/data-source-guide.md` for the dialog pattern — it works
-identically for parsers.
+
+#### Ownership model — independent owned instance
+
+Unlike a DataSource dialog (which is a member of the source, accessed via a
+borrowed handle through `dialogContext()`), a **parser dialog is an independent
+owned instance**. The host creates it via `dialog_vt->create()`, runs it
+through `DialogEngine`, and feeds the resulting config JSON to parser instances
+via `load_config()`. The dialog and parser classes share a JSON config schema
+but are otherwise decoupled.
+
+This works because parser instances are created per-topic by the host during
+`ensureParserBinding()`, while the dialog should be presented once per parser
+*library*. There is no `get_dialog_context` on the parser vtable — and none is
+needed.
+
+```
+     Parser .so
+┌──────────────────────────────────┐
+│  class ProtoDialog               │  ← PJ::DialogPluginTyped
+│    (file picker, include paths,  │
+│     message-type combo)          │
+│                                  │
+│  class ProtoParser               │  ← PJ::MessageParserPluginBase
+│    (no dialog_ member)           │
+│    loadConfig(json) applies it   │
+│                                  │
+│  PJ_MESSAGE_PARSER_PLUGIN(...)   │  → exports parser vtable
+│  PJ_DIALOG_PLUGIN(ProtoDialog)   │  → exports dialog vtable
+└──────────────────────────────────┘
+```
+
+One `.so`, two vtables, but **no ownership link** between dialog and parser
+instances. The host creates the dialog independently and bridges config via
+JSON.
+
+#### Lifecycle scenarios
+
+**Inline (embedded in a DataSource dialog):** A source dialog declares a
+`pj_parser_slot` placeholder widget. The host detects it, resolves the parser
+library for the selected encoding, creates an owned parser dialog instance, and
+renders it into the slot. The source and parser dialogs share one window but
+persist config independently — `ConfigEnvelope.source_config` for the source,
+`ConfigEnvelope.parser_binding` for the parser.
+
+**Standalone:** The host shows the parser dialog as a modal from a settings
+panel or parser-selection UI. This is host-application logic, not protocol.
+
+#### Config flow for delegated sources
+
+1. User configures the parser in the dialog → `parser_dialog.save_config()` →
+   host stores the JSON in `ConfigEnvelope.parser_binding`.
+2. Source calls `runtimeHost().ensureParserBinding(request)` — the source may
+   leave `parser_config_json` empty in the request.
+3. Host intercepts, injects the stored parser config into
+   `parser.load_config()` before calling `parse()`.
+4. On layout save, the host persists the full `ConfigEnvelope`.
+5. On headless restart, the host loads the envelope →
+   `source.loadConfig(source_config)` + restores parser bindings from
+   `parser_binding` → `source.start()`.
+
+#### Protobuf example sketch
+
+A Protobuf parser dialog would typically manage:
+- `.proto` file selection (file picker)
+- Include paths for imports
+- Root message-type selection (combo box populated after parsing `.proto` files)
+- Config JSON: `{"proto_files": [...], "include_paths": [...], "message_type": "..."}`
+
+The parser's `loadConfig()` receives this JSON, compiles the descriptor pool,
+and uses the selected message type for decoding in `parse()`. The dialog and
+parser never reference each other — they only share the JSON schema contract.
 
 ## Manifest Schema
 
@@ -247,18 +330,60 @@ Example:
 }
 ```
 
+## Threading Model
+
+All parser callbacks — `parse()`, `bindSchema()`, `bindWriteHost()`,
+`loadConfig()`, `saveConfig()` — are called **on the host's thread**. The host
+guarantees single-threaded access per parser instance: no two callbacks will
+overlap for the same instance.
+
+Write host methods (`appendRecord()`, `ensureField()`, etc.) must be called
+from the same thread that invoked `parse()`. Do not cache the write host view
+and call it from a background thread.
+
+## Lifecycle Invariants
+
+The host guarantees the following call ordering:
+
+1. `create()` — always first.
+2. `bind_write_host()` — before `parse()`.
+3. `bind_schema()` (optional) — before `parse()`, called at most once.
+4. `load_config()` — before `parse()`, may be called multiple times.
+5. `parse()` — called once per message, may be called many times.
+6. `destroy()` — always last.
+
+The host will never call `parse()` before `bind_write_host()`, and `destroy()`
+is always the last call.
+
 ## Error Handling
 
-- All fallible SDK virtuals (`parse`, `bindSchema`, `bindWriteHost`,
-  `loadConfig`) return `PJ::Status`. Return `okStatus()` on success,
-  `unexpected("reason")` on failure.
-- `setLastError(msg)` is available for custom error reporting.
-- The base class catches all exceptions thrown from virtual methods and stores
-  them automatically — you never need to worry about exceptions crossing the
-  C ABI boundary.
-- Check host operations: `writeHost().appendRecord()` and
-  `writeHost().ensureField()` return `Expected<T>` / `Status` — always check
-  before proceeding.
+All fallible SDK methods return `PJ::Status` (`Expected<void>`). Return
+`okStatus()` on success, `unexpected("reason")` on failure.
+
+### Patterns
+
+**Check-and-propagate** — the standard pattern for write host calls:
+
+```cpp
+auto field = writeHost().ensureField("temperature", PJ::PrimitiveType::kFloat64);
+if (!field) {
+  return PJ::unexpected(field.error());
+}
+```
+
+**Parse failures** — when `parse()` encounters malformed payload data:
+- Return `unexpected("reason")` — the host logs the error and may skip
+  the message. This is always safe; the host will continue calling `parse()`
+  for subsequent messages.
+- Do **not** leave the parser in an inconsistent state — ensure field handles
+  and internal buffers remain valid for the next `parse()` call.
+
+**setLastError()** — available for fine-grained error reporting. For most
+cases, returning `unexpected()` from `parse()` is sufficient.
+
+**Exception safety** — the SDK base class catches all C++ exceptions in
+virtual method trampolines and converts them to `setLastError()` + false
+return. You never need to worry about exceptions crossing the C ABI boundary.
 
 ## How Parsers Are Used (Host Perspective)
 
@@ -293,6 +418,9 @@ so `ensureField("x")` in the parser creates `"sensor/imu/x"` in the datastore.
 
 - `pj_plugins/examples/mock_json_parser.cpp` — minimal parser that treats
   payloads as text-encoded doubles and writes one "value" field per message.
+- `pj_plugins/examples/mock_schema_parser.cpp` — richer parser demonstrating
+  the high-throughput pattern: `ensureField()` + `appendBoundRecord()`, schema
+  binding, config persistence, and error handling.
 - `pj_base/tests/message_parser_plugin_base_test.cpp` — comprehensive test
   fixture exercising the full SDK surface: vtable generation, bind/parse
   round-trip, schema binding, config persistence, and exception safety.

@@ -73,6 +73,15 @@ target_compile_options(mock_json_parser_plugin PRIVATE ${PJ_WARNING_FLAGS})
 target_link_libraries(mock_json_parser_plugin PRIVATE pj_base)
 
 # ---------------------------------------------------------------------------
+# Mock Schema Parser plugin (shared library, high-throughput bound-fields example)
+# ---------------------------------------------------------------------------
+
+add_library(mock_schema_parser_plugin SHARED examples/mock_schema_parser.cpp)
+target_compile_features(mock_schema_parser_plugin PRIVATE cxx_std_20)
+target_compile_options(mock_schema_parser_plugin PRIVATE ${PJ_WARNING_FLAGS})
+target_link_libraries(mock_schema_parser_plugin PRIVATE pj_base)
+
+# ---------------------------------------------------------------------------
 # Tests
 # ---------------------------------------------------------------------------
 
@@ -119,3 +128,15 @@ target_link_libraries(message_parser_library_test PRIVATE
   pj_message_parser_host pj_base GTest::gtest_main
 )
 add_test(NAME message_parser_library_test COMMAND message_parser_library_test)
+
+# Integration test: Delegated ingest (DataSource + MessageParser end-to-end)
+add_executable(delegated_ingest_integration_test tests/delegated_ingest_integration_test.cpp)
+target_compile_definitions(delegated_ingest_integration_test PRIVATE
+  PJ_MOCK_DATA_SOURCE_PLUGIN_PATH="$<TARGET_FILE:mock_data_source_plugin>"
+  PJ_MOCK_JSON_PARSER_PLUGIN_PATH="$<TARGET_FILE:mock_json_parser_plugin>"
+)
+target_compile_options(delegated_ingest_integration_test PRIVATE ${PJ_WARNING_FLAGS})
+target_link_libraries(delegated_ingest_integration_test PRIVATE
+  pj_data_source_host pj_message_parser_host pj_base GTest::gtest_main
+)
+add_test(NAME delegated_ingest_integration_test COMMAND delegated_ingest_integration_test)

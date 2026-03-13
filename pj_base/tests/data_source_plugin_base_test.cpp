@@ -467,6 +467,87 @@ TEST(DataSourcePluginBaseTest, DefaultPollReturnsTrue) {
   EXPECT_TRUE(drv.vt->poll(drv.ctx));
 }
 
+TEST(DataSourcePluginBaseTest, AppendArrowIpcRoutesToWriteHost) {
+  VtableDriver drv(mockVtable());
+  WriteRecorder write_recorder;
+  RuntimeRecorder runtime_recorder;
+  bool arrow_ipc_called = false;
+  PJ_topic_handle_t arrow_topic{};
+  std::vector<uint8_t> arrow_bytes;
+  std::string arrow_ts_col;
+
+  // Build a write host vtable with a recording appendArrowIpc.
+  struct ArrowIpcWriteRecorder {
+    bool* called;
+    PJ_topic_handle_t* topic;
+    std::vector<uint8_t>* bytes;
+    std::string* ts_col;
+
+    static const char* getLastError(void*) { return nullptr; }
+
+    static bool ensureTopic(void*, PJ_string_view_t, PJ_topic_handle_t* out_topic) {
+      *out_topic = PJ_topic_handle_t{1};
+      return true;
+    }
+
+    static bool ensureField(void*, PJ_topic_handle_t topic, PJ_string_view_t, PJ_primitive_type_t,
+                            PJ_field_handle_t* out_field) {
+      *out_field = PJ_field_handle_t{topic, 1};
+      return true;
+    }
+
+    static bool appendRecord(void*, PJ_topic_handle_t, int64_t, const PJ_named_field_value_t*,
+                             size_t) {
+      return true;
+    }
+
+    static bool appendBoundRecord(void*, PJ_topic_handle_t, int64_t,
+                                  const PJ_bound_field_value_t*, size_t) {
+      return true;
+    }
+
+    static bool appendArrowIpc(void* ctx, PJ_topic_handle_t topic, PJ_bytes_view_t ipc_stream,
+                               PJ_string_view_t timestamp_column) {
+      auto* self = static_cast<ArrowIpcWriteRecorder*>(ctx);
+      *self->called = true;
+      *self->topic = topic;
+      self->bytes->assign(ipc_stream.data, ipc_stream.data + ipc_stream.size);
+      self->ts_col->assign(timestamp_column.data, timestamp_column.size);
+      return true;
+    }
+  };
+
+  ArrowIpcWriteRecorder arrow_recorder{&arrow_ipc_called, &arrow_topic, &arrow_bytes,
+                                       &arrow_ts_col};
+  static const PJ_source_write_host_vtable_t arrow_vtable = {
+      .abi_version = PJ_PLUGIN_DATA_API_VERSION,
+      .struct_size = sizeof(PJ_source_write_host_vtable_t),
+      .get_last_error = ArrowIpcWriteRecorder::getLastError,
+      .ensure_topic = ArrowIpcWriteRecorder::ensureTopic,
+      .ensure_field = ArrowIpcWriteRecorder::ensureField,
+      .append_record = ArrowIpcWriteRecorder::appendRecord,
+      .append_bound_record = ArrowIpcWriteRecorder::appendBoundRecord,
+      .append_arrow_ipc = ArrowIpcWriteRecorder::appendArrowIpc,
+  };
+  PJ_source_write_host_t arrow_host = {.ctx = &arrow_recorder, .vtable = &arrow_vtable};
+
+  ASSERT_TRUE(drv.vt->bind_write_host(drv.ctx, arrow_host));
+  ASSERT_TRUE(drv.vt->bind_runtime_host(drv.ctx, makeRuntimeHost(&runtime_recorder)));
+
+  // Call appendArrowIpc through the SDK view by invoking the vtable directly.
+  // The SDK SourceWriteHostView delegates to the vtable's append_arrow_ipc.
+  const uint8_t ipc_data[] = {0x41, 0x52, 0x52, 0x4F, 0x57, 0x31};  // "ARROW1"
+  PJ_bytes_view_t ipc_bytes = {ipc_data, sizeof(ipc_data)};
+  PJ_string_view_t ts_col = {"my_timestamp", 12};
+  PJ_topic_handle_t topic = {1};
+  ASSERT_TRUE(arrow_host.vtable->append_arrow_ipc(arrow_host.ctx, topic, ipc_bytes, ts_col));
+
+  EXPECT_TRUE(arrow_ipc_called);
+  EXPECT_EQ(arrow_topic.id, 1U);
+  EXPECT_EQ(arrow_bytes, (std::vector<uint8_t>{0x41, 0x52, 0x52, 0x4F, 0x57, 0x31}));
+  EXPECT_EQ(arrow_ts_col, "my_timestamp");
+}
+
 TEST(DataSourcePluginBaseTest, IsStopRequestedRoutesToHost) {
   VtableDriver drv(mockVtable());
   WriteRecorder write_recorder;

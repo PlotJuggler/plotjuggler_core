@@ -244,6 +244,69 @@ TEST(MessageParserPluginBaseTest, ExceptionSafetyInParse) {
   EXPECT_EQ(recorder.append_record_calls, 0);
 }
 
+TEST(MessageParserPluginBaseTest, AppendArrowIpcRoutesToWriteHost) {
+  VtableDriver drv(mockVtable());
+
+  bool arrow_ipc_called = false;
+  std::vector<uint8_t> arrow_bytes;
+  std::string arrow_ts_col;
+
+  struct ArrowIpcParserWriteRecorder {
+    bool* called;
+    std::vector<uint8_t>* bytes;
+    std::string* ts_col;
+
+    static const char* getLastError(void*) { return nullptr; }
+
+    static bool ensureField(void*, PJ_string_view_t, PJ_primitive_type_t,
+                            PJ_field_handle_t* out_field) {
+      *out_field = PJ_field_handle_t{{1}, 1};
+      return true;
+    }
+
+    static bool appendRecord(void*, int64_t, const PJ_named_field_value_t*, size_t) {
+      return true;
+    }
+
+    static bool appendBoundRecord(void*, int64_t, const PJ_bound_field_value_t*, size_t) {
+      return true;
+    }
+
+    static bool appendArrowIpc(void* ctx, PJ_bytes_view_t ipc_stream,
+                               PJ_string_view_t timestamp_column) {
+      auto* self = static_cast<ArrowIpcParserWriteRecorder*>(ctx);
+      *self->called = true;
+      self->bytes->assign(ipc_stream.data, ipc_stream.data + ipc_stream.size);
+      self->ts_col->assign(timestamp_column.data, timestamp_column.size);
+      return true;
+    }
+  };
+
+  ArrowIpcParserWriteRecorder arrow_recorder{&arrow_ipc_called, &arrow_bytes, &arrow_ts_col};
+  static const PJ_parser_write_host_vtable_t arrow_vtable = {
+      .abi_version = PJ_PLUGIN_DATA_API_VERSION,
+      .struct_size = sizeof(PJ_parser_write_host_vtable_t),
+      .get_last_error = ArrowIpcParserWriteRecorder::getLastError,
+      .ensure_field = ArrowIpcParserWriteRecorder::ensureField,
+      .append_record = ArrowIpcParserWriteRecorder::appendRecord,
+      .append_bound_record = ArrowIpcParserWriteRecorder::appendBoundRecord,
+      .append_arrow_ipc = ArrowIpcParserWriteRecorder::appendArrowIpc,
+  };
+  PJ_parser_write_host_t arrow_host = {.ctx = &arrow_recorder, .vtable = &arrow_vtable};
+
+  ASSERT_TRUE(drv.vt->bind_write_host(drv.ctx, arrow_host));
+
+  // Call appendArrowIpc through the raw vtable.
+  const uint8_t ipc_data[] = {0x41, 0x52, 0x52, 0x4F, 0x57, 0x31};  // "ARROW1"
+  PJ_bytes_view_t ipc_bytes = {ipc_data, sizeof(ipc_data)};
+  PJ_string_view_t ts_col = {"_timestamp", 10};
+  ASSERT_TRUE(arrow_host.vtable->append_arrow_ipc(arrow_host.ctx, ipc_bytes, ts_col));
+
+  EXPECT_TRUE(arrow_ipc_called);
+  EXPECT_EQ(arrow_bytes, (std::vector<uint8_t>{0x41, 0x52, 0x52, 0x4F, 0x57, 0x31}));
+  EXPECT_EQ(arrow_ts_col, "_timestamp");
+}
+
 TEST(MessageParserPluginBaseTest, NullConfigIsHandledGracefully) {
   VtableDriver drv(mockVtable());
   // nullptr config_json — loadConfig should handle gracefully (not crash)
