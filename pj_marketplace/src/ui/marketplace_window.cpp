@@ -2,6 +2,7 @@
 #include "ui/extension_detail_dialog.hpp"
 #include "ui_marketplace_window.h"
 #include "core/ExtensionManager.h"
+#include "core/PlatformUtils.h"
 #include "core/RegistryManager.h"
 
 #include <QComboBox>
@@ -320,13 +321,18 @@ void MarketplaceWindow::on_refresh_clicked() {
 
 void MarketplaceWindow::on_settings_clicked() {
   QDialog dlg(this);
-  dlg.setWindowTitle("Registry Settings");
+  dlg.setWindowTitle("Marketplace Settings");
   dlg.setMinimumWidth(480);
 
   auto* layout = new QFormLayout(&dlg);
   auto* url_edit = new QLineEdit(registry_url_.toString(), &dlg);
   url_edit->setPlaceholderText(kDefaultRegistryUrl);
   layout->addRow("Registry URL:", url_edit);
+
+  auto* extensions_path = new QLineEdit(PlatformUtils::extensionsDir(), &dlg);
+  extensions_path->setReadOnly(true);
+  extensions_path->setStyleSheet("QLineEdit { background: palette(window); }");
+  layout->addRow("Extensions path:", extensions_path);
 
   auto* buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dlg);
   layout->addRow(buttons);
