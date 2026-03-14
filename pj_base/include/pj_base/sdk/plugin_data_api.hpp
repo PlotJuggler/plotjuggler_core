@@ -68,7 +68,7 @@ using ValueRef = std::variant<NullValue,
                               std::string_view>;
 
 struct NamedFieldValue {
-  std::string_view name;
+  std::string name;  // owned — safe from dangling string_view references
   ValueRef value;
 };
 
@@ -294,6 +294,10 @@ class SourceWriteHostView {
     return handle;
   }
 
+  /// Append one record with named fields.
+  /// Fields not included in the span are automatically filled with null.
+  /// This enables sparse records — not all fields need data for every row.
+  /// Pre-register all fields via ensureField() before the first appendRecord().
   [[nodiscard]] Status appendRecord(
       TopicHandle topic, Timestamp timestamp, Span<const NamedFieldValue> fields) const {
     if (!valid()) {

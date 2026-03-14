@@ -145,6 +145,12 @@ class WidgetDataView {
     return getBool(name, "visible");
   }
 
+  // --- Dialog-level commands ---
+  [[nodiscard]] bool requestAccept() const {
+    auto it = data_.find("__request_accept");
+    return it != data_.end() && it->is_boolean() && it->get<bool>();
+  }
+
   // --- Enumeration ---
   [[nodiscard]] std::vector<std::string> widgetNames() const {
     std::vector<std::string> names;

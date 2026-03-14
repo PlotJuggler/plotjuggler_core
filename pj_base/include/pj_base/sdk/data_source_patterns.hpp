@@ -125,8 +125,11 @@ class StreamSourceBase : public DataSourcePluginBase {
   /// Called from start(). Open connections, allocate resources.
   virtual Status onStart() = 0;
 
-  /// Called from poll(). Read available data, write to writeHost().
-  /// Must not block — drain what is available and return.
+  /// Called periodically by the host's polling thread.
+  /// MUST NOT BLOCK — drain buffered data and return immediately.
+  /// Do not call recv(), read(), or any syscall that may wait.
+  /// If your source has a receive thread, swap-drain a buffer here.
+  /// Host methods (appendRecord, pushRawMessage) may only be called from this method.
   virtual Status onPoll() = 0;
 
   /// Called from stop(). Close connections, free resources.

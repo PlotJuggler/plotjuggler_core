@@ -2,11 +2,13 @@
 #include <QComboBox>
 #include <QDialogButtonBox>
 #include <QDoubleSpinBox>
+#include <QGroupBox>
 #include <QLabel>
 #include <QLineEdit>
 #include <QListWidget>
 #include <QPushButton>
 #include <QRadioButton>
+#include <QSplitter>
 #include <QSignalBlocker>
 #include <QSpinBox>
 #include <QTabWidget>
@@ -180,6 +182,13 @@ static void apply_to_widget(QWidget* w, std::string_view name, const PJ::WidgetD
   }
 
   // Containers (QFrame, QGroupBox, QWidget) — only generic properties applied above.
+  // Warn about widget types that have data in the view but aren't handled.
+  // Skip known container types that only use generic enabled/visible properties.
+  if (!qobject_cast<QFrame*>(w) && !qobject_cast<QGroupBox*>(w) && !qobject_cast<QSplitter*>(w)) {
+    qWarning("WidgetBinding: unsupported widget type '%s' for '%s'; "
+             "see dialog-plugin-guide.md for supported types",
+             w->metaObject()->className(), std::string(name).c_str());
+  }
 }
 
 void applyWidgetData(QWidget* root, const PJ::WidgetDataView& view) {
@@ -253,6 +262,9 @@ void connectWidgetSignals(QWidget* root, WidgetEventCallback callback) {
           sel.push_back(item->text().toStdString());
         }
         callback(name, WidgetEventBuilder::selectionChanged(sel));
+      });
+      QObject::connect(lw, &QListWidget::itemDoubleClicked, lw, [callback, name, lw](QListWidgetItem* item) {
+        callback(name, WidgetEventBuilder::itemDoubleClicked(lw->row(item)));
       });
       continue;
     }

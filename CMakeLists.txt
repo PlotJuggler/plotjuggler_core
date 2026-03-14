@@ -144,6 +144,17 @@ add_subdirectory(pj_base)
 add_subdirectory(pj_datastore)
 add_subdirectory(pj_plugins)
 
+if(PJ_BUILD_DIALOG_ENGINE_QT)
+  find_package(Qt6 COMPONENTS Charts QUIET)
+  if(Qt6Charts_FOUND)
+    add_subdirectory(pj_proto_app)
+  endif()
+endif()
+
+if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/pj_ported_plugins/CMakeLists.txt")
+  add_subdirectory(pj_ported_plugins)
+endif()
+
 # ---------------------------------------------------------------------------
 # PlotJugglerSDK package install
 # ---------------------------------------------------------------------------

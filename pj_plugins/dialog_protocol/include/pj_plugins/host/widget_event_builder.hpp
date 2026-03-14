@@ -80,6 +80,13 @@ struct WidgetEventBuilder {
     j["tab_index"] = index;
     return j.dump();
   }
+
+  /// QListWidget: item double-clicked
+  [[nodiscard]] static std::string itemDoubleClicked(int index) {
+    nlohmann::json j;
+    j["item_double_clicked_index"] = index;
+    return j.dump();
+  }
 };
 
 }  // namespace PJ

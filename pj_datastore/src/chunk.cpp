@@ -691,6 +691,17 @@ void TopicChunk::readColumnAsDoubles(std::size_t col_index, Span<double> out, st
           [&](const auto&) { std::fill(out.begin(), out.end(), std::numeric_limits<double>::quiet_NaN()); },
       },
       col.data);
+
+  // Replace values at null positions with NaN so consumers don't confuse
+  // null (no data) with actual zero values.
+  if (col.validity_bitmap.has_value()) {
+    const auto& bm = *col.validity_bitmap;
+    for (std::size_t i = 0; i < count; ++i) {
+      if (!bm.isValid(row_start + i)) {
+        out[i] = std::numeric_limits<double>::quiet_NaN();
+      }
+    }
+  }
 }
 
 }  // namespace PJ

@@ -994,9 +994,10 @@ TEST(ArrayExpansionTest, Schemaless_EnsureColumn_WhileRowInProgress_ReturnsError
 
   ASSERT_TRUE(writer.finishRow(topic_id).has_value());
 
-  // After finishing the row, ensure_column should succeed
+  // After finishing the row, ensure_column should still fail because rows exist.
+  // Columns must be registered before any data is written.
   auto result2 = writer.ensureColumn(topic_id, "y", PJ::PrimitiveType::kFloat64);
-  EXPECT_TRUE(result2.has_value());
+  EXPECT_FALSE(result2.has_value()) << "ensure_column must fail after rows have been written";
 }
 
 // ─────────────────────────────────────────────────────────────────

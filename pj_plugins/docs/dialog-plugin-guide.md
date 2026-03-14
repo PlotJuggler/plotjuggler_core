@@ -93,13 +93,22 @@ const char* kUiContent = R"(<?xml version="1.0" encoding="UTF-8"?>
     </widget>
    </item>
    <item>
-    <widget class="QDialogButtonBox" name="button_box"/>
+    <widget class="QDialogButtonBox" name="buttonBox">
+     <property name="standardButtons">
+      <set>QDialogButtonBox::Cancel|QDialogButtonBox::Ok</set>
+     </property>
+    </widget>
    </item>
   </layout>
  </widget>
 </ui>
 )";
 ```
+
+> **Important:** The `QDialogButtonBox` must be named `"buttonBox"` (camelCase) and
+> must have the `standardButtons` property set in the XML. The dialog engine
+> searches for `findChild<QDialogButtonBox*>("buttonBox")` to wire the
+> accept/reject signals. Without `standardButtons`, no OK/Cancel buttons appear.
 
 > **Tip:** You can design the `.ui` in Qt Designer, then paste the XML into a
 > raw string literal. Just make sure every interactive widget has a descriptive
@@ -158,6 +167,7 @@ bool onTextChanged(std::string_view name, std::string_view text) override {
 | `onClicked(name)` | QPushButton | (no payload) |
 | `onFileSelected(name, path)` | QPushButton (file picker) | selected file path |
 | `onSelectionChanged(name, items)` | QListWidget | vector of selected item texts |
+| `onItemDoubleClicked(name, index)` | QListWidget | row index of double-clicked item |
 | `onTabChanged(name, index)` | QTabWidget | new tab index |
 
 All handlers default to returning `false`. Override only the ones you need.
@@ -231,12 +241,16 @@ work like polling a server for available topics.
 | QPushButton | `setButtonText` | `onClicked(name)` |
 | QPushButton (file picker) | `setFilePicker` | `onFileSelected(name, path)` |
 | QLabel | `setLabel` | (none — display only) |
-| QListWidget | `setListItems`, `setSelectedItems` | `onSelectionChanged(name, items)` |
+| QListWidget | `setListItems`, `setSelectedItems` | `onSelectionChanged(name, items)`, `onItemDoubleClicked(name, index)` |
 | QTableWidget | `setTableHeaders`, `setTableRows` | (none — display only) |
 | QTabWidget | `setTabIndex` | `onTabChanged(name, index)` |
 | QDialogButtonBox | `setOkEnabled` | (none — host handles OK/Cancel) |
 
 All widgets also support `setEnabled(name, bool)` and `setVisible(name, bool)`.
+
+> **Note:** `QTextEdit` and `QTableView` (model-based) are **not supported** by
+> the widget binding system. Use `QTableWidget` for tabular preview data and
+> `QLabel` or `QListWidget` for text display.
 
 ## Optional Features
 
@@ -325,6 +339,40 @@ Control whether the dialog's OK button is clickable:
 ```cpp
 wd.setOkEnabled("button_box", is_connected_ && has_selection_);
 ```
+
+### Double-click to accept — `onItemDoubleClicked` + `requestAccept`
+
+Use `onItemDoubleClicked` to handle double-click on list items. Combined with
+`requestAccept()`, this implements the common pattern of double-clicking an item
+to select it and immediately close the dialog:
+
+```cpp
+bool onItemDoubleClicked(std::string_view name, int index) override {
+  if (name == "column_list" && index >= 0) {
+    selected_index_ = index;
+    accept_requested_ = true;
+    return true;  // triggers widget_data() refresh
+  }
+  return false;
+}
+
+std::string widget_data() override {
+  PJ::WidgetData wd;
+  // ... set widget states ...
+
+  if (accept_requested_) {
+    accept_requested_ = false;
+    wd.requestAccept();  // tells the host to close the dialog with OK
+  }
+
+  return wd.toJson();
+}
+```
+
+`requestAccept()` sets a `__request_accept` flag in the widget data JSON. After
+applying widget state, the dialog engine checks this flag and calls
+`dialog->accept()` if set. This is a one-shot — the flag is consumed on the
+next `widget_data()` call.
 
 ### onAccepted / onRejected — dialog completion
 

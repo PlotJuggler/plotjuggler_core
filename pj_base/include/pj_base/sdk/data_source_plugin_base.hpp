@@ -228,12 +228,17 @@ class DataSourcePluginBase {
     return okStatus();
   }
 
-  /// Serialize plugin configuration to JSON. Default returns "{}".
+  /// Serialize plugin configuration to JSON.
+  /// If this source has a dialog, delegate to the dialog's saveConfig().
+  /// The host persists this and may pass it back via loadConfig() to restore state.
   virtual std::string saveConfig() const {
     return "{}";
   }
 
-  /// Restore plugin configuration from JSON. Default accepts any input.
+  /// Restore plugin configuration from JSON.
+  /// Called before start(), possibly before showing the dialog.
+  /// If this source has a dialog, delegate to the dialog's loadConfig().
+  /// File importers receive {"filepath": "/path/to/file"} from the host.
   virtual Status loadConfig(std::string_view config_json) {
     (void)config_json;
     return okStatus();

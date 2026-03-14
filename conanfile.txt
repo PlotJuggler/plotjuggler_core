@@ -5,6 +5,12 @@ benchmark/1.9.4
 arrow/23.0.1
 nanoarrow/0.7.0
 nlohmann_json/3.12.0
+mcap/2.1.1
+paho-mqtt-cpp/1.5.3
+cppzmq/4.11.0
+protobuf/6.33.5
+jsoncons/1.5.0
+zstd/1.5.5
 
 [options]
 arrow/*:parquet=True
