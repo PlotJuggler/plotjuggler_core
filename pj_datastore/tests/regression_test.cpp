@@ -31,7 +31,7 @@ TopicChunk makeChunkWithRange(TopicId tid, Timestamp t_start, Timestamp t_end,
       (num_rows > 1) ? (t_end - t_start) / static_cast<Timestamp>(num_rows - 1) : 0;
   for (uint32_t i = 0; i < num_rows; ++i) {
     b.beginRow(t_start + static_cast<Timestamp>(i) * step);
-    b.setFloat32(0, static_cast<float>(i));
+    b.set(0, static_cast<float>(i));
     b.finishRow();
   }
   return b.seal();
@@ -60,12 +60,12 @@ TEST(RegressionTest, Bug1_FlushWithRowInProgress_CorruptsChunkStats) {
 
   // Commit one complete row at t=100.
   ASSERT_TRUE(writer.beginRow(tid, 100).has_value());
-  writer.setFloat64(tid, 0, 1.0);
+  writer.set(tid, 0, 1.0);
   ASSERT_TRUE(writer.finishRow(tid).has_value());
 
   // Start a second row at t=200 but do NOT call finishRow().
   ASSERT_TRUE(writer.beginRow(tid, 200).has_value());
-  writer.setFloat64(tid, 0, 2.0);
+  writer.set(tid, 0, 2.0);
 
   // flush() should only seal the one committed row.
   auto chunks = writer.flush(tid);
@@ -115,7 +115,7 @@ TEST(RegressionTest, Bug2_FinishBulkAppend_ColumnRowCountMismatch_TriggersUB) {
       {
         TopicChunkBuilder builder(/*topic_id=*/1, /*schema_id=*/1, cols, /*max_rows=*/100);
         builder.appendTimestamps(ts);
-        builder.appendColumnFloat32(0, vals);  // 2 rows appended, pending=3
+        builder.appendColumn<float>(0, vals);  // 2 rows appended, pending=3
         builder.finishBulkAppend();            // PJ_ASSERT fires → throws
       },
       std::exception);

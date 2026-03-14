@@ -33,13 +33,18 @@ static nlohmann::json compute_diff(const nlohmann::json& old_data, const nlohman
 // apply_and_diff: re-read widget data, apply (diffed or full), update prev
 // ---------------------------------------------------------------------------
 
-static void apply_and_diff(
+/// Returns true if the plugin requested dialog acceptance via __request_accept.
+static bool apply_and_diff(
     QWidget* root, PJ::DialogHandle& handle, nlohmann::json& prev_data, bool enable_diff, int& diff_apply_count) {
   std::string raw = handle.widget_data();
   nlohmann::json new_data = nlohmann::json::parse(raw, nullptr, false);
   if (new_data.is_discarded()) {
-    return;
+    return false;
   }
+
+  // Check for plugin-requested accept before applying
+  PJ::WidgetDataView full_view(raw);
+  bool wants_accept = full_view.requestAccept();
 
   if (enable_diff) {
     nlohmann::json diff = compute_diff(prev_data, new_data);
@@ -49,10 +54,10 @@ static void apply_and_diff(
       ++diff_apply_count;
     }
   } else {
-    PJ::WidgetDataView view(raw);
-    applyWidgetData(root, view);
+    applyWidgetData(root, full_view);
   }
   prev_data = std::move(new_data);
+  return wants_accept;
 }
 
 // ---------------------------------------------------------------------------
@@ -87,8 +92,15 @@ DialogResult DialogEngine::showDialog(QWidget* parent) {
     if (button_box) {
       QObject::connect(button_box, &QDialogButtonBox::accepted, dialog, &QDialog::accept);
       QObject::connect(button_box, &QDialogButtonBox::rejected, dialog, &QDialog::reject);
+    } else {
+      qWarning("DialogEngine: no QDialogButtonBox named 'buttonBox' found in UI. "
+               "OK/Cancel buttons will not work. Ensure your .ui XML has: "
+               "<widget class=\"QDialogButtonBox\" name=\"buttonBox\">");
     }
   }
+
+  // Task 7: detect parser slot widget
+  stats_.has_parser_slot = loaded->findChild<QWidget*>("pj_parser_slot") != nullptr;
 
   QWidget* binding_root = loaded;
 
@@ -127,7 +139,12 @@ DialogResult DialogEngine::showDialog(QWidget* parent) {
   connectWidgetSignals(binding_root, [&](const std::string& name, const std::string& event_json) {
     stats_.event_count++;
     if (handle_.sendEvent(name, event_json)) {
-      apply_and_diff(binding_root, handle_, prev_data, config_.enable_diff, stats_.diff_apply_count);
+      bool wants_accept =
+          apply_and_diff(binding_root, handle_, prev_data, config_.enable_diff, stats_.diff_apply_count);
+      if (wants_accept) {
+        dialog->accept();
+        return;
+      }
     }
     maybe_show_file_picker(name);
   });
@@ -163,6 +180,10 @@ DialogResult DialogEngine::showDialog(QWidget* parent) {
 // ---------------------------------------------------------------------------
 // run_headless
 // ---------------------------------------------------------------------------
+
+std::string DialogEngine::savedConfig() const {
+  return handle_.save_config();
+}
 
 std::string DialogEngine::runHeadless(int max_ticks) {
   for (int i = 0; i < max_ticks; ++i) {

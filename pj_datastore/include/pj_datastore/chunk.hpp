@@ -63,23 +63,17 @@ struct TopicChunk {
   /// One timestamp per row.
   std::vector<Timestamp> timestamps;
 
-  // Per-column encoded data (parallel vectors, indexed by col_index).
-  // Intentionally SoA rather than AoS: the chunk is immutable after seal(),
-  // so misalignment is impossible, and SoA is cache-friendly for column scans.
-  /// Raw bytes for kRaw columns.
-  std::vector<RawBuffer> encoded_columns;  // Raw typed data for numeric cols
-  /// Encoding kind for each column.
-  std::vector<EncodingType> column_encodings;  // What encoding each column uses
-  /// Validity bitmaps per column (empty means all valid).
-  std::vector<BitVector> validity_bitmaps;  // Per-column (empty if no nulls)
-  /// Column descriptors aligned with encoded columns.
-  std::vector<ColumnDescriptor> column_descriptors;  // Metadata about each column
+  struct Column {
+    encoding::EncodedData data;
+    std::optional<BitVector> validity_bitmap;
+    std::shared_ptr<const ColumnDescriptor> descriptor;
+  };
 
-  // Per-column encoding data (variant: monostate for kRaw, or specific encoding)
-  /// Encoding-specific payload per column.
-  std::vector<encoding::ColumnEncodingData> encoding_data;
+  std::vector<Column> columns;
 
-  // Decode helpers
+  /// Derive encoding type from the EncodedData variant index.
+  [[nodiscard]] EncodingType columnEncoding(std::size_t index) const;
+
   /// Read timestamp at row index.
   [[nodiscard]] Timestamp readTimestamp(std::size_t row) const;
 
@@ -88,6 +82,12 @@ struct TopicChunk {
 
   /// Read numeric value at `col_index,row` as double.
   [[nodiscard]] double readNumericAsDouble(std::size_t col_index, std::size_t row) const;
+
+  /// Read numeric value at `col_index,row` as int64_t.
+  [[nodiscard]] int64_t readNumericAsInt64(std::size_t col_index, std::size_t row) const;
+
+  /// Read numeric value at `col_index,row` as uint64_t.
+  [[nodiscard]] uint64_t readNumericAsUint64(std::size_t col_index, std::size_t row) const;
 
   /// Read string value at `col_index,row`.
   [[nodiscard]] std::string_view readString(std::size_t col_index, std::size_t row) const;
@@ -114,27 +114,10 @@ class TopicChunkBuilder {
   /// Begin a new row at `timestamp`.
   void beginRow(Timestamp timestamp);
 
-  // Set values for the current row (by column index) — 7 storage types
-  /// Set float32 value for current row.
-  void setFloat32(std::size_t col_index, float value);
-
-  /// Set float64 value for current row.
-  void setFloat64(std::size_t col_index, double value);
-
-  /// Set int32 value for current row.
-  void setInt32(std::size_t col_index, int32_t value);
-
-  /// Set int64 value for current row.
-  void setInt64(std::size_t col_index, int64_t value);
-
-  /// Set uint64 value for current row.
-  void setUint64(std::size_t col_index, uint64_t value);
-
-  /// Set bool value for current row.
-  void setBool(std::size_t col_index, bool value);
-
-  /// Set string value for current row.
-  void setString(std::size_t col_index, std::string_view value);
+  /// Set a typed value for the current row.
+  /// Supported T: float, double, int32_t, int64_t, uint64_t, bool, std::string_view.
+  template <typename T>
+  void set(std::size_t col_index, T value);
 
   /// Mark value as null for current row.
   void setNull(std::size_t col_index);
@@ -144,31 +127,19 @@ class TopicChunkBuilder {
   void finishRow();
 
   // ---- Bulk column append ----
-  // Call append_timestamps first, then append_column_* for each column,
-  // then append_column_validity for columns with nulls, then finish_bulk_append.
-  // Stats are computed in finish_bulk_append using the column's validity bitmap.
+  // Call appendTimestamps first, then appendColumn for each column,
+  // then appendColumnValidity for columns with nulls, then finishBulkAppend.
+  // Stats are computed in finishBulkAppend using the column's validity bitmap.
+
   /// Append a contiguous timestamp batch.
   void appendTimestamps(Span<const Timestamp> timestamps);
 
-  /// Append one float32 column batch.
-  void appendColumnFloat32(std::size_t col_index, Span<const float> data);
+  /// Append a typed column batch.
+  /// Supported T: float, double, int32_t, int64_t, uint64_t, uint8_t (bool bytes).
+  template <typename T>
+  void appendColumn(std::size_t col_index, Span<const T> data);
 
-  /// Append one float64 column batch.
-  void appendColumnFloat64(std::size_t col_index, Span<const double> data);
-
-  /// Append one int32 column batch.
-  void appendColumnInt32(std::size_t col_index, Span<const int32_t> data);
-
-  /// Append one int64 column batch.
-  void appendColumnInt64(std::size_t col_index, Span<const int64_t> data);
-
-  /// Append one uint64 column batch.
-  void appendColumnUint64(std::size_t col_index, Span<const uint64_t> data);
-
-  /// Append one bool-byte (0/1) column batch.
-  void appendColumnBool(std::size_t col_index, Span<const uint8_t> data);
-
-  /// Append one string column batch from offsets+data views.
+  /// Append a string column batch from offsets+data views.
   void appendColumnStrings(std::size_t col_index, Span<const uint32_t> offsets, Span<const char> data);
 
   /// Append validity bits for last appended rows of this column.

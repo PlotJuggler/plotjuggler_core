@@ -69,7 +69,7 @@ void BM_Builder_RowAtATime_Float32(benchmark::State& state) {
     TopicChunkBuilder builder(1, 1, cols, kRowCount);
     for (int i = 0; i < kRowCount; ++i) {
       builder.beginRow(data.timestamps[static_cast<std::size_t>(i)]);
-      builder.setFloat32(0, data.floats[static_cast<std::size_t>(i)]);
+      builder.set(0, data.floats[static_cast<std::size_t>(i)]);
       builder.finishRow();
     }
     auto chunk = builder.seal();
@@ -86,7 +86,7 @@ void BM_Builder_Bulk_Float32(benchmark::State& state) {
   for (auto _ : state) {
     TopicChunkBuilder builder(1, 1, cols, kRowCount);
     builder.appendTimestamps(data.timestamps);
-    builder.appendColumnFloat32(0, data.floats);
+    builder.appendColumn<float>(0, data.floats);
     builder.finishBulkAppend();
     auto chunk = builder.seal();
     benchmark::DoNotOptimize(chunk);
@@ -110,7 +110,7 @@ void BM_Builder_RowAtATime_Int64(benchmark::State& state) {
     TopicChunkBuilder builder(1, 1, cols, kRowCount);
     for (int i = 0; i < kRowCount; ++i) {
       builder.beginRow(data.timestamps[static_cast<std::size_t>(i)]);
-      builder.setInt64(0, data.int64s[static_cast<std::size_t>(i)]);
+      builder.set(0, data.int64s[static_cast<std::size_t>(i)]);
       builder.finishRow();
     }
     auto chunk = builder.seal();
@@ -127,7 +127,7 @@ void BM_Builder_Bulk_Int64(benchmark::State& state) {
   for (auto _ : state) {
     TopicChunkBuilder builder(1, 1, cols, kRowCount);
     builder.appendTimestamps(data.timestamps);
-    builder.appendColumnInt64(0, data.int64s);
+    builder.appendColumn<int64_t>(0, data.int64s);
     builder.finishBulkAppend();
     auto chunk = builder.seal();
     benchmark::DoNotOptimize(chunk);
@@ -157,7 +157,7 @@ void BM_Builder_RowAtATime_MultiCol(benchmark::State& state) {
     for (int i = 0; i < kRowCount; ++i) {
       builder.beginRow(data.timestamps[static_cast<std::size_t>(i)]);
       for (int c = 0; c < kMultiColCount; ++c) {
-        builder.setFloat32(static_cast<std::size_t>(c), data.floats[static_cast<std::size_t>(i)]);
+        builder.set(static_cast<std::size_t>(c), data.floats[static_cast<std::size_t>(i)]);
       }
       builder.finishRow();
     }
@@ -179,7 +179,7 @@ void BM_Builder_Bulk_MultiCol(benchmark::State& state) {
     TopicChunkBuilder builder(1, 1, cols, kRowCount);
     builder.appendTimestamps(data.timestamps);
     for (int c = 0; c < kMultiColCount; ++c) {
-      builder.appendColumnFloat32(static_cast<std::size_t>(c), data.floats);
+      builder.appendColumn<float>(static_cast<std::size_t>(c), data.floats);
     }
     builder.finishBulkAppend();
     auto chunk = builder.seal();
@@ -215,7 +215,7 @@ void BM_Writer_RowAtATime_Float32(benchmark::State& state) {
 
     for (int i = 0; i < kRowCount; ++i) {
       (void)writer.beginRow(topic_id, data.timestamps[static_cast<std::size_t>(i)]);
-      writer.setFloat32(topic_id, 0, data.floats[static_cast<std::size_t>(i)]);
+      writer.set(topic_id, 0, data.floats[static_cast<std::size_t>(i)]);
       (void)writer.finishRow(topic_id);
     }
     auto chunks = writer.flush(topic_id);

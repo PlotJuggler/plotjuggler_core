@@ -73,9 +73,9 @@ static VarValue decode_as_varvalue(const TopicChunk& chunk, std::size_t col, std
       return chunk.readNumericAsDouble(col, row);
     case StorageKind::kInt32:
     case StorageKind::kInt64:
-      return static_cast<int64_t>(chunk.readNumericAsDouble(col, row));
+      return chunk.readNumericAsInt64(col, row);
     case StorageKind::kUint64:
-      return static_cast<int64_t>(chunk.readNumericAsDouble(col, row));
+      return chunk.readNumericAsUint64(col, row);
     case StorageKind::kBool:
       return static_cast<int64_t>(chunk.readBool(col, row) ? 1 : 0);
     case StorageKind::kString:
@@ -89,12 +89,44 @@ static void write_varvalue(
     DataWriter& writer, PJ::TopicId tid, std::size_t col, const VarValue& val, StorageKind out_kind) {
   if (out_kind == StorageKind::kString) {
     if (const auto* s = std::get_if<std::string>(&val)) {
-      writer.setString(tid, col, *s);
+      writer.set(tid, col, std::string_view(*s));
     }
     return;
   }
 
-  // Numeric: extract as double then coerce to the target type.
+  // Integer→integer fast paths: avoid the lossy double round-trip.
+  if (out_kind == StorageKind::kUint64) {
+    if (const auto* u = std::get_if<uint64_t>(&val)) {
+      writer.set(tid, col, *u);
+      return;
+    }
+    if (const auto* i = std::get_if<int64_t>(&val)) {
+      writer.set(tid, col, static_cast<uint64_t>(*i));
+      return;
+    }
+  }
+  if (out_kind == StorageKind::kInt64) {
+    if (const auto* i = std::get_if<int64_t>(&val)) {
+      writer.set(tid, col, *i);
+      return;
+    }
+    if (const auto* u = std::get_if<uint64_t>(&val)) {
+      writer.set(tid, col, static_cast<int64_t>(*u));
+      return;
+    }
+  }
+  if (out_kind == StorageKind::kInt32) {
+    if (const auto* i = std::get_if<int64_t>(&val)) {
+      writer.set(tid, col, static_cast<int32_t>(*i));
+      return;
+    }
+    if (const auto* u = std::get_if<uint64_t>(&val)) {
+      writer.set(tid, col, static_cast<int32_t>(*u));
+      return;
+    }
+  }
+
+  // Fallback: extract as double then coerce to the target type.
   double dval = std::visit(
       [](const auto& v) -> double {
         using T = std::decay_t<decltype(v)>;
@@ -108,22 +140,22 @@ static void write_varvalue(
 
   switch (out_kind) {
     case StorageKind::kFloat32:
-      writer.setFloat32(tid, col, static_cast<float>(dval));
+      writer.set(tid, col, static_cast<float>(dval));
       break;
     case StorageKind::kFloat64:
-      writer.setFloat64(tid, col, dval);
+      writer.set(tid, col, dval);
       break;
     case StorageKind::kInt32:
-      writer.setInt32(tid, col, static_cast<int32_t>(dval));
+      writer.set(tid, col, static_cast<int32_t>(dval));
       break;
     case StorageKind::kInt64:
-      writer.setInt64(tid, col, static_cast<int64_t>(dval));
+      writer.set(tid, col, static_cast<int64_t>(dval));
       break;
     case StorageKind::kUint64:
-      writer.setUint64(tid, col, static_cast<uint64_t>(dval));
+      writer.set(tid, col, static_cast<uint64_t>(dval));
       break;
     case StorageKind::kBool:
-      writer.setBool(tid, col, dval != 0.0);
+      writer.set(tid, col, dval != 0.0);
       break;
     case StorageKind::kString:
       break;  // handled above
@@ -277,9 +309,9 @@ PJ::Expected<PJ::NodeId> DerivedEngine::addSisoTransform(
   if (num_cols == 0) {
     // Fall back 2: first committed chunk's columnDescriptors (legacy path).
     const auto& chunks = in_storage->sealedChunks();
-    if (!chunks.empty() && !chunks[0].column_descriptors.empty()) {
-      num_cols = chunks[0].column_descriptors.size();
-      leaf_primitive = chunks[0].column_descriptors[0].logical_type;
+    if (!chunks.empty() && !chunks[0].columns.empty()) {
+      num_cols = chunks[0].columns.size();
+      leaf_primitive = chunks[0].columns[0].descriptor->logical_type;
     }
   }
 
@@ -410,9 +442,9 @@ PJ::Expected<PJ::NodeId> DerivedEngine::addMimoTransform(
     }
     if (num_cols == 0) {
       const auto& chunks = storage->sealedChunks();
-      if (!chunks.empty() && !chunks[0].column_descriptors.empty()) {
-        num_cols = chunks[0].column_descriptors.size();
-        leaf_primitive = chunks[0].column_descriptors[0].logical_type;
+      if (!chunks.empty() && !chunks[0].columns.empty()) {
+        num_cols = chunks[0].columns.size();
+        leaf_primitive = chunks[0].columns[0].descriptor->logical_type;
       }
     }
 
@@ -837,10 +869,14 @@ static PJ::Status run_mimo_incremental(DerivedEngineImpl& /*impl*/, DataEngine& 
 }
 
 // ---------------------------------------------------------------------------
-// schedule
+// scheduleAll / scheduleActive
 // ---------------------------------------------------------------------------
 
-PJ::Status DerivedEngine::schedule(const std::unordered_set<PJ::NodeId>& active_nodes) {
+PJ::Status DerivedEngine::scheduleAll() {
+  return scheduleActive({});
+}
+
+PJ::Status DerivedEngine::scheduleActive(const std::unordered_set<PJ::NodeId>& active_nodes) {
   auto order = topologicalOrder();
 
   // Compute the set of nodes to consider (active_nodes ∪ their transitive upstream deps).
