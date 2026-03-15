@@ -3,7 +3,9 @@
 #include <QObject>
 #include <atomic>
 #include <memory>
+#include <mutex>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 #include "pj_base/data_source_protocol.h"
@@ -12,24 +14,47 @@
 #include "pj_datastore/plugin_data_host.hpp"
 #include "pj_plugins/host/data_source_handle.hpp"
 #include "pj_plugins/host/data_source_library.hpp"
+#include "pj_plugins/host/message_parser_handle.hpp"
 
 namespace proto {
 
+class PluginRegistry;
+
+/// State for one parser binding: parser instance + its write host.
+struct ParserBinding {
+  std::unique_ptr<PJ::MessageParserHandle> parser;
+  std::unique_ptr<PJ::DatastoreParserWriteHost> write_host;
+};
+
+struct DedupMessage {
+  PJ_data_source_message_level_t level = PJ_DATA_SOURCE_MESSAGE_INFO;
+  int count = 0;
+};
+
 struct RuntimeHostState {
+  std::mutex callback_mutex;  // protects messages and state_transitions from plugin threads
   std::vector<PJ_data_source_state_t> state_transitions;
   int progress_starts = 0;
   int progress_updates = 0;
   int progress_finishes = 0;
   std::atomic<bool> stop_requested{false};
-  std::vector<std::string> messages;
+  std::unordered_map<std::string, DedupMessage> messages;
+
+  // Delegated ingest bridge state
+  PJ::DataEngine* engine = nullptr;
+  PJ::DatasetId dataset_id = 0;
+  PluginRegistry* registry = nullptr;
+  uint32_t next_binding_id = 1;
+  std::unordered_map<uint32_t, ParserBinding> parser_bindings;
 };
 
 class DataSourceSession : public QObject {
   Q_OBJECT
 
  public:
-  DataSourceSession(PJ::DataEngine& engine, PJ::DataSourceLibrary& library, PJ::TimeDomainId td_id,
-                    std::string source_name, QObject* parent = nullptr);
+  DataSourceSession(
+      PJ::DataEngine& engine, PJ::DataSourceLibrary& library, PJ::TimeDomainId td_id, std::string source_name,
+      PluginRegistry* registry, QObject* parent = nullptr);
 
   bool startFileImport(const std::string& config_json);
   bool startStream(const std::string& config_json);
@@ -37,8 +62,33 @@ class DataSourceSession : public QObject {
   void poll();
   void requestStop();
 
-  [[nodiscard]] PJ::DataSourceHandle& handle() { return handle_; }
-  [[nodiscard]] PJ::DataSourceLibrary& library() { return library_; }
+  bool pauseStream();
+  bool resumeStream();
+
+  [[nodiscard]] PJ::DataSourceHandle& handle() {
+    return handle_;
+  }
+  [[nodiscard]] PJ::DataSourceLibrary& library() {
+    return library_;
+  }
+  [[nodiscard]] PJ_data_source_state_t currentState() const {
+    return handle_.currentState();
+  }
+  [[nodiscard]] bool supportsPause() const {
+    return (handle_.capabilities() & PJ_DATA_SOURCE_CAPABILITY_SUPPORTS_PAUSE) != 0;
+  }
+  [[nodiscard]] bool isStream() const {
+    return is_stream_;
+  }
+  [[nodiscard]] PJ::DatasetId datasetId() const {
+    return runtime_state_.dataset_id;
+  }
+  [[nodiscard]] const std::string& sourceName() const {
+    return source_name_;
+  }
+  [[nodiscard]] const std::string& lastConfigJson() const {
+    return last_config_json_;
+  }
 
  signals:
   void importComplete();
@@ -53,9 +103,12 @@ class DataSourceSession : public QObject {
   PJ::DataSourceLibrary& library_;
   PJ::TimeDomainId td_id_;
   std::string source_name_;
+  PluginRegistry* registry_;
   PJ::DataSourceHandle handle_;
   std::unique_ptr<PJ::DatastoreSourceWriteHost> write_host_;
   RuntimeHostState runtime_state_;
+  std::string last_config_json_;
+  bool is_stream_ = false;
 };
 
 }  // namespace proto

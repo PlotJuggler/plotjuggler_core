@@ -235,9 +235,9 @@ class DialogPluginBase {
 
 /// Macro to export the vtable entry point for a plugin class.
 /// Usage: PJ_DIALOG_PLUGIN(MyPluginClass)
-#define PJ_DIALOG_PLUGIN(ClassName)                                                          \
-  extern "C" PJ_DIALOG_EXPORT const PJ_dialog_vtable_t* PJ_get_dialog_vtable() {             \
-    static const PJ_dialog_vtable_t* vt =                                                    \
+#define PJ_DIALOG_PLUGIN(ClassName)                                                        \
+  extern "C" PJ_DIALOG_EXPORT const PJ_dialog_vtable_t* PJ_get_dialog_vtable() {           \
+    static const PJ_dialog_vtable_t* vt =                                                  \
         PJ::DialogPluginBase::vtableWithCreate([]() -> void* { return new ClassName(); }); \
-    return vt;                                                                               \
+    return vt;                                                                             \
   }

@@ -246,8 +246,7 @@ PJ::Status DataWriter::beginRow(TopicId topic_id, Timestamp t) {
   }
   auto& builder = getOrCreateBuilder(topic_id);
   if (builder.rowCount() > 0 && t < builder.lastTimestamp()) {
-    return PJ::unexpected(
-        absl::StrCat("Out-of-order timestamp: t=", t, " < last_timestamp=", builder.lastTimestamp()));
+    return PJ::unexpected(absl::StrCat("Out-of-order timestamp: t=", t, " < last_timestamp=", builder.lastTimestamp()));
   }
   builder.beginRow(t);
   return PJ::okStatus();

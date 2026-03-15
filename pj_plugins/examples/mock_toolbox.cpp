@@ -1,27 +1,31 @@
 #include <pj_base/sdk/toolbox_plugin_base.hpp>
-
 #include <string>
 
 namespace {
 
 class MockToolbox : public PJ::ToolboxPluginBase {
  public:
-  uint64_t capabilities() const override { return PJ::kToolboxCapabilityHasDialog; }
+  uint64_t capabilities() const override {
+    return PJ::kToolboxCapabilityHasDialog;
+  }
 
-  std::string saveConfig() const override { return config_; }
+  std::string saveConfig() const override {
+    return config_;
+  }
 
   PJ::Status loadConfig(std::string_view config_json) override {
     config_ = std::string(config_json);
 
     // If config requests a transform, exercise the data-plane
-    if (toolboxHostBound() && runtimeHostBound() &&
-        config_.find("apply_transform") != std::string::npos) {
+    if (toolboxHostBound() && runtimeHostBound() && config_.find("apply_transform") != std::string::npos) {
       applyTransform();
     }
     return PJ::okStatus();
   }
 
-  void* dialogContext() override { return this; }
+  void* dialogContext() override {
+    return this;
+  }
 
  private:
   void applyTransform() {
@@ -49,6 +53,6 @@ class MockToolbox : public PJ::ToolboxPluginBase {
 
 }  // namespace
 
-PJ_TOOLBOX_PLUGIN(MockToolbox,
-                  R"({"name":"Mock Toolbox","version":"1.0.0",)"
-                  R"("description":"Test toolbox for protocol and host integration"})")
+PJ_TOOLBOX_PLUGIN(
+    MockToolbox, R"({"name":"Mock Toolbox","version":"1.0.0",)"
+                 R"("description":"Test toolbox for protocol and host integration"})")

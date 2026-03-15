@@ -142,7 +142,7 @@ class CsvFileLoader : public PJ::FileSourceBase {
     std::ifstream file(path_);
     if (!file) {
       return PJ::unexpected("cannot open " + path_);
-    } 
+    }
 
     // create the topic. Topics are group of fields sharing a timestamp
     auto topic = writeHost().ensureTopic("csv_table");

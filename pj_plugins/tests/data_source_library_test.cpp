@@ -13,26 +13,26 @@
 namespace {
 
 struct MinimalWriteHost {
-  static const char* getLastError(void*) { return nullptr; }
+  static const char* getLastError(void*) {
+    return nullptr;
+  }
 
   static bool ensureTopic(void*, PJ_string_view_t, PJ_topic_handle_t* out_topic) {
     *out_topic = PJ_topic_handle_t{1};
     return true;
   }
 
-  static bool ensureField(void*, PJ_topic_handle_t topic, PJ_string_view_t, PJ_primitive_type_t,
-                          PJ_field_handle_t* out_field) {
+  static bool ensureField(
+      void*, PJ_topic_handle_t topic, PJ_string_view_t, PJ_primitive_type_t, PJ_field_handle_t* out_field) {
     *out_field = PJ_field_handle_t{topic, 1};
     return true;
   }
 
-  static bool appendRecord(void*, PJ_topic_handle_t, int64_t, const PJ_named_field_value_t*,
-                           size_t) {
+  static bool appendRecord(void*, PJ_topic_handle_t, int64_t, const PJ_named_field_value_t*, size_t) {
     return true;
   }
 
-  static bool appendBoundRecord(void*, PJ_topic_handle_t, int64_t, const PJ_bound_field_value_t*,
-                               size_t) {
+  static bool appendBoundRecord(void*, PJ_topic_handle_t, int64_t, const PJ_bound_field_value_t*, size_t) {
     return true;
   }
 
@@ -42,17 +42,24 @@ struct MinimalWriteHost {
 };
 
 struct MinimalRuntimeHost {
-  static const char* getLastError(void*) { return nullptr; }
+  static const char* getLastError(void*) {
+    return nullptr;
+  }
   static void reportMessage(void*, PJ_data_source_message_level_t, PJ_string_view_t) {}
-  static bool progressStart(void*, PJ_string_view_t, uint64_t, bool) { return true; }
-  static bool progressUpdate(void*, uint64_t) { return true; }
+  static bool progressStart(void*, PJ_string_view_t, uint64_t, bool) {
+    return true;
+  }
+  static bool progressUpdate(void*, uint64_t) {
+    return true;
+  }
   static void progressFinish(void*) {}
-  static bool isStopRequested(void*) { return false; }
+  static bool isStopRequested(void*) {
+    return false;
+  }
   static void notifyState(void*, PJ_data_source_state_t) {}
   static void requestStop(void*, PJ_data_source_state_t, PJ_string_view_t) {}
 
-  static bool ensureParserBinding(void*, const PJ_parser_binding_request_t*,
-                                  PJ_parser_binding_handle_t* out_handle) {
+  static bool ensureParserBinding(void*, const PJ_parser_binding_request_t*, PJ_parser_binding_handle_t* out_handle) {
     *out_handle = PJ_parser_binding_handle_t{11};
     return true;
   }

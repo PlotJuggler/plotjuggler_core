@@ -66,11 +66,17 @@ class DataSourceHandle {
   DataSourceHandle(const DataSourceHandle&) = delete;
   DataSourceHandle& operator=(const DataSourceHandle&) = delete;
 
-  [[nodiscard]] bool valid() const { return vt_ != nullptr && ctx_ != nullptr; }
+  [[nodiscard]] bool valid() const {
+    return vt_ != nullptr && ctx_ != nullptr;
+  }
 
-  [[nodiscard]] std::string manifest() const { return safeString(vt_->manifest_json); }
+  [[nodiscard]] std::string manifest() const {
+    return safeString(vt_->manifest_json);
+  }
 
-  [[nodiscard]] uint64_t capabilities() const { return vt_->capabilities(ctx_); }
+  [[nodiscard]] uint64_t capabilities() const {
+    return vt_->capabilities(ctx_);
+  }
 
   [[nodiscard]] bool bindWriteHost(PJ_source_write_host_t write_host) {
     return vt_->bind_write_host(ctx_, write_host);
@@ -80,33 +86,53 @@ class DataSourceHandle {
     return vt_->bind_runtime_host(ctx_, runtime_host);
   }
 
-  [[nodiscard]] std::string saveConfig() const { return safeString(vt_->save_config(ctx_)); }
+  [[nodiscard]] std::string saveConfig() const {
+    return safeString(vt_->save_config(ctx_));
+  }
 
   [[nodiscard]] bool loadConfig(std::string_view config_json) {
     return vt_->load_config(ctx_, std::string(config_json).c_str());
   }
 
-  [[nodiscard]] bool start() { return vt_->start(ctx_); }
+  [[nodiscard]] bool start() {
+    return vt_->start(ctx_);
+  }
 
-  void stop() { vt_->stop(ctx_); }
+  void stop() {
+    vt_->stop(ctx_);
+  }
 
-  [[nodiscard]] bool pause() { return vt_->pause(ctx_); }
+  [[nodiscard]] bool pause() {
+    return vt_->pause(ctx_);
+  }
 
-  [[nodiscard]] bool resume() { return vt_->resume(ctx_); }
+  [[nodiscard]] bool resume() {
+    return vt_->resume(ctx_);
+  }
 
-  [[nodiscard]] bool poll() { return vt_->poll(ctx_); }
+  [[nodiscard]] bool poll() {
+    return vt_->poll(ctx_);
+  }
 
-  [[nodiscard]] PJ_data_source_state_t currentState() const { return vt_->current_state(ctx_); }
+  [[nodiscard]] PJ_data_source_state_t currentState() const {
+    return vt_->current_state(ctx_);
+  }
 
-  [[nodiscard]] std::string lastError() const { return safeString(vt_->get_last_error(ctx_)); }
+  [[nodiscard]] std::string lastError() const {
+    return safeString(vt_->get_last_error(ctx_));
+  }
 
   [[nodiscard]] void* dialogContext() const {
     return vt_->get_dialog_context ? vt_->get_dialog_context(ctx_) : nullptr;
   }
 
-  [[nodiscard]] const PJ_data_source_vtable_t* vtable() const { return vt_; }
+  [[nodiscard]] const PJ_data_source_vtable_t* vtable() const {
+    return vt_;
+  }
 
-  [[nodiscard]] void* context() const { return ctx_; }
+  [[nodiscard]] void* context() const {
+    return ctx_;
+  }
 
  private:
   const PJ_data_source_vtable_t* vt_ = nullptr;

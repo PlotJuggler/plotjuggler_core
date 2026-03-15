@@ -45,7 +45,9 @@ class ToolboxRuntimeHostView {
   explicit ToolboxRuntimeHostView(PJ_toolbox_runtime_host_t host = {}) : host_(host) {}
 
   /// Returns true if both context and vtable pointers are set.
-  [[nodiscard]] bool valid() const { return host_.ctx != nullptr && host_.vtable != nullptr; }
+  [[nodiscard]] bool valid() const {
+    return host_.ctx != nullptr && host_.vtable != nullptr;
+  }
 
   /// Returns the last host-side error, or empty if none.
   [[nodiscard]] std::string_view lastError() const {
@@ -72,7 +74,9 @@ class ToolboxRuntimeHostView {
   }
 
   /// Access the underlying C ABI struct.
-  [[nodiscard]] const PJ_toolbox_runtime_host_t& raw() const { return host_; }
+  [[nodiscard]] const PJ_toolbox_runtime_host_t& raw() const {
+    return host_;
+  }
 
  private:
   PJ_toolbox_runtime_host_t host_{};
@@ -118,7 +122,9 @@ class ToolboxPluginBase {
   }
 
   /// Serialize plugin configuration to JSON. Default returns "{}".
-  virtual std::string saveConfig() const { return "{}"; }
+  virtual std::string saveConfig() const {
+    return "{}";
+  }
 
   /// Restore plugin configuration from JSON. Default accepts any input.
   virtual Status loadConfig(std::string_view config_json) {
@@ -127,18 +133,21 @@ class ToolboxPluginBase {
   }
 
   /// Return the last error message. Override for custom error reporting.
-  virtual std::string lastError() const { return last_error_; }
+  virtual std::string lastError() const {
+    return last_error_;
+  }
 
   /// Override to return your dialog context pointer.
   /// Default returns nullptr (no dialog).
-  virtual void* dialogContext() { return nullptr; }
+  virtual void* dialogContext() {
+    return nullptr;
+  }
 
   template <typename CreateFn>
   static const PJ_toolbox_vtable_t* vtableWithCreate(CreateFn create_fn, const char* manifest) {
     PJ_ASSERT(manifest != nullptr && manifest[0] == '{', "manifest must be a JSON object");
     PJ_ASSERT(std::strstr(manifest, "\"name\"") != nullptr, "manifest must contain a \"name\" key");
-    PJ_ASSERT(
-        std::strstr(manifest, "\"version\"") != nullptr, "manifest must contain a \"version\" key");
+    PJ_ASSERT(std::strstr(manifest, "\"version\"") != nullptr, "manifest must contain a \"version\" key");
     static const PJ_toolbox_vtable_t vt = {
         PJ_TOOLBOX_PLUGIN_PROTOCOL_VERSION,
         sizeof(PJ_toolbox_vtable_t),
@@ -173,7 +182,9 @@ class ToolboxPluginBase {
     return ToolboxRuntimeHostView(runtime_host_);
   }
 
-  void setLastError(std::string error) { last_error_ = std::move(error); }
+  void setLastError(std::string error) {
+    last_error_ = std::move(error);
+  }
 
  private:
   PJ_toolbox_host_t toolbox_host_{};
@@ -213,9 +224,9 @@ class ToolboxPluginBase {
  *   PJ_TOOLBOX_PLUGIN(MyToolbox, R"({"name":"My Toolbox","version":"1.0.0"})")
  * @endcode
  */
-#define PJ_TOOLBOX_PLUGIN(ClassName, manifest)                                             \
-  extern "C" PJ_TOOLBOX_EXPORT const PJ_toolbox_vtable_t* PJ_get_toolbox_vtable() {       \
-    static const PJ_toolbox_vtable_t* vt = PJ::ToolboxPluginBase::vtableWithCreate(        \
-        []() -> void* { return new ClassName(); }, manifest);                              \
-    return vt;                                                                             \
+#define PJ_TOOLBOX_PLUGIN(ClassName, manifest)                                                        \
+  extern "C" PJ_TOOLBOX_EXPORT const PJ_toolbox_vtable_t* PJ_get_toolbox_vtable() {                   \
+    static const PJ_toolbox_vtable_t* vt =                                                            \
+        PJ::ToolboxPluginBase::vtableWithCreate([]() -> void* { return new ClassName(); }, manifest); \
+    return vt;                                                                                        \
   }

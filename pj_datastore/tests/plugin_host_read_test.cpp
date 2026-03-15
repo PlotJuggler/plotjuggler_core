@@ -1,5 +1,3 @@
-#include "pj_datastore/plugin_data_host.hpp"
-
 #include <gtest/gtest.h>
 
 #include <algorithm>
@@ -12,6 +10,7 @@
 #include "pj_base/sdk/plugin_data_api.hpp"
 #include "pj_base/type_tree.hpp"
 #include "pj_datastore/engine.hpp"
+#include "pj_datastore/plugin_data_host.hpp"
 #include "pj_datastore/writer.hpp"
 
 namespace PJ {
@@ -29,8 +28,8 @@ TEST(PluginDataHostReadTest, CatalogSnapshotIsDeterministicAndIncludesSchemaBack
   Fixture f;
   DataWriter writer(f.engine);
 
-  auto schema = makeStruct(
-      "pose", {makePrimitive("x", PrimitiveType::kFloat32), makePrimitive("y", PrimitiveType::kInt16)});
+  auto schema =
+      makeStruct("pose", {makePrimitive("x", PrimitiveType::kFloat32), makePrimitive("y", PrimitiveType::kInt16)});
   const auto schema_id = *writer.registerSchema("pose_schema", schema);
   const auto source_a = *f.toolbox.createDataSource("robot_b");
   const auto source_b = *f.toolbox.createDataSource("robot_a");
@@ -141,8 +140,8 @@ TEST(PluginDataHostReadTest, ReadSeriesPreservesExactPrimitiveTypesAndNulls) {
   auto label_series = std::move(label_series_or.value());
   ASSERT_EQ(label_series.type(), PrimitiveType::kString);
   ASSERT_EQ(label_series.raw().values.as_string.offset_count, 3U);
-  const auto bytes = std::string_view(
-      label_series.raw().values.as_string.bytes, label_series.raw().values.as_string.byte_count);
+  const auto bytes =
+      std::string_view(label_series.raw().values.as_string.bytes, label_series.raw().values.as_string.byte_count);
   EXPECT_EQ(bytes, "alphabeta");
 }
 

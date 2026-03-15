@@ -234,10 +234,11 @@ TEST(TypeTreeTest, CountLeafFieldsFixedArray) {
 
 TEST(TypeTreeTest, CountLeafFieldsFixedArrayOfStruct) {
   // A fixed array of 3 structs with 2 fields each = 6 leaf fields
-  auto inner = makeStruct("point", {
-                                        makePrimitive("x", PrimitiveType::kFloat32),
-                                        makePrimitive("y", PrimitiveType::kFloat32),
-                                    });
+  auto inner = makeStruct(
+      "point", {
+                   makePrimitive("x", PrimitiveType::kFloat32),
+                   makePrimitive("y", PrimitiveType::kFloat32),
+               });
   auto arr = makeArray("points", inner, 3);
   auto root = makeStruct("Root", {arr});
   EXPECT_EQ(countLeafFields(*root), 6u);
@@ -256,10 +257,11 @@ TEST(TypeTreeTest, CountLeafFieldsDynamicArray) {
 TEST(TypeTreeTest, FlattenFieldPathsFixedArray) {
   auto elem = makePrimitive("v", PrimitiveType::kFloat32);
   auto arr = makeArray("data", elem, 3);
-  auto root = makeStruct("Root", {
-                                      makePrimitive("id", PrimitiveType::kInt32),
-                                      arr,
-                                  });
+  auto root = makeStruct(
+      "Root", {
+                  makePrimitive("id", PrimitiveType::kInt32),
+                  arr,
+              });
   auto paths = flattenFieldPaths(*root);
   // Expect: id, data[0].v, data[1].v, data[2].v
   ASSERT_EQ(paths.size(), 4u);

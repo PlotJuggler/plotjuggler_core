@@ -13,12 +13,10 @@ namespace PJ {
 inline void MessageParserPluginBase::trampoline_destroy(void* ctx) {
   try {
     delete static_cast<MessageParserPluginBase*>(ctx);
-  } catch (...) {
-  }
+  } catch (...) {}
 }
 
-inline bool MessageParserPluginBase::trampoline_bind_write_host(
-    void* ctx, PJ_parser_write_host_t write_host) {
+inline bool MessageParserPluginBase::trampoline_bind_write_host(void* ctx, PJ_parser_write_host_t write_host) {
   auto* self = static_cast<MessageParserPluginBase*>(ctx);
   try {
     auto status = self->bindWriteHost(write_host);
@@ -41,8 +39,7 @@ inline bool MessageParserPluginBase::trampoline_bind_schema(
   auto* self = static_cast<MessageParserPluginBase*>(ctx);
   try {
     auto status = self->bindSchema(
-        std::string_view(type_name.data, type_name.size),
-        Span<const uint8_t>(schema.data, schema.size));
+        std::string_view(type_name.data, type_name.size), Span<const uint8_t>(schema.data, schema.size));
     if (!status) {
       self->last_error_ = std::move(status).error();
       return false;
@@ -74,8 +71,7 @@ inline const char* MessageParserPluginBase::trampoline_save_config(void* ctx) {
 inline bool MessageParserPluginBase::trampoline_load_config(void* ctx, const char* config_json) {
   auto* self = static_cast<MessageParserPluginBase*>(ctx);
   try {
-    auto status = self->loadConfig(
-        config_json == nullptr ? std::string_view{} : std::string_view(config_json));
+    auto status = self->loadConfig(config_json == nullptr ? std::string_view{} : std::string_view(config_json));
     if (!status) {
       self->last_error_ = std::move(status).error();
       return false;
@@ -90,12 +86,10 @@ inline bool MessageParserPluginBase::trampoline_load_config(void* ctx, const cha
   }
 }
 
-inline bool MessageParserPluginBase::trampoline_parse(
-    void* ctx, int64_t timestamp_ns, PJ_bytes_view_t payload) {
+inline bool MessageParserPluginBase::trampoline_parse(void* ctx, int64_t timestamp_ns, PJ_bytes_view_t payload) {
   auto* self = static_cast<MessageParserPluginBase*>(ctx);
   try {
-    auto status = self->parse(
-        Timestamp{timestamp_ns}, Span<const uint8_t>(payload.data, payload.size));
+    auto status = self->parse(Timestamp{timestamp_ns}, Span<const uint8_t>(payload.data, payload.size));
     if (!status) {
       self->last_error_ = std::move(status).error();
       return false;

@@ -1,9 +1,9 @@
-#include "pj_base/sdk/message_parser_plugin_base.hpp"
-
 #include <cstdlib>
 #include <cstring>
 #include <string>
 #include <vector>
+
+#include "pj_base/sdk/message_parser_plugin_base.hpp"
 
 namespace {
 
@@ -15,7 +15,9 @@ namespace {
 /// Field names come from schema binding (or defaults to "x","y").
 class MockSchemaParser : public PJ::MessageParserPluginBase {
  public:
-  std::string saveConfig() const override { return config_; }
+  std::string saveConfig() const override {
+    return config_;
+  }
 
   PJ::Status loadConfig(std::string_view config_json) override {
     config_ = std::string(config_json);
@@ -73,8 +75,7 @@ class MockSchemaParser : public PJ::MessageParserPluginBase {
         {.field = field_handles_[0], .value = a},
         {.field = field_handles_[1], .value = b},
     };
-    return writeHost().appendBoundRecord(
-        timestamp_ns, PJ::Span<const PJ::sdk::BoundFieldValue>(fields, 2));
+    return writeHost().appendBoundRecord(timestamp_ns, PJ::Span<const PJ::sdk::BoundFieldValue>(fields, 2));
   }
 
  private:
@@ -108,5 +109,4 @@ class MockSchemaParser : public PJ::MessageParserPluginBase {
 
 }  // namespace
 
-PJ_MESSAGE_PARSER_PLUGIN(MockSchemaParser,
-                         R"({"name":"Mock Schema Parser","version":"1.0.0","encoding":"csv_pair"})")
+PJ_MESSAGE_PARSER_PLUGIN(MockSchemaParser, R"({"name":"Mock Schema Parser","version":"1.0.0","encoding":"csv_pair"})")

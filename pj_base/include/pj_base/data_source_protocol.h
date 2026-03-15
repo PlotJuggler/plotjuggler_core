@@ -55,8 +55,8 @@ typedef enum {
   PJ_DATA_SOURCE_STATE_RUNNING = 3,
   PJ_DATA_SOURCE_STATE_PAUSED = 4,
   PJ_DATA_SOURCE_STATE_STOPPING = 5,
-  PJ_DATA_SOURCE_STATE_STOPPED = 6,  /**< Terminal. */
-  PJ_DATA_SOURCE_STATE_FAILED = 7,   /**< Terminal. */
+  PJ_DATA_SOURCE_STATE_STOPPED = 6, /**< Terminal. */
+  PJ_DATA_SOURCE_STATE_FAILED = 7,  /**< Terminal. */
 } PJ_data_source_state_t;
 
 /** Severity level for plugin-to-host diagnostic messages. */
@@ -73,11 +73,11 @@ typedef enum {
  */
 enum {
   PJ_DATA_SOURCE_CAPABILITY_FINITE_IMPORT = 1ull << 0,     /**< One-shot file import. */
-  PJ_DATA_SOURCE_CAPABILITY_CONTINUOUS_STREAM = 1ull << 1,  /**< Long-lived streaming. */
-  PJ_DATA_SOURCE_CAPABILITY_DIRECT_INGEST = 1ull << 2,      /**< Plugin writes decoded data via write host. */
-  PJ_DATA_SOURCE_CAPABILITY_DELEGATED_INGEST = 1ull << 3,   /**< Plugin pushes raw bytes for host-side parsing. */
-  PJ_DATA_SOURCE_CAPABILITY_SUPPORTS_PAUSE = 1ull << 4,     /**< pause()/resume() are implemented. */
-  PJ_DATA_SOURCE_CAPABILITY_HAS_DIALOG = 1ull << 5,         /**< Plugin provides a configuration dialog. */
+  PJ_DATA_SOURCE_CAPABILITY_CONTINUOUS_STREAM = 1ull << 1, /**< Long-lived streaming. */
+  PJ_DATA_SOURCE_CAPABILITY_DIRECT_INGEST = 1ull << 2,     /**< Plugin writes decoded data via write host. */
+  PJ_DATA_SOURCE_CAPABILITY_DELEGATED_INGEST = 1ull << 3,  /**< Plugin pushes raw bytes for host-side parsing. */
+  PJ_DATA_SOURCE_CAPABILITY_SUPPORTS_PAUSE = 1ull << 4,    /**< pause()/resume() are implemented. */
+  PJ_DATA_SOURCE_CAPABILITY_HAS_DIALOG = 1ull << 5,        /**< Plugin provides a configuration dialog. */
 };
 
 /** Opaque handle returned by ensure_parser_binding, used with push_raw_message. */
@@ -90,11 +90,11 @@ typedef struct {
  * All string views must remain valid for the duration of the call.
  */
 typedef struct {
-  PJ_string_view_t topic_name;          /**< Topic the parser will decode for. */
-  PJ_string_view_t parser_encoding;     /**< Encoding name, e.g. "json", "protobuf". */
-  PJ_string_view_t type_name;           /**< Message type name (encoding-specific). */
-  PJ_bytes_view_t schema;               /**< Optional schema bytes (e.g. FileDescriptorSet). */
-  PJ_string_view_t parser_config_json;  /**< Optional JSON config for the parser. */
+  PJ_string_view_t topic_name;         /**< Topic the parser will decode for. */
+  PJ_string_view_t parser_encoding;    /**< Encoding name, e.g. "json", "protobuf". */
+  PJ_string_view_t type_name;          /**< Message type name (encoding-specific). */
+  PJ_bytes_view_t schema;              /**< Optional schema bytes (e.g. FileDescriptorSet). */
+  PJ_string_view_t parser_config_json; /**< Optional JSON config for the parser. */
 } PJ_parser_binding_request_t;
 
 /**
@@ -105,19 +105,17 @@ typedef struct {
  * raw message payloads. All calls are made on the thread that called start().
  */
 typedef struct PJ_data_source_runtime_host_vtable_t {
-  uint32_t protocol_version;  /**< Must equal PJ_DATA_SOURCE_PROTOCOL_VERSION. */
-  uint32_t struct_size;       /**< sizeof(PJ_data_source_runtime_host_vtable_t). */
+  uint32_t protocol_version; /**< Must equal PJ_DATA_SOURCE_PROTOCOL_VERSION. */
+  uint32_t struct_size;      /**< sizeof(PJ_data_source_runtime_host_vtable_t). */
 
   /** Returns the last host-side error message, or NULL if none. */
   const char* (*get_last_error)(void* ctx);
 
   /** Send a diagnostic message to the host (shown in UI log). */
-  void (*report_message)(
-      void* ctx, PJ_data_source_message_level_t level, PJ_string_view_t message);
+  void (*report_message)(void* ctx, PJ_data_source_message_level_t level, PJ_string_view_t message);
 
   /** Begin a progress sequence. Returns false if the host cannot show progress. */
-  bool (*progress_start)(
-      void* ctx, PJ_string_view_t label, uint64_t total_steps, bool cancellable);
+  bool (*progress_start)(void* ctx, PJ_string_view_t label, uint64_t total_steps, bool cancellable);
 
   /** Advance progress. Returns false if the user cancelled (when cancellable). */
   bool (*progress_update)(void* ctx, uint64_t current_step);
@@ -135,8 +133,7 @@ typedef struct PJ_data_source_runtime_host_vtable_t {
    * Plugin-initiated stop. The plugin asks the host to terminate it,
    * specifying a terminal state (stopped or failed) and a reason string.
    */
-  void (*request_stop)(
-      void* ctx, PJ_data_source_state_t terminal_state, PJ_string_view_t reason);
+  void (*request_stop)(void* ctx, PJ_data_source_state_t terminal_state, PJ_string_view_t reason);
 
   /**
    * Bind (or look up) a parser for a topic. On success, writes the handle
@@ -144,9 +141,7 @@ typedef struct PJ_data_source_runtime_host_vtable_t {
    * Used for delegated ingest mode.
    */
   bool (*ensure_parser_binding)(
-      void* ctx,
-      const PJ_parser_binding_request_t* request,
-      PJ_parser_binding_handle_t* out_handle);
+      void* ctx, const PJ_parser_binding_request_t* request, PJ_parser_binding_handle_t* out_handle);
 
   /**
    * Push a raw message payload for host-side parsing.
@@ -154,10 +149,7 @@ typedef struct PJ_data_source_runtime_host_vtable_t {
    * @p host_timestamp_ns is nanoseconds since the Unix epoch (1970-01-01T00:00:00Z).
    */
   bool (*push_raw_message)(
-      void* ctx,
-      PJ_parser_binding_handle_t handle,
-      int64_t host_timestamp_ns,
-      PJ_bytes_view_t payload);
+      void* ctx, PJ_parser_binding_handle_t handle, int64_t host_timestamp_ns, PJ_bytes_view_t payload);
 } PJ_data_source_runtime_host_vtable_t;
 
 /** Fat pointer pairing a runtime host context with its vtable. */
@@ -173,8 +165,8 @@ typedef struct {
  * Typical lifecycle: create -> bind hosts -> load config -> start -> poll -> stop -> destroy.
  */
 typedef struct PJ_data_source_vtable_t {
-  uint32_t protocol_version;  /**< Must equal PJ_DATA_SOURCE_PROTOCOL_VERSION. */
-  uint32_t struct_size;       /**< sizeof(PJ_data_source_vtable_t). */
+  uint32_t protocol_version; /**< Must equal PJ_DATA_SOURCE_PROTOCOL_VERSION. */
+  uint32_t struct_size;      /**< sizeof(PJ_data_source_vtable_t). */
 
   /** Allocate a new plugin instance. Returns opaque context pointer. */
   void* (*create)(void);

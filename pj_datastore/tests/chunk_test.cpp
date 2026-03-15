@@ -383,9 +383,9 @@ TEST(ChunkTest, IntegerTypesRoundTrip) {
   TopicChunkBuilder builder(/*topic_id=*/90, /*schema_id=*/1, std::move(cols), /*max_rows=*/100);
 
   builder.beginRow(1000);
-  builder.set(0, static_cast<int64_t>(-42));      // int8 → int64 storage
-  builder.set(1, static_cast<int64_t>(-1000));    // int16 → int64 storage
-  builder.set(2, -999999);  // int32 → int32 storage
+  builder.set(0, static_cast<int64_t>(-42));    // int8 → int64 storage
+  builder.set(1, static_cast<int64_t>(-1000));  // int16 → int64 storage
+  builder.set(2, -999999);                      // int32 → int32 storage
   builder.set(3, static_cast<int64_t>(123456789012345LL));
   builder.set(4, static_cast<uint64_t>(255));          // uint8 → uint64 storage
   builder.set(5, static_cast<uint64_t>(65535));        // uint16 → uint64 storage
@@ -1062,8 +1062,9 @@ TEST(ChunkTest, Int64StatsPreservePrecision) {
   constexpr int64_t kA = (int64_t{1} << 54) - 1;  // rounds to 2^54
   constexpr int64_t kB = (int64_t{1} << 54) + 1;  // also rounds to 2^54
   // These must NOT be detected as constant (even though static_cast<double>(kA) == static_cast<double>(kB))
-  static_assert(static_cast<double>(kA) == static_cast<double>(kB),
-                "test premise: kA and kB must have the same double representation");
+  static_assert(
+      static_cast<double>(kA) == static_cast<double>(kB),
+      "test premise: kA and kB must have the same double representation");
 
   builder.beginRow(0);
   builder.set(0, kA);

@@ -93,9 +93,8 @@ static std::vector<std::pair<PJ::Timestamp, double>> collect_rows(DataEngine& en
   }
   std::vector<std::pair<PJ::Timestamp, double>> out;
   auto cursor = rangeQuery(storage->sealedChunks(), 0, std::numeric_limits<PJ::Timestamp>::max());
-  cursor.forEach([&](const SampleRow& row) {
-    out.emplace_back(row.timestamp, row.chunk->readNumericAsDouble(0, row.row_index));
-  });
+  cursor.forEach(
+      [&](const SampleRow& row) { out.emplace_back(row.timestamp, row.chunk->readNumericAsDouble(0, row.row_index)); });
   return out;
 }
 
@@ -1195,7 +1194,9 @@ TEST(MimoTransformTest, TopologicalOrder_MimoComesAfterSiso) {
 // Identity SISO transform: passes value through unchanged, preserving StorageKind.
 class Uint64IdentityTransform : public ISISOTransform {
  public:
-  StorageKind outputKind(StorageKind input_kind) const override { return input_kind; }
+  StorageKind outputKind(StorageKind input_kind) const override {
+    return input_kind;
+  }
 
   bool calculate(PJ::Timestamp time, const VarValue& input, PJ::Timestamp& out_time, VarValue& out_value) override {
     out_time = time;
@@ -1218,10 +1219,10 @@ TEST(DerivedEngine, Uint64PrecisionRoundTrip) {
   const std::vector<uint64_t> test_values = {
       0ULL,
       42ULL,
-      (1ULL << 53) + 1,                          // first value not exactly representable as double
-      std::numeric_limits<int64_t>::max(),         // INT64_MAX
+      (1ULL << 53) + 1,                     // first value not exactly representable as double
+      std::numeric_limits<int64_t>::max(),  // INT64_MAX
       static_cast<uint64_t>(std::numeric_limits<int64_t>::max()) + 1,  // INT64_MAX + 1
-      std::numeric_limits<uint64_t>::max(),        // UINT64_MAX
+      std::numeric_limits<uint64_t>::max(),                            // UINT64_MAX
   };
 
   for (std::size_t i = 0; i < test_values.size(); ++i) {

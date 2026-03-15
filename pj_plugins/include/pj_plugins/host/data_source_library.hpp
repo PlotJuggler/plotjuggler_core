@@ -16,8 +16,8 @@
 
 #include <pj_base/data_source_protocol.h>
 #include <pj_plugins/dialog_protocol.h>
-#include <pj_plugins/host/data_source_handle.hpp>
 
+#include <pj_plugins/host/data_source_handle.hpp>
 #include <string>
 #include <string_view>
 
@@ -47,19 +47,27 @@ class DataSourceLibrary {
   [[nodiscard]] static Expected<DataSourceLibrary> load(std::string_view path);
 
   /// True if the library was loaded and the vtable resolved successfully.
-  [[nodiscard]] bool valid() const { return handle_ != nullptr && vtable_ != nullptr; }
+  [[nodiscard]] bool valid() const {
+    return handle_ != nullptr && vtable_ != nullptr;
+  }
 
   /// Raw vtable pointer. Valid for the lifetime of this DataSourceLibrary.
-  [[nodiscard]] const PJ_data_source_vtable_t* vtable() const { return vtable_; }
+  [[nodiscard]] const PJ_data_source_vtable_t* vtable() const {
+    return vtable_;
+  }
 
   /// Create a new plugin instance. Each handle is independent.
-  [[nodiscard]] DataSourceHandle createHandle() const { return DataSourceHandle(vtable_); }
+  [[nodiscard]] DataSourceHandle createHandle() const {
+    return DataSourceHandle(vtable_);
+  }
 
   /// Resolve the dialog vtable from this .so. Returns error if not exported.
   [[nodiscard]] Expected<const PJ_dialog_vtable_t*> resolveDialogVtable() const;
 
   /// Filesystem path the library was loaded from.
-  [[nodiscard]] std::string path() const { return path_; }
+  [[nodiscard]] std::string path() const {
+    return path_;
+  }
 
  private:
   DataSourceLibrary(void* handle, const PJ_data_source_vtable_t* vtable, std::string path);

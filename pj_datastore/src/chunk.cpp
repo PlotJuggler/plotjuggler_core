@@ -258,9 +258,10 @@ void TopicChunkBuilder::finishBulkAppend() {
   const std::size_t count = bulk_pending_rows_;
 
   for (std::size_t col = 0; col < columns_.size(); ++col) {
-    PJ_ASSERT(columns_[col].rowCount() >= count,
-              "finishBulkAppend: column has fewer rows than bulk_pending_rows_ — "
-              "appendColumn*() must be called with exactly bulk_pending_rows_ values");
+    PJ_ASSERT(
+        columns_[col].rowCount() >= count,
+        "finishBulkAppend: column has fewer rows than bulk_pending_rows_ — "
+        "appendColumn*() must be called with exactly bulk_pending_rows_ values");
     const std::size_t first_row = columns_[col].rowCount() - count;
     const auto kind = storageKindOf(column_descriptors_[col].logical_type);
 
@@ -482,8 +483,7 @@ TopicChunk TopicChunkBuilder::seal() {
           chunk.columns[i].data = encoding::constantEncode(
               Span<const uint8_t>(col.valueBuffer().data(), col.valueBuffer().size()), kind, col.rowCount());
         } else {
-          chunk.columns[i].data =
-              encoding::packBools(Span<const uint8_t>(col.valueBuffer().data(), col.rowCount()));
+          chunk.columns[i].data = encoding::packBools(Span<const uint8_t>(col.valueBuffer().data(), col.rowCount()));
         }
         break;
       }
@@ -519,8 +519,8 @@ TopicChunk TopicChunkBuilder::seal() {
         }
 
         if (exact_is_constant && row_count > 0) {
-          chunk.columns[i].data = encoding::constantEncode(
-              Span<const uint8_t>(buf_data, col.valueBuffer().size()), kind, row_count);
+          chunk.columns[i].data =
+              encoding::constantEncode(Span<const uint8_t>(buf_data, col.valueBuffer().size()), kind, row_count);
         } else if (row_count > 0) {
           const auto range = static_cast<uint64_t>(exact_max - exact_min);
           const uint8_t ob = encoding::offsetBytesFor(range);
@@ -570,13 +570,15 @@ TopicChunk TopicChunkBuilder::seal() {
 // ===========================================================================
 
 EncodingType TopicChunk::columnEncoding(std::size_t index) const {
-  return std::visit(overloaded{
-    [](const RawBuffer&) { return EncodingType::kRaw; },
-    [](const encoding::ConstantEncoded&) { return EncodingType::kConstant; },
-    [](const encoding::FrameOfReferenceEncoded&) { return EncodingType::kFrameOfReference; },
-    [](const encoding::DictionaryEncoded&) { return EncodingType::kDictionary; },
-    [](const encoding::PackedBools&) { return EncodingType::kPackedBool; },
-  }, columns[index].data);
+  return std::visit(
+      overloaded{
+          [](const RawBuffer&) { return EncodingType::kRaw; },
+          [](const encoding::ConstantEncoded&) { return EncodingType::kConstant; },
+          [](const encoding::FrameOfReferenceEncoded&) { return EncodingType::kFrameOfReference; },
+          [](const encoding::DictionaryEncoded&) { return EncodingType::kDictionary; },
+          [](const encoding::PackedBools&) { return EncodingType::kPackedBool; },
+      },
+      columns[index].data);
 }
 
 Timestamp TopicChunk::readTimestamp(std::size_t row) const {
@@ -595,9 +597,7 @@ double TopicChunk::readNumericAsDouble(std::size_t col_index, std::size_t row) c
             return read_raw_as<double>(buf, storageKindOf(col.descriptor->logical_type), row);
           },
           [](const encoding::ConstantEncoded& enc) { return encoding::constantDecodeAsDouble(enc); },
-          [row](const encoding::FrameOfReferenceEncoded& enc) {
-            return encoding::forDecodeOneAsDouble(enc, row);
-          },
+          [row](const encoding::FrameOfReferenceEncoded& enc) { return encoding::forDecodeOneAsDouble(enc, row); },
           [](const auto&) { return 0.0; },
       },
       col.data);
@@ -611,9 +611,7 @@ int64_t TopicChunk::readNumericAsInt64(std::size_t col_index, std::size_t row) c
             return read_raw_as<int64_t>(buf, storageKindOf(col.descriptor->logical_type), row);
           },
           [](const encoding::ConstantEncoded& enc) { return encoding::constantDecodeAsInt64(enc); },
-          [row](const encoding::FrameOfReferenceEncoded& enc) {
-            return encoding::forDecodeOneAsInt64(enc, row);
-          },
+          [row](const encoding::FrameOfReferenceEncoded& enc) { return encoding::forDecodeOneAsInt64(enc, row); },
           [](const auto&) { return static_cast<int64_t>(0); },
       },
       col.data);
@@ -669,9 +667,7 @@ void TopicChunk::readColumnAsDoubles(std::size_t col_index, Span<double> out, st
           [&](const encoding::ConstantEncoded& enc) {
             std::fill(out.begin(), out.end(), encoding::constantDecodeAsDouble(enc));
           },
-          [&](const encoding::FrameOfReferenceEncoded& enc) {
-            encoding::forDecodeRangeAsDoubles(enc, out, row_start);
-          },
+          [&](const encoding::FrameOfReferenceEncoded& enc) { encoding::forDecodeRangeAsDoubles(enc, out, row_start); },
           [&](const RawBuffer& buf) {
             const StorageKind kind = storageKindOf(col.descriptor->logical_type);
             const uint8_t* base = buf.data();

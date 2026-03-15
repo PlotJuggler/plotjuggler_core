@@ -196,9 +196,8 @@ void BM_Chunk_ReadFloat32(benchmark::State& state) {
 }
 
 void BM_Chunk_ReadInt64(benchmark::State& state) {
-  static TopicChunk chunk = build_typed_chunk(PrimitiveType::kInt64, [](TopicChunkBuilder& b, std::size_t col, int i) {
-    b.set(col, static_cast<int64_t>(i));
-  });
+  static TopicChunk chunk = build_typed_chunk(
+      PrimitiveType::kInt64, [](TopicChunkBuilder& b, std::size_t col, int i) { b.set(col, static_cast<int64_t>(i)); });
 
   for (auto _ : state) {
     double sum = 0.0;
@@ -254,9 +253,8 @@ void BM_Chunk_BulkReadFloat32(benchmark::State& state) {
 }
 
 void BM_Chunk_BulkReadInt64(benchmark::State& state) {
-  static TopicChunk chunk = build_typed_chunk(PrimitiveType::kInt64, [](TopicChunkBuilder& b, std::size_t col, int i) {
-    b.set(col, static_cast<int64_t>(i));
-  });
+  static TopicChunk chunk = build_typed_chunk(
+      PrimitiveType::kInt64, [](TopicChunkBuilder& b, std::size_t col, int i) { b.set(col, static_cast<int64_t>(i)); });
 
   std::vector<double> buf(kPointCount);
   for (auto _ : state) {
@@ -371,8 +369,7 @@ void BM_Cursor_ReadFloat32(benchmark::State& state) {
 
 void BM_Cursor_ReadInt64(benchmark::State& state) {
   static std::deque<TopicChunk> chunks = build_chunked_deque(
-      PrimitiveType::kInt64,
-      [](TopicChunkBuilder& b, std::size_t col, int i) { b.set(col, static_cast<int64_t>(i)); });
+      PrimitiveType::kInt64, [](TopicChunkBuilder& b, std::size_t col, int i) { b.set(col, static_cast<int64_t>(i)); });
 
   for (auto _ : state) {
     double sum = 0.0;
@@ -433,8 +430,7 @@ void BM_Cursor_ChunkAtATime_Float32(benchmark::State& state) {
 
 void BM_Cursor_ChunkAtATime_Int64(benchmark::State& state) {
   static std::deque<TopicChunk> chunks = build_chunked_deque(
-      PrimitiveType::kInt64,
-      [](TopicChunkBuilder& b, std::size_t col, int i) { b.set(col, static_cast<int64_t>(i)); });
+      PrimitiveType::kInt64, [](TopicChunkBuilder& b, std::size_t col, int i) { b.set(col, static_cast<int64_t>(i)); });
 
   std::vector<double> buf(kChunkSize);
   for (auto _ : state) {

@@ -15,8 +15,8 @@
 #pragma once
 
 #include <pj_base/toolbox_protocol.h>
-#include <pj_plugins/host/toolbox_handle.hpp>
 
+#include <pj_plugins/host/toolbox_handle.hpp>
 #include <string>
 #include <string_view>
 
@@ -46,16 +46,24 @@ class ToolboxLibrary {
   [[nodiscard]] static Expected<ToolboxLibrary> load(std::string_view path);
 
   /// True if the library was loaded and the vtable resolved successfully.
-  [[nodiscard]] bool valid() const { return handle_ != nullptr && vtable_ != nullptr; }
+  [[nodiscard]] bool valid() const {
+    return handle_ != nullptr && vtable_ != nullptr;
+  }
 
   /// Raw vtable pointer. Valid for the lifetime of this ToolboxLibrary.
-  [[nodiscard]] const PJ_toolbox_vtable_t* vtable() const { return vtable_; }
+  [[nodiscard]] const PJ_toolbox_vtable_t* vtable() const {
+    return vtable_;
+  }
 
   /// Create a new plugin instance. Each handle is independent.
-  [[nodiscard]] ToolboxHandle createHandle() const { return ToolboxHandle(vtable_); }
+  [[nodiscard]] ToolboxHandle createHandle() const {
+    return ToolboxHandle(vtable_);
+  }
 
   /// Filesystem path the library was loaded from.
-  [[nodiscard]] std::string path() const { return path_; }
+  [[nodiscard]] std::string path() const {
+    return path_;
+  }
 
  private:
   ToolboxLibrary(void* handle, const PJ_toolbox_vtable_t* vtable, std::string path);

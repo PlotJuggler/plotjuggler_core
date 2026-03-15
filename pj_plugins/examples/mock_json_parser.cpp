@@ -1,7 +1,7 @@
-#include "pj_base/sdk/message_parser_plugin_base.hpp"
-
 #include <cstdlib>
 #include <string>
+
+#include "pj_base/sdk/message_parser_plugin_base.hpp"
 
 namespace {
 
@@ -22,5 +22,4 @@ class MockJsonParser : public PJ::MessageParserPluginBase {
 
 }  // namespace
 
-PJ_MESSAGE_PARSER_PLUGIN(MockJsonParser,
-                         R"({"name":"Mock JSON Parser","version":"1.0.0","encoding":"json"})")
+PJ_MESSAGE_PARSER_PLUGIN(MockJsonParser, R"({"name":"Mock JSON Parser","version":"1.0.0","encoding":"json"})")

@@ -1,14 +1,17 @@
 #include <pj_base/sdk/data_source_patterns.hpp>
-
 #include <string>
 
 namespace {
 
 class MockFileSource : public PJ::FileSourceBase {
  public:
-  uint64_t extraCapabilities() const override { return PJ::kCapabilityDirectIngest; }
+  uint64_t extraCapabilities() const override {
+    return PJ::kCapabilityDirectIngest;
+  }
 
-  std::string saveConfig() const override { return config_; }
+  std::string saveConfig() const override {
+    return config_;
+  }
 
   PJ::Status loadConfig(std::string_view config_json) override {
     config_ = std::string(config_json);
@@ -52,7 +55,7 @@ class MockFileSource : public PJ::FileSourceBase {
 
 }  // namespace
 
-PJ_DATA_SOURCE_PLUGIN(MockFileSource,
-                      R"({"name":"Mock File Source","version":"1.0.0",)"
-                      R"("description":"Test FileSourceBase lifecycle and progress",)"
-                      R"("file_extensions":[".mock"]})")
+PJ_DATA_SOURCE_PLUGIN(
+    MockFileSource, R"({"name":"Mock File Source","version":"1.0.0",)"
+                    R"("description":"Test FileSourceBase lifecycle and progress",)"
+                    R"("file_extensions":[".mock"]})")

@@ -58,9 +58,12 @@ template <typename T>
 [[nodiscard]] uint64_t readForOffset(const encoding::FrameOfReferenceEncoded& enc, std::size_t row) {
   const uint8_t* data = enc.offsets.data();
   switch (enc.offset_bytes) {
-    case 1: return loadFromBytes<uint8_t>(data + row);
-    case 2: return loadFromBytes<uint16_t>(data + row * 2);
-    default: return loadFromBytes<uint32_t>(data + row * 4);
+    case 1:
+      return loadFromBytes<uint8_t>(data + row);
+    case 2:
+      return loadFromBytes<uint16_t>(data + row * 2);
+    default:
+      return loadFromBytes<uint32_t>(data + row * 4);
   }
 }
 
@@ -80,17 +83,25 @@ template <typename T>
       const StorageKind kind = storageKindOf(chunk.columns[col_index].descriptor->logical_type);
       const uint8_t* base = std::get<RawBuffer>(chunk.columns[col_index].data).data();
       switch (kind) {
-        case StorageKind::kFloat32: return static_cast<T>(loadFromBytes<float>(base + row * sizeof(float)));
-        case StorageKind::kFloat64: return static_cast<T>(loadFromBytes<double>(base + row * sizeof(double)));
-        case StorageKind::kInt32: return static_cast<T>(loadFromBytes<int32_t>(base + row * sizeof(int32_t)));
-        case StorageKind::kInt64: return static_cast<T>(loadFromBytes<int64_t>(base + row * sizeof(int64_t)));
-        case StorageKind::kUint64: return static_cast<T>(loadFromBytes<uint64_t>(base + row * sizeof(uint64_t)));
-        case StorageKind::kBool: return static_cast<T>(chunk.readBool(col_index, row));
-        case StorageKind::kString: return T{};
+        case StorageKind::kFloat32:
+          return static_cast<T>(loadFromBytes<float>(base + row * sizeof(float)));
+        case StorageKind::kFloat64:
+          return static_cast<T>(loadFromBytes<double>(base + row * sizeof(double)));
+        case StorageKind::kInt32:
+          return static_cast<T>(loadFromBytes<int32_t>(base + row * sizeof(int32_t)));
+        case StorageKind::kInt64:
+          return static_cast<T>(loadFromBytes<int64_t>(base + row * sizeof(int64_t)));
+        case StorageKind::kUint64:
+          return static_cast<T>(loadFromBytes<uint64_t>(base + row * sizeof(uint64_t)));
+        case StorageKind::kBool:
+          return static_cast<T>(chunk.readBool(col_index, row));
+        case StorageKind::kString:
+          return T{};
       }
       return T{};
     }
-    default: return T{};
+    default:
+      return T{};
   }
 }
 
@@ -363,19 +374,42 @@ struct WriteCore {
     return true;
   }
 
-  void setFieldValue(TopicId topic_id, std::size_t col_index, PrimitiveType logical_type, const PJ_scalar_value_t& value) {
+  void setFieldValue(
+      TopicId topic_id, std::size_t col_index, PrimitiveType logical_type, const PJ_scalar_value_t& value) {
     switch (logical_type) {
-      case PrimitiveType::kFloat32: writer_.set(topic_id, col_index, value.data.as_float32); break;
-      case PrimitiveType::kFloat64: writer_.set(topic_id, col_index, value.data.as_float64); break;
-      case PrimitiveType::kInt8: writer_.set(topic_id, col_index, static_cast<int64_t>(value.data.as_int8)); break;
-      case PrimitiveType::kInt16: writer_.set(topic_id, col_index, static_cast<int64_t>(value.data.as_int16)); break;
-      case PrimitiveType::kInt32: writer_.set(topic_id, col_index, value.data.as_int32); break;
-      case PrimitiveType::kInt64: writer_.set(topic_id, col_index, value.data.as_int64); break;
-      case PrimitiveType::kUint8: writer_.set(topic_id, col_index, static_cast<uint64_t>(value.data.as_uint8)); break;
-      case PrimitiveType::kUint16: writer_.set(topic_id, col_index, static_cast<uint64_t>(value.data.as_uint16)); break;
-      case PrimitiveType::kUint32: writer_.set(topic_id, col_index, static_cast<uint64_t>(value.data.as_uint32)); break;
-      case PrimitiveType::kUint64: writer_.set(topic_id, col_index, value.data.as_uint64); break;
-      case PrimitiveType::kBool: writer_.set(topic_id, col_index, value.data.as_bool != 0); break;
+      case PrimitiveType::kFloat32:
+        writer_.set(topic_id, col_index, value.data.as_float32);
+        break;
+      case PrimitiveType::kFloat64:
+        writer_.set(topic_id, col_index, value.data.as_float64);
+        break;
+      case PrimitiveType::kInt8:
+        writer_.set(topic_id, col_index, static_cast<int64_t>(value.data.as_int8));
+        break;
+      case PrimitiveType::kInt16:
+        writer_.set(topic_id, col_index, static_cast<int64_t>(value.data.as_int16));
+        break;
+      case PrimitiveType::kInt32:
+        writer_.set(topic_id, col_index, value.data.as_int32);
+        break;
+      case PrimitiveType::kInt64:
+        writer_.set(topic_id, col_index, value.data.as_int64);
+        break;
+      case PrimitiveType::kUint8:
+        writer_.set(topic_id, col_index, static_cast<uint64_t>(value.data.as_uint8));
+        break;
+      case PrimitiveType::kUint16:
+        writer_.set(topic_id, col_index, static_cast<uint64_t>(value.data.as_uint16));
+        break;
+      case PrimitiveType::kUint32:
+        writer_.set(topic_id, col_index, static_cast<uint64_t>(value.data.as_uint32));
+        break;
+      case PrimitiveType::kUint64:
+        writer_.set(topic_id, col_index, value.data.as_uint64);
+        break;
+      case PrimitiveType::kBool:
+        writer_.set(topic_id, col_index, value.data.as_bool != 0);
+        break;
       case PrimitiveType::kString:
         writer_.set(topic_id, col_index, toStringView(value.data.as_string));
         break;
@@ -643,27 +677,30 @@ struct ToolboxCore {
         const uint32_t first_field = static_cast<uint32_t>(state->fields.size());
         const auto columns = effectiveColumns(engine_, *storage);
         for (const auto& col : columns) {
-          state->fields.push_back(PJ_field_info_t{
-              .handle = FieldHandle{.topic = TopicHandle{.id = tid}, .id = col.field_id},
-              .name = storeString(*state, col.field_path),
-              .type = static_cast<PJ_primitive_type_t>(col.logical_type),
-          });
+          state->fields.push_back(
+              PJ_field_info_t{
+                  .handle = FieldHandle{.topic = TopicHandle{.id = tid}, .id = col.field_id},
+                  .name = storeString(*state, col.field_path),
+                  .type = static_cast<PJ_primitive_type_t>(col.logical_type),
+              });
         }
-        state->topics.push_back(PJ_topic_info_t{
-            .handle = TopicHandle{.id = tid},
-            .source = DataSourceHandle{.id = ds_id},
-            .name = storeString(*state, storage->descriptor().name),
-            .first_field = first_field,
-            .field_count = static_cast<uint32_t>(state->fields.size()) - first_field,
-        });
+        state->topics.push_back(
+            PJ_topic_info_t{
+                .handle = TopicHandle{.id = tid},
+                .source = DataSourceHandle{.id = ds_id},
+                .name = storeString(*state, storage->descriptor().name),
+                .first_field = first_field,
+                .field_count = static_cast<uint32_t>(state->fields.size()) - first_field,
+            });
       }
 
-      state->data_sources.push_back(PJ_data_source_info_t{
-          .handle = DataSourceHandle{.id = ds_id},
-          .name = storeString(*state, dataset->source_name),
-          .first_topic = first_topic,
-          .topic_count = static_cast<uint32_t>(state->topics.size()) - first_topic,
-      });
+      state->data_sources.push_back(
+          PJ_data_source_info_t{
+              .handle = DataSourceHandle{.id = ds_id},
+              .name = storeString(*state, dataset->source_name),
+              .first_topic = first_topic,
+              .topic_count = static_cast<uint32_t>(state->topics.size()) - first_topic,
+          });
     }
 
     *out_snapshot = PJ_catalog_snapshot_t{
@@ -714,17 +751,39 @@ struct ToolboxCore {
 
     std::size_t row_index = 0;
     switch (desc->logical_type) {
-      case PrimitiveType::kFloat32: state->float32_values.reserve(total_rows); break;
-      case PrimitiveType::kFloat64: state->float64_values.reserve(total_rows); break;
-      case PrimitiveType::kInt8: state->int8_values.reserve(total_rows); break;
-      case PrimitiveType::kInt16: state->int16_values.reserve(total_rows); break;
-      case PrimitiveType::kInt32: state->int32_values.reserve(total_rows); break;
-      case PrimitiveType::kInt64: state->int64_values.reserve(total_rows); break;
-      case PrimitiveType::kUint8: state->uint8_values.reserve(total_rows); break;
-      case PrimitiveType::kUint16: state->uint16_values.reserve(total_rows); break;
-      case PrimitiveType::kUint32: state->uint32_values.reserve(total_rows); break;
-      case PrimitiveType::kUint64: state->uint64_values.reserve(total_rows); break;
-      case PrimitiveType::kBool: state->bool_values.reserve(total_rows); break;
+      case PrimitiveType::kFloat32:
+        state->float32_values.reserve(total_rows);
+        break;
+      case PrimitiveType::kFloat64:
+        state->float64_values.reserve(total_rows);
+        break;
+      case PrimitiveType::kInt8:
+        state->int8_values.reserve(total_rows);
+        break;
+      case PrimitiveType::kInt16:
+        state->int16_values.reserve(total_rows);
+        break;
+      case PrimitiveType::kInt32:
+        state->int32_values.reserve(total_rows);
+        break;
+      case PrimitiveType::kInt64:
+        state->int64_values.reserve(total_rows);
+        break;
+      case PrimitiveType::kUint8:
+        state->uint8_values.reserve(total_rows);
+        break;
+      case PrimitiveType::kUint16:
+        state->uint16_values.reserve(total_rows);
+        break;
+      case PrimitiveType::kUint32:
+        state->uint32_values.reserve(total_rows);
+        break;
+      case PrimitiveType::kUint64:
+        state->uint64_values.reserve(total_rows);
+        break;
+      case PrimitiveType::kBool:
+        state->bool_values.reserve(total_rows);
+        break;
       case PrimitiveType::kString:
         state->string_offsets.push_back(0);
         break;
@@ -824,17 +883,39 @@ struct ToolboxCore {
     };
 
     switch (desc->logical_type) {
-      case PrimitiveType::kFloat32: out_series->values.as_float32 = state->float32_values.data(); break;
-      case PrimitiveType::kFloat64: out_series->values.as_float64 = state->float64_values.data(); break;
-      case PrimitiveType::kInt8: out_series->values.as_int8 = state->int8_values.data(); break;
-      case PrimitiveType::kInt16: out_series->values.as_int16 = state->int16_values.data(); break;
-      case PrimitiveType::kInt32: out_series->values.as_int32 = state->int32_values.data(); break;
-      case PrimitiveType::kInt64: out_series->values.as_int64 = state->int64_values.data(); break;
-      case PrimitiveType::kUint8: out_series->values.as_uint8 = state->uint8_values.data(); break;
-      case PrimitiveType::kUint16: out_series->values.as_uint16 = state->uint16_values.data(); break;
-      case PrimitiveType::kUint32: out_series->values.as_uint32 = state->uint32_values.data(); break;
-      case PrimitiveType::kUint64: out_series->values.as_uint64 = state->uint64_values.data(); break;
-      case PrimitiveType::kBool: out_series->values.as_bool = state->bool_values.data(); break;
+      case PrimitiveType::kFloat32:
+        out_series->values.as_float32 = state->float32_values.data();
+        break;
+      case PrimitiveType::kFloat64:
+        out_series->values.as_float64 = state->float64_values.data();
+        break;
+      case PrimitiveType::kInt8:
+        out_series->values.as_int8 = state->int8_values.data();
+        break;
+      case PrimitiveType::kInt16:
+        out_series->values.as_int16 = state->int16_values.data();
+        break;
+      case PrimitiveType::kInt32:
+        out_series->values.as_int32 = state->int32_values.data();
+        break;
+      case PrimitiveType::kInt64:
+        out_series->values.as_int64 = state->int64_values.data();
+        break;
+      case PrimitiveType::kUint8:
+        out_series->values.as_uint8 = state->uint8_values.data();
+        break;
+      case PrimitiveType::kUint16:
+        out_series->values.as_uint16 = state->uint16_values.data();
+        break;
+      case PrimitiveType::kUint32:
+        out_series->values.as_uint32 = state->uint32_values.data();
+        break;
+      case PrimitiveType::kUint64:
+        out_series->values.as_uint64 = state->uint64_values.data();
+        break;
+      case PrimitiveType::kBool:
+        out_series->values.as_bool = state->bool_values.data();
+        break;
       case PrimitiveType::kString:
         out_series->values.as_string = PJ_string_series_values_t{
             .offsets = state->string_offsets.data(),
@@ -852,7 +933,8 @@ struct ToolboxCore {
 };
 
 struct DatastoreSourceWriteHostState {
-  DatastoreSourceWriteHostState(DataEngine& engine, DataSourceHandle source_handle) : core(engine), source(source_handle) {}
+  DatastoreSourceWriteHostState(DataEngine& engine, DataSourceHandle source_handle)
+      : core(engine), source(source_handle) {}
   WriteCore core;
   DataSourceHandle source;
 };
@@ -886,11 +968,11 @@ bool sourceAppendRecord(
 
 bool sourceAppendRecordFast(
     void* ctx, TopicHandle topic, int64_t timestamp, const PJ_bound_field_value_t* fields, std::size_t field_count) {
-  return static_cast<DatastoreSourceWriteHostState*>(ctx)->core.appendBoundRecord(topic, timestamp, fields, field_count);
+  return static_cast<DatastoreSourceWriteHostState*>(ctx)->core.appendBoundRecord(
+      topic, timestamp, fields, field_count);
 }
 
-bool sourceAppendArrowIpc(
-    void* ctx, TopicHandle topic, PJ_bytes_view_t ipc_stream, PJ_string_view_t timestamp_column) {
+bool sourceAppendArrowIpc(void* ctx, TopicHandle topic, PJ_bytes_view_t ipc_stream, PJ_string_view_t timestamp_column) {
   return static_cast<DatastoreSourceWriteHostState*>(ctx)->core.appendArrowIpc(topic, ipc_stream, timestamp_column);
 }
 
@@ -927,8 +1009,7 @@ bool toolboxCreateDataSource(void* ctx, PJ_string_view_t name, DataSourceHandle*
   return static_cast<DatastoreToolboxHostState*>(ctx)->core.write.createDataSource(toStringView(name), out_source);
 }
 
-bool toolboxEnsureTopic(
-    void* ctx, DataSourceHandle source, PJ_string_view_t topic_name, TopicHandle* out_topic) {
+bool toolboxEnsureTopic(void* ctx, DataSourceHandle source, PJ_string_view_t topic_name, TopicHandle* out_topic) {
   return static_cast<DatastoreToolboxHostState*>(ctx)->core.write.ensureTopic(
       source, toStringView(topic_name), out_topic);
 }
@@ -952,8 +1033,7 @@ bool toolboxAppendRecordFast(
 
 bool toolboxAppendArrowIpc(
     void* ctx, TopicHandle topic, PJ_bytes_view_t ipc_stream, PJ_string_view_t timestamp_column) {
-  return static_cast<DatastoreToolboxHostState*>(ctx)->core.write.appendArrowIpc(
-      topic, ipc_stream, timestamp_column);
+  return static_cast<DatastoreToolboxHostState*>(ctx)->core.write.appendArrowIpc(topic, ipc_stream, timestamp_column);
 }
 
 bool toolboxAcquireCatalogSnapshot(void* ctx, PJ_catalog_snapshot_t* out_snapshot) {
@@ -990,16 +1070,11 @@ const PJ_parser_write_host_vtable_t kParserWriteVTable = {
 };
 
 const PJ_toolbox_host_vtable_t kToolboxVTable = {
-    PJ_PLUGIN_DATA_API_VERSION,
-    sizeof(PJ_toolbox_host_vtable_t),
-    toolboxLastError,
-    toolboxCreateDataSource,
-    toolboxEnsureTopic,
-    toolboxEnsureField,
-    toolboxAppendRecord,
-    toolboxAppendRecordFast,
-    toolboxAppendArrowIpc,
-    toolboxAcquireCatalogSnapshot,
+    PJ_PLUGIN_DATA_API_VERSION, sizeof(PJ_toolbox_host_vtable_t),
+    toolboxLastError,           toolboxCreateDataSource,
+    toolboxEnsureTopic,         toolboxEnsureField,
+    toolboxAppendRecord,        toolboxAppendRecordFast,
+    toolboxAppendArrowIpc,      toolboxAcquireCatalogSnapshot,
     toolboxReadSeries,
 };
 

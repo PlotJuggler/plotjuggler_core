@@ -1,11 +1,10 @@
-#include "pj_plugins/host/toolbox_library.hpp"
-
 #include <gtest/gtest.h>
 
 #include <string>
 
 #include "pj_base/plugin_data_api.h"
 #include "pj_base/sdk/toolbox_plugin_base.hpp"
+#include "pj_plugins/host/toolbox_library.hpp"
 
 #ifndef PJ_MOCK_TOOLBOX_PLUGIN_PATH
 #error "PJ_MOCK_TOOLBOX_PLUGIN_PATH must be defined"
@@ -17,7 +16,9 @@ struct MinimalToolboxHost {
   int create_data_source_calls = 0;
   int append_record_calls = 0;
 
-  static const char* getLastError(void*) { return nullptr; }
+  static const char* getLastError(void*) {
+    return nullptr;
+  }
 
   static bool createDataSource(void* ctx, PJ_string_view_t, PJ_data_source_handle_t* out_source) {
     auto* self = static_cast<MinimalToolboxHost*>(ctx);
@@ -26,27 +27,24 @@ struct MinimalToolboxHost {
     return true;
   }
 
-  static bool ensureTopic(void*, PJ_data_source_handle_t, PJ_string_view_t,
-                          PJ_topic_handle_t* out_topic) {
+  static bool ensureTopic(void*, PJ_data_source_handle_t, PJ_string_view_t, PJ_topic_handle_t* out_topic) {
     *out_topic = PJ_topic_handle_t{1};
     return true;
   }
 
-  static bool ensureField(void*, PJ_topic_handle_t, PJ_string_view_t, PJ_primitive_type_t,
-                          PJ_field_handle_t* out_field) {
+  static bool ensureField(
+      void*, PJ_topic_handle_t, PJ_string_view_t, PJ_primitive_type_t, PJ_field_handle_t* out_field) {
     *out_field = PJ_field_handle_t{PJ_topic_handle_t{1}, 1};
     return true;
   }
 
-  static bool appendRecord(void* ctx, PJ_topic_handle_t, int64_t, const PJ_named_field_value_t*,
-                           size_t) {
+  static bool appendRecord(void* ctx, PJ_topic_handle_t, int64_t, const PJ_named_field_value_t*, size_t) {
     auto* self = static_cast<MinimalToolboxHost*>(ctx);
     ++self->append_record_calls;
     return true;
   }
 
-  static bool appendBoundRecord(void*, PJ_topic_handle_t, int64_t, const PJ_bound_field_value_t*,
-                                size_t) {
+  static bool appendBoundRecord(void*, PJ_topic_handle_t, int64_t, const PJ_bound_field_value_t*, size_t) {
     return true;
   }
 
@@ -54,15 +52,21 @@ struct MinimalToolboxHost {
     return true;
   }
 
-  static bool acquireCatalogSnapshot(void*, PJ_catalog_snapshot_t*) { return false; }
+  static bool acquireCatalogSnapshot(void*, PJ_catalog_snapshot_t*) {
+    return false;
+  }
 
-  static bool readSeries(void*, PJ_field_handle_t, PJ_materialized_series_t*) { return false; }
+  static bool readSeries(void*, PJ_field_handle_t, PJ_materialized_series_t*) {
+    return false;
+  }
 };
 
 struct MinimalRuntimeHost {
   int notify_data_changed_calls = 0;
 
-  static const char* getLastError(void*) { return nullptr; }
+  static const char* getLastError(void*) {
+    return nullptr;
+  }
 
   static void reportMessage(void*, PJ_toolbox_message_level_t, PJ_string_view_t) {}
 
@@ -104,8 +108,7 @@ TEST(ToolboxPluginTest, LoadsSharedLibraryAndValidatesVtable) {
   auto library = PJ::ToolboxLibrary::load(PJ_MOCK_TOOLBOX_PLUGIN_PATH);
   ASSERT_TRUE(library) << library.error();
   EXPECT_TRUE(library->valid());
-  EXPECT_EQ(library->vtable()->protocol_version,
-            static_cast<uint32_t>(PJ_TOOLBOX_PLUGIN_PROTOCOL_VERSION));
+  EXPECT_EQ(library->vtable()->protocol_version, static_cast<uint32_t>(PJ_TOOLBOX_PLUGIN_PROTOCOL_VERSION));
   EXPECT_GE(library->vtable()->struct_size, sizeof(PJ_toolbox_vtable_t));
 }
 
@@ -175,16 +178,23 @@ namespace {
 
 class ThrowingToolbox : public PJ::ToolboxPluginBase {
  public:
-  uint64_t capabilities() const override { throw std::runtime_error("capabilities exploded"); }
-  std::string saveConfig() const override { throw std::runtime_error("save exploded"); }
-  PJ::Status loadConfig(std::string_view) override { throw std::runtime_error("load exploded"); }
-  void* dialogContext() override { throw std::runtime_error("dialog exploded"); }
+  uint64_t capabilities() const override {
+    throw std::runtime_error("capabilities exploded");
+  }
+  std::string saveConfig() const override {
+    throw std::runtime_error("save exploded");
+  }
+  PJ::Status loadConfig(std::string_view) override {
+    throw std::runtime_error("load exploded");
+  }
+  void* dialogContext() override {
+    throw std::runtime_error("dialog exploded");
+  }
 };
 
 const PJ_toolbox_vtable_t* throwingVtable() {
   static const PJ_toolbox_vtable_t* vt = PJ::ToolboxPluginBase::vtableWithCreate(
-      []() -> void* { return new ThrowingToolbox(); },
-      R"({"name":"Thrower","version":"0.0.1"})");
+      []() -> void* { return new ThrowingToolbox(); }, R"({"name":"Thrower","version":"0.0.1"})");
   return vt;
 }
 
@@ -193,7 +203,9 @@ struct VtableDriver {
   void* ctx;
 
   explicit VtableDriver(const PJ_toolbox_vtable_t* vtable) : vt(vtable), ctx(vt->create()) {}
-  ~VtableDriver() { vt->destroy(ctx); }
+  ~VtableDriver() {
+    vt->destroy(ctx);
+  }
   VtableDriver(const VtableDriver&) = delete;
   VtableDriver& operator=(const VtableDriver&) = delete;
 };

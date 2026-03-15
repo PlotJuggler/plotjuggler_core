@@ -94,9 +94,13 @@ class FileSourceBase : public DataSourcePluginBase {
     return okStatus();
   }
 
-  void stop() final { state_ = DataSourceState::kStopped; }
+  void stop() final {
+    state_ = DataSourceState::kStopped;
+  }
 
-  DataSourceState currentState() const final { return state_; }
+  DataSourceState currentState() const final {
+    return state_;
+  }
 
  private:
   DataSourceState state_ = DataSourceState::kIdle;
@@ -152,7 +156,9 @@ class StreamSourceBase : public DataSourcePluginBase {
     return okStatus();
   }
 
-  Status poll() final { return onPoll(); }
+  Status poll() final {
+    return onPoll();
+  }
 
   void stop() final {
     onStop();
@@ -160,7 +166,9 @@ class StreamSourceBase : public DataSourcePluginBase {
     runtimeHost().notifyState(state_);
   }
 
-  DataSourceState currentState() const final { return state_; }
+  DataSourceState currentState() const final {
+    return state_;
+  }
 
  private:
   DataSourceState state_ = DataSourceState::kIdle;

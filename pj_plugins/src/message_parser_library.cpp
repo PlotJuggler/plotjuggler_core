@@ -27,8 +27,7 @@ Expected<PJ_get_message_parser_vtable_fn> loadEntryPoint(void* handle) {
 
 }  // namespace
 
-MessageParserLibrary::MessageParserLibrary(
-    void* handle, const PJ_message_parser_vtable_t* vtable, std::string path)
+MessageParserLibrary::MessageParserLibrary(void* handle, const PJ_message_parser_vtable_t* vtable, std::string path)
     : handle_(handle), vtable_(vtable), path_(std::move(path)) {}
 
 MessageParserLibrary::~MessageParserLibrary() {

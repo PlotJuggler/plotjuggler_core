@@ -13,7 +13,9 @@ TimeRangeSlider::TimeRangeSlider(QWidget* parent) : QWidget(parent) {
 }
 
 void TimeRangeSlider::setGlobalRange(PJ::Timestamp global_min, PJ::Timestamp global_max) {
-  if (global_max <= global_min) return;
+  if (global_max <= global_min) {
+    return;
+  }
   bool first_time = (global_min_ == 0 && global_max_ == 1);
   global_min_ = global_min;
   global_max_ = global_max;
@@ -32,7 +34,9 @@ void TimeRangeSlider::setGlobalRange(PJ::Timestamp global_min, PJ::Timestamp glo
 }
 
 int TimeRangeSlider::timestampToPixel(PJ::Timestamp t) const {
-  if (global_max_ == global_min_) return kTrackMargin;
+  if (global_max_ == global_min_) {
+    return kTrackMargin;
+  }
   double fraction = static_cast<double>(t - global_min_) / static_cast<double>(global_max_ - global_min_);
   int track_width = width() - 2 * kTrackMargin;
   return kTrackMargin + static_cast<int>(fraction * track_width);
@@ -40,7 +44,9 @@ int TimeRangeSlider::timestampToPixel(PJ::Timestamp t) const {
 
 PJ::Timestamp TimeRangeSlider::pixelToTimestamp(int x) const {
   int track_width = width() - 2 * kTrackMargin;
-  if (track_width <= 0) return global_min_;
+  if (track_width <= 0) {
+    return global_min_;
+  }
   double fraction = static_cast<double>(x - kTrackMargin) / static_cast<double>(track_width);
   fraction = std::clamp(fraction, 0.0, 1.0);
   return global_min_ + static_cast<PJ::Timestamp>(fraction * static_cast<double>(global_max_ - global_min_));
@@ -88,7 +94,9 @@ void TimeRangeSlider::mousePressEvent(QMouseEvent* event) {
 }
 
 void TimeRangeSlider::mouseMoveEvent(QMouseEvent* event) {
-  if (drag_target_ == DragTarget::kNone) return;
+  if (drag_target_ == DragTarget::kNone) {
+    return;
+  }
 
   int x = static_cast<int>(event->position().x());
   PJ::Timestamp t = pixelToTimestamp(x);
@@ -112,6 +120,8 @@ void TimeRangeSlider::mouseMoveEvent(QMouseEvent* event) {
   emit rangeChanged(begin_, end_);
 }
 
-void TimeRangeSlider::mouseReleaseEvent(QMouseEvent*) { drag_target_ = DragTarget::kNone; }
+void TimeRangeSlider::mouseReleaseEvent(QMouseEvent*) {
+  drag_target_ = DragTarget::kNone;
+}
 
 }  // namespace proto

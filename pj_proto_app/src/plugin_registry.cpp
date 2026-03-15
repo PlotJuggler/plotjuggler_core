@@ -2,7 +2,6 @@
 
 #include <filesystem>
 #include <iostream>
-
 #include <nlohmann/json.hpp>
 
 namespace proto {
@@ -18,9 +17,13 @@ void PluginRegistry::scanDirectory() {
   }
 
   for (const auto& entry : fs::directory_iterator(plugin_dir_)) {
-    if (!entry.is_regular_file()) continue;
+    if (!entry.is_regular_file()) {
+      continue;
+    }
     auto path = entry.path().string();
-    if (entry.path().extension() != ".so") continue;
+    if (entry.path().extension() != ".so") {
+      continue;
+    }
 
     // Try as DataSource
     auto ds_result = PJ::DataSourceLibrary::load(path);
@@ -61,13 +64,26 @@ void PluginRegistry::scanDirectory() {
         auto manifest = nlohmann::json::parse(manifest_str);
         loaded.name = manifest.value("name", entry.path().stem().string());
         loaded.encoding = manifest.value("encoding", "");
+        if (manifest.contains("additional_encodings") && manifest["additional_encodings"].is_array()) {
+          for (const auto& e : manifest["additional_encodings"]) {
+            if (e.is_string()) {
+              loaded.additional_encodings.push_back(e.get<std::string>());
+            }
+          }
+        }
       } catch (...) {
         loaded.name = entry.path().stem().string();
       }
 
       std::cerr << "Loaded MessageParser: " << loaded.name << " from " << path << "\n";
       message_parsers_.push_back(std::move(loaded));
+      continue;
     }
+
+    // Neither DataSource nor MessageParser — log both errors for diagnostics.
+    std::cerr << "Failed to load plugin: " << path << "\n"
+              << "  as DataSource: " << ds_result.error() << "\n"
+              << "  as MessageParser: " << mp_result.error() << "\n";
   }
 }
 
@@ -96,16 +112,26 @@ std::string PluginRegistry::buildFileFilter() const {
   std::string all_exts;
   std::string per_plugin;
   for (const auto& ds : data_sources_) {
-    if (!(ds.capabilities & PJ_DATA_SOURCE_CAPABILITY_FINITE_IMPORT)) continue;
-    if (ds.file_extensions.empty()) continue;
+    if (!(ds.capabilities & PJ_DATA_SOURCE_CAPABILITY_FINITE_IMPORT)) {
+      continue;
+    }
+    if (ds.file_extensions.empty()) {
+      continue;
+    }
 
-    if (!per_plugin.empty()) per_plugin += ";;";
+    if (!per_plugin.empty()) {
+      per_plugin += ";;";
+    }
     per_plugin += ds.name + " (";
     for (size_t i = 0; i < ds.file_extensions.size(); ++i) {
-      if (i > 0) per_plugin += " ";
+      if (i > 0) {
+        per_plugin += " ";
+      }
       per_plugin += "*" + ds.file_extensions[i];
       // Collect for "All supported" entry
-      if (!all_exts.empty()) all_exts += " ";
+      if (!all_exts.empty()) {
+        all_exts += " ";
+      }
       all_exts += "*" + ds.file_extensions[i];
     }
     per_plugin += ")";
@@ -114,11 +140,15 @@ std::string PluginRegistry::buildFileFilter() const {
   std::string filter;
   if (!all_exts.empty()) {
     filter = "All supported files (" + all_exts + ")";
-    if (!per_plugin.empty()) filter += ";;" + per_plugin;
+    if (!per_plugin.empty()) {
+      filter += ";;" + per_plugin;
+    }
   } else {
     filter = per_plugin;
   }
-  if (!filter.empty()) filter += ";;";
+  if (!filter.empty()) {
+    filter += ";;";
+  }
   filter += "All files (*)";
   return filter;
 }
@@ -126,7 +156,9 @@ std::string PluginRegistry::buildFileFilter() const {
 std::vector<LoadedDataSource*> PluginRegistry::findSourcesForExtension(std::string_view ext) {
   std::vector<LoadedDataSource*> result;
   for (auto& ds : data_sources_) {
-    if (!(ds.capabilities & PJ_DATA_SOURCE_CAPABILITY_FINITE_IMPORT)) continue;
+    if (!(ds.capabilities & PJ_DATA_SOURCE_CAPABILITY_FINITE_IMPORT)) {
+      continue;
+    }
     for (const auto& supported_ext : ds.file_extensions) {
       if (supported_ext == ext) {
         result.push_back(&ds);
@@ -135,6 +167,20 @@ std::vector<LoadedDataSource*> PluginRegistry::findSourcesForExtension(std::stri
     }
   }
   return result;
+}
+
+LoadedMessageParser* PluginRegistry::findParserByEncoding(std::string_view encoding) {
+  for (auto& mp : message_parsers_) {
+    if (mp.encoding == encoding) {
+      return &mp;
+    }
+    for (const auto& alt : mp.additional_encodings) {
+      if (alt == encoding) {
+        return &mp;
+      }
+    }
+  }
+  return nullptr;
 }
 
 }  // namespace proto

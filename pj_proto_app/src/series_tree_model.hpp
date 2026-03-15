@@ -3,8 +3,11 @@
 #include <QAbstractItemModel>
 #include <QMimeData>
 #include <string>
+#include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
+#include "pj_base/data_source_protocol.h"
 #include "pj_base/types.hpp"
 #include "pj_datastore/engine.hpp"
 
@@ -17,6 +20,16 @@ class SeriesTreeModel : public QAbstractItemModel {
   explicit SeriesTreeModel(const PJ::DataEngine& engine, QObject* parent = nullptr);
 
   void rebuild();
+
+  void setDatasetState(PJ::DatasetId id, PJ_data_source_state_t state);
+  void hideDataset(PJ::DatasetId id);
+  void clearHidden();
+
+  /// Returns the DatasetId for a dataset-level index, or 0 if not a dataset node.
+  [[nodiscard]] PJ::DatasetId datasetIdAt(const QModelIndex& index) const;
+
+  /// Returns true if the index points to a dataset-level node (level 0).
+  [[nodiscard]] bool isDatasetNode(const QModelIndex& index) const;
 
   // QAbstractItemModel interface
   [[nodiscard]] QModelIndex index(int row, int column, const QModelIndex& parent = {}) const override;
@@ -49,6 +62,8 @@ class SeriesTreeModel : public QAbstractItemModel {
 
   const PJ::DataEngine& engine_;
   std::vector<DatasetNode> datasets_;
+  std::unordered_map<PJ::DatasetId, PJ_data_source_state_t> dataset_states_;
+  std::unordered_set<PJ::DatasetId> hidden_datasets_;
 };
 
 }  // namespace proto

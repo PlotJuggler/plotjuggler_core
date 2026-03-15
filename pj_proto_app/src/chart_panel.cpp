@@ -40,7 +40,9 @@ void ChartPanel::addSeries(PJ::TopicId topic_id, size_t col_index, const std::st
 }
 
 void ChartPanel::removeSeries(int index) {
-  if (index < 0 || static_cast<size_t>(index) >= series_.size()) return;
+  if (index < 0 || static_cast<size_t>(index) >= series_.size()) {
+    return;
+  }
   chart()->removeSeries(series_[static_cast<size_t>(index)].line);
   series_.erase(series_.begin() + index);
 }
@@ -54,7 +56,9 @@ void ChartPanel::clearAllSeries() {
 }
 
 void ChartPanel::updateData(PJ::Timestamp t_min, PJ::Timestamp t_max) {
-  if (series_.empty()) return;
+  if (series_.empty()) {
+    return;
+  }
 
   auto reader = engine_.createReader();
 
@@ -94,8 +98,12 @@ void ChartPanel::updateData(PJ::Timestamp t_min, PJ::Timestamp t_max) {
         double x = static_cast<double>(timestamps[i] - first_timestamp_) / 1e9;
         double y = values[i];
         points.append(QPointF(x, y));
-        if (y < y_min) y_min = y;
-        if (y > y_max) y_max = y;
+        if (y < y_min) {
+          y_min = y;
+        }
+        if (y > y_max) {
+          y_max = y;
+        }
       }
     });
 
@@ -109,7 +117,9 @@ void ChartPanel::updateData(PJ::Timestamp t_min, PJ::Timestamp t_max) {
 
   if (y_min < y_max) {
     double margin = (y_max - y_min) * 0.05;
-    if (margin == 0.0) margin = 1.0;
+    if (margin == 0.0) {
+      margin = 1.0;
+    }
     y_axis_->setRange(y_min - margin, y_max + margin);
   }
 }

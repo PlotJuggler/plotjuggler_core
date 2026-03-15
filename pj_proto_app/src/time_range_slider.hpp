@@ -13,8 +13,12 @@ class TimeRangeSlider : public QWidget {
   explicit TimeRangeSlider(QWidget* parent = nullptr);
 
   void setGlobalRange(PJ::Timestamp global_min, PJ::Timestamp global_max);
-  [[nodiscard]] PJ::Timestamp begin() const { return begin_; }
-  [[nodiscard]] PJ::Timestamp end() const { return end_; }
+  [[nodiscard]] PJ::Timestamp begin() const {
+    return begin_;
+  }
+  [[nodiscard]] PJ::Timestamp end() const {
+    return end_;
+  }
 
  signals:
   void rangeChanged(PJ::Timestamp begin, PJ::Timestamp end);

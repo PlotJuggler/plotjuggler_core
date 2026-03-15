@@ -1,7 +1,9 @@
 #include "series_tree_model.hpp"
 
+#include <QColor>
 #include <QDataStream>
 #include <QIODevice>
+#include <QPixmap>
 
 #include "pj_datastore/reader.hpp"
 
@@ -18,6 +20,9 @@ void SeriesTreeModel::rebuild() {
 
   auto reader = engine_.createReader();
   for (auto ds_id : reader.listDatasets()) {
+    if (hidden_datasets_.count(ds_id) != 0) {
+      continue;
+    }
     DatasetNode ds_node;
     ds_node.dataset_id = ds_id;
     auto* ds_info = engine_.getDataset(ds_id);
@@ -57,7 +62,9 @@ void SeriesTreeModel::rebuild() {
 // Level 2 (field): internalId = (dataset_index << 16) | topic_index | 0x80000000
 
 QModelIndex SeriesTreeModel::index(int row, int column, const QModelIndex& parent) const {
-  if (!hasIndex(row, column, parent)) return {};
+  if (!hasIndex(row, column, parent)) {
+    return {};
+  }
 
   if (!parent.isValid()) {
     // Level 0: dataset
@@ -81,10 +88,14 @@ QModelIndex SeriesTreeModel::index(int row, int column, const QModelIndex& paren
 }
 
 QModelIndex SeriesTreeModel::parent(const QModelIndex& child) const {
-  if (!child.isValid()) return {};
+  if (!child.isValid()) {
+    return {};
+  }
 
   auto id = child.internalId();
-  if (id == kNoParent) return {};  // dataset has no parent
+  if (id == kNoParent) {
+    return {};  // dataset has no parent
+  }
 
   if ((id & 0x80000000u) == 0) {
     // Topic: parent is dataset at index `id`
@@ -98,7 +109,9 @@ QModelIndex SeriesTreeModel::parent(const QModelIndex& child) const {
 }
 
 int SeriesTreeModel::rowCount(const QModelIndex& parent) const {
-  if (!parent.isValid()) return static_cast<int>(datasets_.size());
+  if (!parent.isValid()) {
+    return static_cast<int>(datasets_.size());
+  }
 
   auto id = parent.internalId();
   if (id == kNoParent) {
@@ -120,12 +133,77 @@ int SeriesTreeModel::rowCount(const QModelIndex& parent) const {
   return 0;  // fields have no children
 }
 
-int SeriesTreeModel::columnCount(const QModelIndex&) const { return 1; }
+int SeriesTreeModel::columnCount(const QModelIndex&) const {
+  return 1;
+}
 
 QVariant SeriesTreeModel::data(const QModelIndex& index, int role) const {
-  if (!index.isValid() || role != Qt::DisplayRole) return {};
+  if (!index.isValid()) {
+    return {};
+  }
 
   auto id = index.internalId();
+
+  // Dataset-level decoration: colored state indicator
+  if (id == kNoParent && role == Qt::DecorationRole) {
+    auto row = static_cast<size_t>(index.row());
+    if (row >= datasets_.size()) {
+      return {};
+    }
+    auto it = dataset_states_.find(datasets_[row].dataset_id);
+    if (it == dataset_states_.end()) {
+      return {};
+    }
+    QColor color;
+    switch (it->second) {
+      case PJ_DATA_SOURCE_STATE_RUNNING:
+        color = QColor(0x4C, 0xAF, 0x50);
+        break;  // green
+      case PJ_DATA_SOURCE_STATE_PAUSED:
+        color = QColor(0xFF, 0x98, 0x00);
+        break;  // orange
+      case PJ_DATA_SOURCE_STATE_STOPPED:
+        color = QColor(0x9E, 0x9E, 0x9E);
+        break;  // gray
+      case PJ_DATA_SOURCE_STATE_FAILED:
+        color = QColor(0xF4, 0x43, 0x36);
+        break;  // red
+      default:
+        return {};
+    }
+    QPixmap pm(10, 10);
+    pm.fill(color);
+    return pm;
+  }
+
+  // Dataset-level tooltip: state name
+  if (id == kNoParent && role == Qt::ToolTipRole) {
+    auto row = static_cast<size_t>(index.row());
+    if (row >= datasets_.size()) {
+      return {};
+    }
+    auto it = dataset_states_.find(datasets_[row].dataset_id);
+    if (it == dataset_states_.end()) {
+      return {};
+    }
+    switch (it->second) {
+      case PJ_DATA_SOURCE_STATE_RUNNING:
+        return QStringLiteral("Running");
+      case PJ_DATA_SOURCE_STATE_PAUSED:
+        return QStringLiteral("Paused");
+      case PJ_DATA_SOURCE_STATE_STOPPED:
+        return QStringLiteral("Stopped");
+      case PJ_DATA_SOURCE_STATE_FAILED:
+        return QStringLiteral("Failed");
+      default:
+        return {};
+    }
+  }
+
+  if (role != Qt::DisplayRole) {
+    return {};
+  }
+
   if (id == kNoParent) {
     auto row = static_cast<size_t>(index.row());
     return row < datasets_.size() ? QString::fromStdString(datasets_[row].name) : QVariant();
@@ -153,7 +231,9 @@ QVariant SeriesTreeModel::data(const QModelIndex& index, int role) const {
 
 Qt::ItemFlags SeriesTreeModel::flags(const QModelIndex& index) const {
   auto base_flags = QAbstractItemModel::flags(index);
-  if (!index.isValid()) return base_flags;
+  if (!index.isValid()) {
+    return base_flags;
+  }
 
   auto id = index.internalId();
   if ((id & 0x80000000u) != 0) {
@@ -163,14 +243,20 @@ Qt::ItemFlags SeriesTreeModel::flags(const QModelIndex& index) const {
   return base_flags;
 }
 
-QStringList SeriesTreeModel::mimeTypes() const { return {"application/x-pj-field"}; }
+QStringList SeriesTreeModel::mimeTypes() const {
+  return {"application/x-pj-field"};
+}
 
 QMimeData* SeriesTreeModel::mimeData(const QModelIndexList& indexes) const {
-  if (indexes.isEmpty()) return nullptr;
+  if (indexes.isEmpty()) {
+    return nullptr;
+  }
 
   auto idx = indexes.first();
   auto id = idx.internalId();
-  if ((id & 0x80000000u) == 0) return nullptr;
+  if ((id & 0x80000000u) == 0) {
+    return nullptr;
+  }
 
   auto ds_idx = static_cast<size_t>((id >> 16) & 0x7FFF);
   auto topic_idx = static_cast<size_t>(id & 0xFFFF);
@@ -190,6 +276,40 @@ QMimeData* SeriesTreeModel::mimeData(const QModelIndexList& indexes) const {
          << QString::fromStdString(field.name);
   mime->setData("application/x-pj-field", encoded);
   return mime;
+}
+
+void SeriesTreeModel::setDatasetState(PJ::DatasetId id, PJ_data_source_state_t state) {
+  dataset_states_[id] = state;
+  // Find the row for this dataset and emit dataChanged for the decoration
+  for (size_t i = 0; i < datasets_.size(); ++i) {
+    if (datasets_[i].dataset_id == id) {
+      auto idx = createIndex(static_cast<int>(i), 0, kNoParent);
+      emit dataChanged(idx, idx, {Qt::DecorationRole, Qt::ToolTipRole});
+      break;
+    }
+  }
+}
+
+void SeriesTreeModel::hideDataset(PJ::DatasetId id) {
+  hidden_datasets_.insert(id);
+  dataset_states_.erase(id);
+}
+
+void SeriesTreeModel::clearHidden() {
+  hidden_datasets_.clear();
+  dataset_states_.clear();
+}
+
+PJ::DatasetId SeriesTreeModel::datasetIdAt(const QModelIndex& index) const {
+  if (!index.isValid() || index.internalId() != kNoParent) {
+    return 0;
+  }
+  auto row = static_cast<size_t>(index.row());
+  return row < datasets_.size() ? datasets_[row].dataset_id : 0;
+}
+
+bool SeriesTreeModel::isDatasetNode(const QModelIndex& index) const {
+  return index.isValid() && index.internalId() == kNoParent;
 }
 
 }  // namespace proto

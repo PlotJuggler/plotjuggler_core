@@ -1,6 +1,3 @@
-#include "pj_plugins/host/data_source_library.hpp"
-#include "pj_plugins/host/message_parser_library.hpp"
-
 #include <gtest/gtest.h>
 
 #include <cstring>
@@ -9,6 +6,8 @@
 #include <vector>
 
 #include "pj_base/plugin_data_api.h"
+#include "pj_plugins/host/data_source_library.hpp"
+#include "pj_plugins/host/message_parser_library.hpp"
 
 #ifndef PJ_MOCK_DATA_SOURCE_PLUGIN_PATH
 #error "PJ_MOCK_DATA_SOURCE_PLUGIN_PATH must be defined"
@@ -31,7 +30,9 @@ struct SourceWriteRecorder {
   int64_t last_timestamp = 0;
   double last_value = 0.0;
 
-  static const char* getLastError(void*) { return nullptr; }
+  static const char* getLastError(void*) {
+    return nullptr;
+  }
 
   static bool ensureTopic(void* ctx, PJ_string_view_t topic_name, PJ_topic_handle_t* out_topic) {
     auto* self = static_cast<SourceWriteRecorder*>(ctx);
@@ -41,14 +42,14 @@ struct SourceWriteRecorder {
     return true;
   }
 
-  static bool ensureField(void*, PJ_topic_handle_t topic, PJ_string_view_t, PJ_primitive_type_t,
-                          PJ_field_handle_t* out_field) {
+  static bool ensureField(
+      void*, PJ_topic_handle_t topic, PJ_string_view_t, PJ_primitive_type_t, PJ_field_handle_t* out_field) {
     *out_field = PJ_field_handle_t{topic, 1};
     return true;
   }
 
-  static bool appendRecord(void* ctx, PJ_topic_handle_t, int64_t timestamp,
-                           const PJ_named_field_value_t* fields, size_t field_count) {
+  static bool appendRecord(
+      void* ctx, PJ_topic_handle_t, int64_t timestamp, const PJ_named_field_value_t* fields, size_t field_count) {
     auto* self = static_cast<SourceWriteRecorder*>(ctx);
     ++self->append_record_calls;
     self->last_timestamp = timestamp;
@@ -58,8 +59,7 @@ struct SourceWriteRecorder {
     return true;
   }
 
-  static bool appendBoundRecord(void*, PJ_topic_handle_t, int64_t, const PJ_bound_field_value_t*,
-                                size_t) {
+  static bool appendBoundRecord(void*, PJ_topic_handle_t, int64_t, const PJ_bound_field_value_t*, size_t) {
     return true;
   }
 
@@ -91,16 +91,16 @@ struct ParserWriteRecorder {
   int64_t last_timestamp = 0;
   double last_value = 0.0;
 
-  static const char* getLastError(void*) { return nullptr; }
+  static const char* getLastError(void*) {
+    return nullptr;
+  }
 
-  static bool ensureField(void*, PJ_string_view_t, PJ_primitive_type_t,
-                          PJ_field_handle_t* out_field) {
+  static bool ensureField(void*, PJ_string_view_t, PJ_primitive_type_t, PJ_field_handle_t* out_field) {
     *out_field = PJ_field_handle_t{{1}, 1};
     return true;
   }
 
-  static bool appendRecord(void* ctx, int64_t timestamp, const PJ_named_field_value_t* fields,
-                           size_t field_count) {
+  static bool appendRecord(void* ctx, int64_t timestamp, const PJ_named_field_value_t* fields, size_t field_count) {
     auto* self = static_cast<ParserWriteRecorder*>(ctx);
     ++self->append_record_calls;
     self->last_timestamp = timestamp;
@@ -114,7 +114,9 @@ struct ParserWriteRecorder {
     return true;
   }
 
-  static bool appendArrowIpc(void*, PJ_bytes_view_t, PJ_string_view_t) { return true; }
+  static bool appendArrowIpc(void*, PJ_bytes_view_t, PJ_string_view_t) {
+    return true;
+  }
 };
 
 PJ_parser_write_host_t makeParserWriteHost(ParserWriteRecorder* recorder) {
@@ -138,17 +140,25 @@ PJ_parser_write_host_t makeParserWriteHost(ParserWriteRecorder* recorder) {
 struct BridgeRuntimeHost {
   PJ::MessageParserHandle* parser_handle = nullptr;
 
-  static const char* getLastError(void*) { return nullptr; }
+  static const char* getLastError(void*) {
+    return nullptr;
+  }
   static void reportMessage(void*, PJ_data_source_message_level_t, PJ_string_view_t) {}
-  static bool progressStart(void*, PJ_string_view_t, uint64_t, bool) { return true; }
-  static bool progressUpdate(void*, uint64_t) { return true; }
+  static bool progressStart(void*, PJ_string_view_t, uint64_t, bool) {
+    return true;
+  }
+  static bool progressUpdate(void*, uint64_t) {
+    return true;
+  }
   static void progressFinish(void*) {}
-  static bool isStopRequested(void*) { return false; }
+  static bool isStopRequested(void*) {
+    return false;
+  }
   static void notifyState(void*, PJ_data_source_state_t) {}
   static void requestStop(void*, PJ_data_source_state_t, PJ_string_view_t) {}
 
-  static bool ensureParserBinding(void* ctx, const PJ_parser_binding_request_t*,
-                                  PJ_parser_binding_handle_t* out_handle) {
+  static bool ensureParserBinding(
+      void* ctx, const PJ_parser_binding_request_t*, PJ_parser_binding_handle_t* out_handle) {
     auto* self = static_cast<BridgeRuntimeHost*>(ctx);
     // The parser_handle is already loaded and bound before start() — just
     // return a fixed handle ID.
@@ -159,14 +169,13 @@ struct BridgeRuntimeHost {
     return true;
   }
 
-  static bool pushRawMessage(void* ctx, PJ_parser_binding_handle_t, int64_t host_timestamp_ns,
-                             PJ_bytes_view_t payload) {
+  static bool pushRawMessage(
+      void* ctx, PJ_parser_binding_handle_t, int64_t host_timestamp_ns, PJ_bytes_view_t payload) {
     auto* self = static_cast<BridgeRuntimeHost*>(ctx);
     if (self->parser_handle == nullptr) {
       return false;
     }
-    return self->parser_handle->parse(
-        host_timestamp_ns, PJ::Span<const uint8_t>(payload.data, payload.size));
+    return self->parser_handle->parse(host_timestamp_ns, PJ::Span<const uint8_t>(payload.data, payload.size));
   }
 };
 
@@ -260,8 +269,7 @@ TEST_F(DelegatedIngestIntegrationTest, ParserReceivesSchemaFromBindingRequest) {
   ASSERT_TRUE(parser_handle.valid());
 
   const uint8_t schema_bytes[] = {0xCA, 0xFE};
-  ASSERT_TRUE(parser_handle.bindSchema(
-      "mock_type", PJ::Span<const uint8_t>(schema_bytes, sizeof(schema_bytes))));
+  ASSERT_TRUE(parser_handle.bindSchema("mock_type", PJ::Span<const uint8_t>(schema_bytes, sizeof(schema_bytes))));
 
   // MockJsonParser::bindSchema is the default no-op — success means the
   // C ABI round-trip works without crashing.
@@ -294,8 +302,7 @@ TEST_F(DelegatedIngestIntegrationTest, MultipleMessagesRouteCorrectly) {
   for (int i = 0; i < 3; ++i) {
     auto* text = messages[i].first;
     auto len = std::strlen(text);
-    ASSERT_TRUE(parser_handle.parse(
-        1000 + i, PJ::Span<const uint8_t>(reinterpret_cast<const uint8_t*>(text), len)));
+    ASSERT_TRUE(parser_handle.parse(1000 + i, PJ::Span<const uint8_t>(reinterpret_cast<const uint8_t*>(text), len)));
   }
 
   EXPECT_EQ(parser_recorder.append_record_calls, 3);

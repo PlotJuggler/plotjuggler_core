@@ -1,9 +1,10 @@
 #include "pj_base/plugin_data_api.h"
-#include "pj_base/sdk/plugin_data_api.hpp"
 
 #include <gtest/gtest.h>
 
 #include <type_traits>
+
+#include "pj_base/sdk/plugin_data_api.hpp"
 
 namespace PJ {
 namespace {
@@ -29,8 +30,7 @@ TEST(PluginDataApiTest, ValueRefRetainsExactPrimitiveType) {
   EXPECT_EQ(sdk::typeOf(sdk::ValueRef{uint32_t{9}}), PrimitiveType::kUint32);
   EXPECT_EQ(sdk::typeOf(sdk::ValueRef{std::string_view("abc")}), PrimitiveType::kString);
   EXPECT_EQ(sdk::typeOf(sdk::ValueRef{NullValue{}}), PrimitiveType::kUnspecified);
-  EXPECT_EQ(sdk::typeOf(sdk::ValueRef{sdk::TypedNull{PrimitiveType::kFloat64}}),
-            PrimitiveType::kFloat64);
+  EXPECT_EQ(sdk::typeOf(sdk::ValueRef{sdk::TypedNull{PrimitiveType::kFloat64}}), PrimitiveType::kFloat64);
 }
 
 TEST(PluginDataApiTest, HandleEqualityAndInequality) {

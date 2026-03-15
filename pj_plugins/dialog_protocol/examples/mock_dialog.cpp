@@ -64,7 +64,9 @@ class MockDialog : public PJ::DialogPluginTyped {
     })";
   }
 
-  std::string ui_content() const override { return kUiContent; }
+  std::string ui_content() const override {
+    return kUiContent;
+  }
 
   std::string widget_data() override {
     PJ::WidgetData wd;

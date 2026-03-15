@@ -1,11 +1,10 @@
-#include "pj_plugins/host/data_source_library.hpp"
-
 #include <gtest/gtest.h>
 
 #include <string>
 #include <vector>
 
 #include "pj_base/plugin_data_api.h"
+#include "pj_plugins/host/data_source_library.hpp"
 
 #ifndef PJ_MOCK_FILE_SOURCE_PLUGIN_PATH
 #error "PJ_MOCK_FILE_SOURCE_PLUGIN_PATH must be defined"
@@ -50,8 +49,7 @@ bool whEnsureTopic(void* ctx, PJ_string_view_t, PJ_topic_handle_t* out) {
   return true;
 }
 
-bool whEnsureField(void*, PJ_topic_handle_t topic, PJ_string_view_t, PJ_primitive_type_t,
-                   PJ_field_handle_t* out) {
+bool whEnsureField(void*, PJ_topic_handle_t topic, PJ_string_view_t, PJ_primitive_type_t, PJ_field_handle_t* out) {
   *out = PJ_field_handle_t{topic, 1};
   return true;
 }
@@ -70,11 +68,15 @@ bool whAppendRecordFast(void*, PJ_topic_handle_t, int64_t, const PJ_bound_field_
   return true;
 }
 
-bool whAppendArrowIpc(void*, PJ_topic_handle_t, PJ_bytes_view_t, PJ_string_view_t) { return true; }
+bool whAppendArrowIpc(void*, PJ_topic_handle_t, PJ_bytes_view_t, PJ_string_view_t) {
+  return true;
+}
 
 // --- Runtime host callbacks ---
 
-const char* rhGetLastError(void*) { return nullptr; }
+const char* rhGetLastError(void*) {
+  return nullptr;
+}
 
 void rhReportMessage(void* ctx, PJ_data_source_message_level_t, PJ_string_view_t msg) {
   auto* s = static_cast<RuntimeHostState*>(ctx);
@@ -92,9 +94,13 @@ bool rhProgressUpdate(void* ctx, uint64_t step) {
   return s->cancel_at_step == 0 || step < s->cancel_at_step;
 }
 
-void rhProgressFinish(void* ctx) { static_cast<RuntimeHostState*>(ctx)->progress_finishes++; }
+void rhProgressFinish(void* ctx) {
+  static_cast<RuntimeHostState*>(ctx)->progress_finishes++;
+}
 
-bool rhIsStopRequested(void* ctx) { return static_cast<RuntimeHostState*>(ctx)->stop_requested; }
+bool rhIsStopRequested(void* ctx) {
+  return static_cast<RuntimeHostState*>(ctx)->stop_requested;
+}
 
 void rhNotifyState(void* ctx, PJ_data_source_state_t state) {
   static_cast<RuntimeHostState*>(ctx)->state_transitions.push_back(state);
@@ -111,7 +117,9 @@ bool rhEnsureParserBinding(void*, const PJ_parser_binding_request_t*, PJ_parser_
   return true;
 }
 
-bool rhPushRawMessage(void*, PJ_parser_binding_handle_t, int64_t, PJ_bytes_view_t) { return true; }
+bool rhPushRawMessage(void*, PJ_parser_binding_handle_t, int64_t, PJ_bytes_view_t) {
+  return true;
+}
 
 // ---------------------------------------------------------------------------
 // Host factory helpers

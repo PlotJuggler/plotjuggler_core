@@ -1,7 +1,6 @@
 #include <pj_base/sdk/data_source_patterns.hpp>
 #include <pj_plugins/sdk/dialog_plugin_typed.hpp>
 #include <pj_plugins/sdk/widget_data.hpp>
-
 #include <string>
 #include <vector>
 
@@ -114,12 +113,24 @@ class MockStreamerDialog : public PJ::DialogPluginTyped {
  public:
   // --- Read-only accessors for the DataSource ---
 
-  const std::string& host() const { return host_; }
-  int port() const { return port_; }
-  bool useTls() const { return use_tls_; }
-  double timeout() const { return timeout_; }
-  bool reconnect() const { return reconnect_; }
-  const std::vector<std::string>& selectedTopics() const { return selected_topics_; }
+  const std::string& host() const {
+    return host_;
+  }
+  int port() const {
+    return port_;
+  }
+  bool useTls() const {
+    return use_tls_;
+  }
+  double timeout() const {
+    return timeout_;
+  }
+  bool reconnect() const {
+    return reconnect_;
+  }
+  const std::vector<std::string>& selectedTopics() const {
+    return selected_topics_;
+  }
 
   // --- Dialog protocol implementation ---
 
@@ -131,7 +142,9 @@ class MockStreamerDialog : public PJ::DialogPluginTyped {
     })";
   }
 
-  std::string ui_content() const override { return kUiContent; }
+  std::string ui_content() const override {
+    return kUiContent;
+  }
 
   std::string widget_data() override {
     PJ::WidgetData wd;
@@ -313,7 +326,9 @@ class MockStreamerDialog : public PJ::DialogPluginTyped {
 /// DataSource class — business logic, owns the dialog as a member.
 class MockStreamerSource : public PJ::StreamSourceBase {
  public:
-  void* dialogContext() override { return &dialog_; }
+  void* dialogContext() override {
+    return &dialog_;
+  }
 
   uint64_t extraCapabilities() const override {
     return PJ::kCapabilityDirectIngest | PJ::kCapabilityHasDialog;
@@ -326,8 +341,8 @@ class MockStreamerSource : public PJ::StreamSourceBase {
     }
     topic_ = *topic;
 
-    runtimeHost().reportMessage(PJ::DataSourceMessageLevel::kInfo,
-                                "streaming from " + dialog_.host() + ":" + std::to_string(dialog_.port()));
+    runtimeHost().reportMessage(
+        PJ::DataSourceMessageLevel::kInfo, "streaming from " + dialog_.host() + ":" + std::to_string(dialog_.port()));
     return PJ::okStatus();
   }
 
@@ -336,9 +351,13 @@ class MockStreamerSource : public PJ::StreamSourceBase {
     return PJ::okStatus();
   }
 
-  void onStop() override { poll_count_ = 0; }
+  void onStop() override {
+    poll_count_ = 0;
+  }
 
-  std::string saveConfig() const override { return dialog_.saveConfig(); }
+  std::string saveConfig() const override {
+    return dialog_.saveConfig();
+  }
 
   PJ::Status loadConfig(std::string_view json) override {
     return dialog_.loadConfig(json) ? PJ::okStatus() : PJ::unexpected(std::string("bad config"));
@@ -350,8 +369,8 @@ class MockStreamerSource : public PJ::StreamSourceBase {
   int poll_count_ = 0;
 };
 
-PJ_DATA_SOURCE_PLUGIN(MockStreamerSource,
-                       R"({"name":"Mock Streamer Source","version":"1.0.0",)"
-                       R"("description":"Combined DataSource+Dialog mock for integration testing"})")
+PJ_DATA_SOURCE_PLUGIN(
+    MockStreamerSource, R"({"name":"Mock Streamer Source","version":"1.0.0",)"
+                        R"("description":"Combined DataSource+Dialog mock for integration testing"})")
 
 PJ_DIALOG_PLUGIN(MockStreamerDialog)

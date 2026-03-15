@@ -8,10 +8,10 @@
 #pragma once
 
 #include <pj_base/message_parser_protocol.h>
-#include <pj_base/span.hpp>
-#include <pj_base/types.hpp>
 
 #include <cassert>
+#include <pj_base/span.hpp>
+#include <pj_base/types.hpp>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -55,9 +55,13 @@ class MessageParserHandle {
   MessageParserHandle(const MessageParserHandle&) = delete;
   MessageParserHandle& operator=(const MessageParserHandle&) = delete;
 
-  [[nodiscard]] bool valid() const { return vt_ != nullptr && ctx_ != nullptr; }
+  [[nodiscard]] bool valid() const {
+    return vt_ != nullptr && ctx_ != nullptr;
+  }
 
-  [[nodiscard]] std::string manifest() const { return safeString(vt_->manifest_json); }
+  [[nodiscard]] std::string manifest() const {
+    return safeString(vt_->manifest_json);
+  }
 
   [[nodiscard]] bool bindWriteHost(PJ_parser_write_host_t write_host) {
     return vt_->bind_write_host(ctx_, write_host);
@@ -69,7 +73,9 @@ class MessageParserHandle {
     return vt_->bind_schema(ctx_, tn, sc);
   }
 
-  [[nodiscard]] std::string saveConfig() const { return safeString(vt_->save_config(ctx_)); }
+  [[nodiscard]] std::string saveConfig() const {
+    return safeString(vt_->save_config(ctx_));
+  }
 
   [[nodiscard]] bool loadConfig(std::string_view config_json) {
     return vt_->load_config(ctx_, std::string(config_json).c_str());
@@ -80,11 +86,17 @@ class MessageParserHandle {
     return vt_->parse(ctx_, timestamp_ns, bytes);
   }
 
-  [[nodiscard]] std::string lastError() const { return safeString(vt_->get_last_error(ctx_)); }
+  [[nodiscard]] std::string lastError() const {
+    return safeString(vt_->get_last_error(ctx_));
+  }
 
-  [[nodiscard]] const PJ_message_parser_vtable_t* vtable() const { return vt_; }
+  [[nodiscard]] const PJ_message_parser_vtable_t* vtable() const {
+    return vt_;
+  }
 
-  [[nodiscard]] void* context() const { return ctx_; }
+  [[nodiscard]] void* context() const {
+    return ctx_;
+  }
 
  private:
   const PJ_message_parser_vtable_t* vt_ = nullptr;

@@ -23,12 +23,10 @@ namespace {
 // Reuses the same pattern as topic_storage_test.cpp::make_test_chunk.
 // ---------------------------------------------------------------------------
 
-TopicChunk makeChunkWithRange(TopicId tid, Timestamp t_start, Timestamp t_end,
-                              uint32_t num_rows) {
+TopicChunk makeChunkWithRange(TopicId tid, Timestamp t_start, Timestamp t_end, uint32_t num_rows) {
   std::vector<ColumnDescriptor> cols = {{0, PrimitiveType::kFloat32, "v"}};
   TopicChunkBuilder b(tid, /*schema_id=*/1, cols, num_rows);
-  Timestamp step =
-      (num_rows > 1) ? (t_end - t_start) / static_cast<Timestamp>(num_rows - 1) : 0;
+  Timestamp step = (num_rows > 1) ? (t_end - t_start) / static_cast<Timestamp>(num_rows - 1) : 0;
   for (uint32_t i = 0; i < num_rows; ++i) {
     b.beginRow(t_start + static_cast<Timestamp>(i) * step);
     b.set(0, static_cast<float>(i));
@@ -50,13 +48,12 @@ TopicChunk makeChunkWithRange(TopicId tid, Timestamp t_start, Timestamp t_end,
 
 TEST(RegressionTest, Bug1_FlushWithRowInProgress_CorruptsChunkStats) {
   DataEngine engine;
-  auto ds =
-      *engine.createDataset(DatasetDescriptor{.source_name = "test", .time_domain_id = 0});
+  auto ds = *engine.createDataset(DatasetDescriptor{.source_name = "test", .time_domain_id = 0});
   DataWriter writer = engine.createWriter();
 
   auto schema = makePrimitive("v", PrimitiveType::kFloat64);
-  auto sid    = *writer.registerSchema("s", schema);
-  auto tid    = *writer.registerTopic(ds, TopicDescriptor{.name = "t", .schema_id = sid});
+  auto sid = *writer.registerSchema("s", schema);
+  auto tid = *writer.registerTopic(ds, TopicDescriptor{.name = "t", .schema_id = sid});
 
   // Commit one complete row at t=100.
   ASSERT_TRUE(writer.beginRow(tid, 100).has_value());
@@ -142,13 +139,12 @@ TEST(RegressionTest, Bug2_FinishBulkAppend_ColumnRowCountMismatch_TriggersUB) {
 
 TEST(RegressionTest, Bug3_CommitChunks_ReportsChangedTopicOnRejectedChunk) {
   DataEngine engine;
-  auto ds =
-      *engine.createDataset(DatasetDescriptor{.source_name = "test", .time_domain_id = 0});
+  auto ds = *engine.createDataset(DatasetDescriptor{.source_name = "test", .time_domain_id = 0});
   DataWriter writer = engine.createWriter();
 
   auto schema = makePrimitive("v", PrimitiveType::kFloat32);
-  auto sid    = *writer.registerSchema("s", schema);
-  auto tid    = *writer.registerTopic(ds, TopicDescriptor{.name = "t", .schema_id = sid});
+  auto sid = *writer.registerSchema("s", schema);
+  auto tid = *writer.registerTopic(ds, TopicDescriptor{.name = "t", .schema_id = sid});
 
   // First commit: chunk at t=[100, 200]. Accepted.
   std::vector<std::pair<TopicId, TopicChunk>> batch1;
@@ -185,8 +181,8 @@ TEST(RegressionTest, Bug3_CommitChunks_ReportsChangedTopicOnRejectedChunk) {
 
 TEST(RegressionTest, Bug4_AppendSealedChunk_AcceptsOverlappingTimeRange) {
   TopicDescriptor desc;
-  desc.name       = "t";
-  desc.schema_id  = 1;
+  desc.name = "t";
+  desc.schema_id = 1;
   desc.dataset_id = 1;
   TopicStorage storage(/*topic_id=*/1, std::move(desc));
 

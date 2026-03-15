@@ -20,6 +20,7 @@ struct LoadedMessageParser {
   PJ::MessageParserLibrary library;
   std::string name;
   std::string encoding;
+  std::vector<std::string> additional_encodings;
 };
 
 class PluginRegistry {
@@ -32,6 +33,9 @@ class PluginRegistry {
   [[nodiscard]] std::vector<LoadedDataSource*> streamSources();
   [[nodiscard]] std::string buildFileFilter() const;
   [[nodiscard]] std::vector<LoadedDataSource*> findSourcesForExtension(std::string_view ext);
+
+  /// Find a parser library by encoding name (e.g. "cdr", "protobuf", "json").
+  [[nodiscard]] LoadedMessageParser* findParserByEncoding(std::string_view encoding);
 
  private:
   std::string plugin_dir_;

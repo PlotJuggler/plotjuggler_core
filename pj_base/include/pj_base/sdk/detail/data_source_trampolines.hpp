@@ -13,8 +13,7 @@ namespace PJ {
 inline void DataSourcePluginBase::trampoline_destroy(void* ctx) {
   try {
     delete static_cast<DataSourcePluginBase*>(ctx);
-  } catch (...) {
-  }
+  } catch (...) {}
 }
 
 inline uint64_t DataSourcePluginBase::trampoline_capabilities(void* ctx) {
@@ -30,8 +29,7 @@ inline uint64_t DataSourcePluginBase::trampoline_capabilities(void* ctx) {
   }
 }
 
-inline bool DataSourcePluginBase::trampoline_bind_write_host(
-    void* ctx, PJ_source_write_host_t write_host) {
+inline bool DataSourcePluginBase::trampoline_bind_write_host(void* ctx, PJ_source_write_host_t write_host) {
   auto* self = static_cast<DataSourcePluginBase*>(ctx);
   try {
     auto status = self->bindWriteHost(write_host);
@@ -49,8 +47,7 @@ inline bool DataSourcePluginBase::trampoline_bind_write_host(
   }
 }
 
-inline bool DataSourcePluginBase::trampoline_bind_runtime_host(
-    void* ctx, PJ_data_source_runtime_host_t runtime_host) {
+inline bool DataSourcePluginBase::trampoline_bind_runtime_host(void* ctx, PJ_data_source_runtime_host_t runtime_host) {
   auto* self = static_cast<DataSourcePluginBase*>(ctx);
   try {
     auto status = self->bindRuntimeHost(runtime_host);
@@ -85,8 +82,7 @@ inline const char* DataSourcePluginBase::trampoline_save_config(void* ctx) {
 inline bool DataSourcePluginBase::trampoline_load_config(void* ctx, const char* config_json) {
   auto* self = static_cast<DataSourcePluginBase*>(ctx);
   try {
-    auto status = self->loadConfig(
-        config_json == nullptr ? std::string_view{} : std::string_view(config_json));
+    auto status = self->loadConfig(config_json == nullptr ? std::string_view{} : std::string_view(config_json));
     if (!status) {
       self->last_error_ = std::move(status).error();
       return false;

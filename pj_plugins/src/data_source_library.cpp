@@ -27,8 +27,7 @@ Expected<PJ_get_data_source_vtable_fn> loadEntryPoint(void* handle) {
 
 }  // namespace
 
-DataSourceLibrary::DataSourceLibrary(
-    void* handle, const PJ_data_source_vtable_t* vtable, std::string path)
+DataSourceLibrary::DataSourceLibrary(void* handle, const PJ_data_source_vtable_t* vtable, std::string path)
     : handle_(handle), vtable_(vtable), path_(std::move(path)) {}
 
 DataSourceLibrary::~DataSourceLibrary() {

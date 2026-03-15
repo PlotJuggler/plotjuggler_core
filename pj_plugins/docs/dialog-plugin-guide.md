@@ -269,7 +269,7 @@ work like polling a server for available topics.
 | QPushButton (file picker) | `setFilePicker` | `onFileSelected(name, path)` |
 | QLabel | `setLabel` | (none — display only) |
 | QListWidget | `setListItems`, `setSelectedItems` | `onSelectionChanged(name, items)`, `onItemDoubleClicked(name, index)` |
-| QTableWidget | `setTableHeaders`, `setTableRows` | (none — display only) |
+| QTableWidget | `setTableHeaders`, `setTableRows`, `setSelectedRows` | `onSelectionChanged(name, items)` |
 | QTabWidget | `setTabIndex` | `onTabChanged(name, index)` |
 | QDialogButtonBox | `setOkEnabled` | (none — host handles OK/Cancel) |
 
@@ -429,6 +429,52 @@ std::string lastError() const override {
   return err;
 }
 ```
+
+### Dialog geometry persistence
+
+Dialog geometry (size and position) is **automatically persisted** by the host
+via `QSettings`. When a dialog is opened, the host restores the geometry from
+the previous session. When the dialog closes, the host saves the current
+geometry. The key is derived from the plugin's manifest `"name"` field.
+
+**No plugin code is needed.** Every dialog gets this behavior for free.
+
+### Sub-dialog — `requestSubDialog`
+
+Open a read-only helper dialog (e.g. a reference table or help window) from
+within your main dialog. The sub-dialog is shown as a nested modal — the main
+dialog is blocked until the user closes the sub-dialog.
+
+```cpp
+// Store the sub-dialog UI XML (typically embedded via pj_embed_ui)
+#include "help_dialog_ui.hpp"
+
+bool onClicked(std::string_view name) override {
+  if (name == "helpButton") {
+    show_help_ = true;
+    return true;  // triggers widget_data() refresh
+  }
+  return false;
+}
+
+std::string widget_data() override {
+  PJ::WidgetData wd;
+  // ... set widget states ...
+
+  if (show_help_) {
+    show_help_ = false;
+    wd.requestSubDialog(kHelpDialogUi);  // pass UI XML string
+  }
+
+  return wd.toJson();
+}
+```
+
+`requestSubDialog()` sets a `__request_sub_dialog` command in the widget data
+JSON. The host loads the UI XML via `QUiLoader`, wraps it in a child `QDialog`,
+and runs it modally. The sub-dialog supports standard `QDialogButtonBox`
+accept/reject wiring. This is a one-shot command — the request is consumed
+after opening the sub-dialog.
 
 ## Choosing a Base Class
 

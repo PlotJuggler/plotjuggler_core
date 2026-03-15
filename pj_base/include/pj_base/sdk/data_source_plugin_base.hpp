@@ -91,20 +91,16 @@ class DataSourceRuntimeHostView {
   void reportMessage(DataSourceMessageLevel level, std::string_view message) const {
     if (valid() && host_.vtable->report_message != nullptr) {
       host_.vtable->report_message(
-          host_.ctx,
-          static_cast<PJ_data_source_message_level_t>(level),
-          sdk::toAbiString(message));
+          host_.ctx, static_cast<PJ_data_source_message_level_t>(level), sdk::toAbiString(message));
     }
   }
 
   /// Begin a progress bar with @p total_steps. Set @p cancellable to allow user abort.
-  [[nodiscard]] bool progressStart(
-      std::string_view label, uint64_t total_steps, bool cancellable) const {
+  [[nodiscard]] bool progressStart(std::string_view label, uint64_t total_steps, bool cancellable) const {
     if (!valid() || host_.vtable->progress_start == nullptr) {
       return false;
     }
-    return host_.vtable->progress_start(
-        host_.ctx, sdk::toAbiString(label), total_steps, cancellable);
+    return host_.vtable->progress_start(host_.ctx, sdk::toAbiString(label), total_steps, cancellable);
   }
 
   /// Advance progress. Returns false if the user cancelled.
@@ -146,8 +142,7 @@ class DataSourceRuntimeHostView {
   }
 
   /// Bind (or look up) a parser for delegated ingest. Returns the handle on success.
-  [[nodiscard]] Expected<ParserBindingHandle> ensureParserBinding(
-      const ParserBindingRequest& request) const {
+  [[nodiscard]] Expected<ParserBindingHandle> ensureParserBinding(const ParserBindingRequest& request) const {
     if (!valid() || host_.vtable->ensure_parser_binding == nullptr) {
       return unexpected("runtime host is not bound");
     }
@@ -173,8 +168,7 @@ class DataSourceRuntimeHostView {
     if (!valid() || host_.vtable->push_raw_message == nullptr) {
       return unexpected("runtime host is not bound");
     }
-    if (!host_.vtable->push_raw_message(
-            host_.ctx, handle, host_timestamp_ns, sdk::toAbiBytes(payload))) {
+    if (!host_.vtable->push_raw_message(host_.ctx, handle, host_timestamp_ns, sdk::toAbiBytes(payload))) {
       return unexpected(std::string(lastError()));
     }
     return okStatus();
@@ -275,7 +269,9 @@ class DataSourcePluginBase {
 
   /// Override to return your dialog member's context.
   /// Default returns nullptr (no dialog).
-  virtual void* dialogContext() { return nullptr; }
+  virtual void* dialogContext() {
+    return nullptr;
+  }
 
   template <typename CreateFn>
   static const PJ_data_source_vtable_t* vtableWithCreate(CreateFn create_fn, const char* manifest) {
@@ -370,10 +366,9 @@ class DataSourcePluginBase {
  *   PJ_DATA_SOURCE_PLUGIN(MyDataSource, R"({"name":"My Source","version":"1.0.0"})")
  * @endcode
  */
-#define PJ_DATA_SOURCE_PLUGIN(ClassName, manifest)                                               \
-  extern "C" PJ_DATA_SOURCE_EXPORT const PJ_data_source_vtable_t* PJ_get_data_source_vtable() { \
-    static const PJ_data_source_vtable_t* vt =                                                  \
-        PJ::DataSourcePluginBase::vtableWithCreate(                                              \
-            []() -> void* { return new ClassName(); }, manifest);                                \
-    return vt;                                                                                   \
+#define PJ_DATA_SOURCE_PLUGIN(ClassName, manifest)                                                       \
+  extern "C" PJ_DATA_SOURCE_EXPORT const PJ_data_source_vtable_t* PJ_get_data_source_vtable() {          \
+    static const PJ_data_source_vtable_t* vt =                                                           \
+        PJ::DataSourcePluginBase::vtableWithCreate([]() -> void* { return new ClassName(); }, manifest); \
+    return vt;                                                                                           \
   }

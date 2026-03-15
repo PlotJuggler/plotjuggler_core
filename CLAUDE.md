@@ -14,19 +14,36 @@ Dependency graph: `pj_datastore` → `pj_base`, `pj_plugins` → `pj_base` (inde
 
 ## Key Documentation
 
-| Document | When to read |
-|----------|-------------|
+**Project-wide:**
+
+| Document | Content |
+|----------|---------|
 | `docs/cpp_design_recommendations.md` | C++ style, error handling, API design guidelines |
-| `pj_datastore/docs/REQUIREMENTS.md` | Datastore goals, use cases, functional/non-functional requirements |
-| `pj_datastore/docs/ARCHITECTURE.md` | Datastore internals: domain model, layers, data flow, encoding, DerivedEngine |
-| `pj_datastore/docs/USER_GUIDE.md` | How to read/write data via plugin API — pitfalls, examples, ValueRef |
-| `pj_plugins/docs/REQUIREMENTS.md` | Plugin system goals, families, interaction model, capability system |
-| `pj_plugins/docs/ARCHITECTURE.md` | Plugin internals: ABI layers, host loaders, dialog engine, config envelope |
-| `pj_plugins/docs/data-source-guide.md` | How to write a DataSource plugin (SDK tutorial) |
-| `pj_plugins/docs/message-parser-guide.md` | How to write a MessageParser plugin (SDK tutorial) |
-| `pj_plugins/docs/dialog-plugin-guide.md` | How to write a Dialog plugin (WidgetData, events, EmbedUi, requestAccept) |
-| `pj_plugins/docs/toolbox-guide.md` | How to write a Toolbox plugin (SDK tutorial) |
-| `pj_ported_plugins/porting_guide.md` | **READ FIRST** for plugin work: SDK patterns, datastore pitfalls, dialog SDK, lessons learned |
+
+**Datastore** (`pj_datastore/docs/`):
+
+| Document | Content |
+|----------|---------|
+| `REQUIREMENTS.md` | Goals, data model, ingest contract, schema evolution (dynamic columns, variable-length sequences), query, derived series |
+| `ARCHITECTURE.md` | Internals: domain model, layers, data flow, encoding (constant, FoR, dictionary, packed bool), DerivedEngine |
+| `USER_GUIDE.md` | Plugin author's guide: write patterns (named vs bound vs Arrow IPC), read API, pitfalls, ValueRef, TypedNull |
+
+**Plugin system** (`pj_plugins/docs/`):
+
+| Document | Content |
+|----------|---------|
+| `REQUIREMENTS.md` | Plugin families (DataSource, MessageParser, Dialog, Toolbox), interaction model, capability system, config contract |
+| `ARCHITECTURE.md` | C ABI protocols, SDK base classes, host loaders, RAII handles, dialog engine, config envelope |
+| `data-source-guide.md` | SDK tutorial: FileSourceBase, StreamSourceBase, delegated ingest, dialog integration |
+| `message-parser-guide.md` | SDK tutorial: parse(), schema binding, dialog integration for parsers |
+| `dialog-plugin-guide.md` | SDK tutorial: WidgetData, typed events, EmbedUi, requestAccept, onTick |
+| `toolbox-guide.md` | SDK tutorial: read+write access, catalog, notifyDataChanged |
+
+**Ported plugins** (`pj_ported_plugins/`):
+
+| Document | Content |
+|----------|---------|
+| `porting_guide.md` | **READ FIRST** for plugin work: SDK patterns, datastore pitfalls, sparse data, dialog SDK, lessons learned |
 
 ## Build & Test
 

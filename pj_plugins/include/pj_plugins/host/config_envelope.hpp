@@ -42,9 +42,7 @@ struct ConfigEnvelope {
     Unpacked result;
     result.source_config = j["source_config"].get<std::string>();
     result.parser_binding =
-        j.contains("parser_binding") && j["parser_binding"].is_string()
-            ? j["parser_binding"].get<std::string>()
-            : "{}";
+        j.contains("parser_binding") && j["parser_binding"].is_string() ? j["parser_binding"].get<std::string>() : "{}";
     return result;
   }
 };

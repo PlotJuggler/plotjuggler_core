@@ -17,16 +17,16 @@ struct MinimalParserWriteHost {
   int64_t last_timestamp = 0;
   double last_value = 0.0;
 
-  static const char* getLastError(void*) { return nullptr; }
+  static const char* getLastError(void*) {
+    return nullptr;
+  }
 
-  static bool ensureField(void*, PJ_string_view_t, PJ_primitive_type_t,
-                           PJ_field_handle_t* out_field) {
+  static bool ensureField(void*, PJ_string_view_t, PJ_primitive_type_t, PJ_field_handle_t* out_field) {
     *out_field = PJ_field_handle_t{{1}, 1};
     return true;
   }
 
-  static bool appendRecord(void* ctx, int64_t timestamp, const PJ_named_field_value_t* fields,
-                            size_t field_count) {
+  static bool appendRecord(void* ctx, int64_t timestamp, const PJ_named_field_value_t* fields, size_t field_count) {
     auto* self = static_cast<MinimalParserWriteHost*>(ctx);
     ++self->append_record_calls;
     self->last_timestamp = timestamp;
@@ -40,7 +40,9 @@ struct MinimalParserWriteHost {
     return true;
   }
 
-  static bool appendArrowIpc(void*, PJ_bytes_view_t, PJ_string_view_t) { return true; }
+  static bool appendArrowIpc(void*, PJ_bytes_view_t, PJ_string_view_t) {
+    return true;
+  }
 };
 
 PJ_parser_write_host_t makeWriteHost(MinimalParserWriteHost* recorder) {

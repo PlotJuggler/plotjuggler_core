@@ -1,5 +1,3 @@
-#include "pj_datastore/plugin_data_host.hpp"
-
 #include <gtest/gtest.h>
 
 #include <cstddef>
@@ -13,6 +11,7 @@
 #include "nanoarrow/nanoarrow_ipc.h"
 #include "pj_base/sdk/plugin_data_api.hpp"
 #include "pj_datastore/engine.hpp"
+#include "pj_datastore/plugin_data_host.hpp"
 
 namespace PJ {
 namespace {
@@ -629,8 +628,12 @@ TEST(PluginDataHostWriteTest, LateColumnAddition) {
   FieldHandle x_field{}, y_field{};
   for (const auto& fi : snapshot.fields()) {
     auto name = std::string_view(fi.name.data, fi.name.size);
-    if (name == "x") x_field = fi.handle;
-    if (name == "y") y_field = fi.handle;
+    if (name == "x") {
+      x_field = fi.handle;
+    }
+    if (name == "y") {
+      y_field = fi.handle;
+    }
   }
 
   // x should have 2 rows across 2 chunks
@@ -695,8 +698,12 @@ TEST(PluginDataHostWriteTest, TypedNullForUnknownFieldCreatesColumn) {
   int field_count = 0;
   for (const auto& fi : snapshot.fields()) {
     auto name = std::string_view(fi.name.data, fi.name.size);
-    if (name == "x") x_field = fi.handle;
-    if (name == "y") y_field = fi.handle;
+    if (name == "x") {
+      x_field = fi.handle;
+    }
+    if (name == "y") {
+      y_field = fi.handle;
+    }
     ++field_count;
   }
   EXPECT_EQ(field_count, 2);
@@ -738,8 +745,12 @@ TEST(PluginDataHostWriteTest, VariableLengthArraySimulation) {
   FieldHandle d0{}, d2{};
   for (const auto& fi : snapshot.fields()) {
     auto name = std::string_view(fi.name.data, fi.name.size);
-    if (name == "data[0]") d0 = fi.handle;
-    if (name == "data[2]") d2 = fi.handle;
+    if (name == "data[0]") {
+      d0 = fi.handle;
+    }
+    if (name == "data[2]") {
+      d2 = fi.handle;
+    }
   }
 
   // data[0] should have 2 rows across 2 chunks

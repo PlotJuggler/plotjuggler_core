@@ -18,7 +18,9 @@ namespace {
 
 class MockParser : public PJ::MessageParserPluginBase {
  public:
-  std::string saveConfig() const override { return config_; }
+  std::string saveConfig() const override {
+    return config_;
+  }
 
   PJ::Status loadConfig(std::string_view config_json) override {
     config_ = std::string(config_json);
@@ -56,19 +58,17 @@ class ThrowingParser : public PJ::MessageParserPluginBase {
   }
 };
 
-constexpr const char* kMockManifest =
-    R"({"name":"Mock Parser","version":"1.0.0","encoding":"json"})";
+constexpr const char* kMockManifest = R"({"name":"Mock Parser","version":"1.0.0","encoding":"json"})";
 
 const PJ_message_parser_vtable_t* mockVtable() {
-  static const PJ_message_parser_vtable_t* vt = PJ::MessageParserPluginBase::vtableWithCreate(
-      []() -> void* { return new MockParser(); }, kMockManifest);
+  static const PJ_message_parser_vtable_t* vt =
+      PJ::MessageParserPluginBase::vtableWithCreate([]() -> void* { return new MockParser(); }, kMockManifest);
   return vt;
 }
 
 const PJ_message_parser_vtable_t* throwingVtable() {
   static const PJ_message_parser_vtable_t* vt = PJ::MessageParserPluginBase::vtableWithCreate(
-      []() -> void* { return new ThrowingParser(); },
-      R"({"name":"Thrower","version":"0.1.0","encoding":"test"})");
+      []() -> void* { return new ThrowingParser(); }, R"({"name":"Thrower","version":"0.1.0","encoding":"test"})");
   return vt;
 }
 
@@ -107,16 +107,15 @@ struct ParserWriteRecorder {
     return self->last_error.empty() ? nullptr : self->last_error.c_str();
   }
 
-  static bool ensureField(void* ctx, PJ_string_view_t /*field_name*/, PJ_primitive_type_t /*type*/,
-                           PJ_field_handle_t* out_field) {
+  static bool ensureField(
+      void* ctx, PJ_string_view_t /*field_name*/, PJ_primitive_type_t /*type*/, PJ_field_handle_t* out_field) {
     auto* self = static_cast<ParserWriteRecorder*>(ctx);
     ++self->ensure_field_calls;
     *out_field = PJ_field_handle_t{{1}, 1};
     return true;
   }
 
-  static bool appendRecord(void* ctx, int64_t timestamp, const PJ_named_field_value_t* fields,
-                            size_t field_count) {
+  static bool appendRecord(void* ctx, int64_t timestamp, const PJ_named_field_value_t* fields, size_t field_count) {
     auto* self = static_cast<ParserWriteRecorder*>(ctx);
     ++self->append_record_calls;
     self->last_timestamp = timestamp;
@@ -130,7 +129,9 @@ struct ParserWriteRecorder {
     return true;
   }
 
-  static bool appendArrowIpc(void*, PJ_bytes_view_t, PJ_string_view_t) { return true; }
+  static bool appendArrowIpc(void*, PJ_bytes_view_t, PJ_string_view_t) {
+    return true;
+  }
 };
 
 PJ_parser_write_host_t makeWriteHost(ParserWriteRecorder* recorder) {
@@ -256,10 +257,11 @@ TEST(MessageParserPluginBaseTest, AppendArrowIpcRoutesToWriteHost) {
     std::vector<uint8_t>* bytes;
     std::string* ts_col;
 
-    static const char* getLastError(void*) { return nullptr; }
+    static const char* getLastError(void*) {
+      return nullptr;
+    }
 
-    static bool ensureField(void*, PJ_string_view_t, PJ_primitive_type_t,
-                            PJ_field_handle_t* out_field) {
+    static bool ensureField(void*, PJ_string_view_t, PJ_primitive_type_t, PJ_field_handle_t* out_field) {
       *out_field = PJ_field_handle_t{{1}, 1};
       return true;
     }
@@ -272,8 +274,7 @@ TEST(MessageParserPluginBaseTest, AppendArrowIpcRoutesToWriteHost) {
       return true;
     }
 
-    static bool appendArrowIpc(void* ctx, PJ_bytes_view_t ipc_stream,
-                               PJ_string_view_t timestamp_column) {
+    static bool appendArrowIpc(void* ctx, PJ_bytes_view_t ipc_stream, PJ_string_view_t timestamp_column) {
       auto* self = static_cast<ArrowIpcParserWriteRecorder*>(ctx);
       *self->called = true;
       self->bytes->assign(ipc_stream.data, ipc_stream.data + ipc_stream.size);

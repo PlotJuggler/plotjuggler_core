@@ -27,8 +27,7 @@ Expected<PJ_get_toolbox_vtable_fn> loadEntryPoint(void* handle) {
 
 }  // namespace
 
-ToolboxLibrary::ToolboxLibrary(
-    void* handle, const PJ_toolbox_vtable_t* vtable, std::string path)
+ToolboxLibrary::ToolboxLibrary(void* handle, const PJ_toolbox_vtable_t* vtable, std::string path)
     : handle_(handle), vtable_(vtable), path_(std::move(path)) {}
 
 ToolboxLibrary::~ToolboxLibrary() {

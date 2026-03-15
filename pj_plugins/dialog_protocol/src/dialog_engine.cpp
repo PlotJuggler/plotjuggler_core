@@ -2,6 +2,7 @@
 #include <QDialog>
 #include <QDialogButtonBox>
 #include <QFileDialog>
+#include <QSettings>
 #include <QTimer>
 #include <QUiLoader>
 #include <QVBoxLayout>
@@ -33,18 +34,29 @@ static nlohmann::json compute_diff(const nlohmann::json& old_data, const nlohman
 // apply_and_diff: re-read widget data, apply (diffed or full), update prev
 // ---------------------------------------------------------------------------
 
-/// Returns true if the plugin requested dialog acceptance via __request_accept.
-static bool apply_and_diff(
+/// Holds the result of applying widget data: whether accept was requested and
+/// whether a sub-dialog was requested (with its UI XML).
+struct ApplyResult {
+  bool wants_accept = false;
+  std::optional<std::string> sub_dialog_ui;
+};
+
+static ApplyResult apply_and_diff(
     QWidget* root, PJ::DialogHandle& handle, nlohmann::json& prev_data, bool enable_diff, int& diff_apply_count) {
   std::string raw = handle.widget_data();
   nlohmann::json new_data = nlohmann::json::parse(raw, nullptr, false);
   if (new_data.is_discarded()) {
-    return false;
+    return {};
   }
 
-  // Check for plugin-requested accept before applying
   PJ::WidgetDataView full_view(raw);
-  bool wants_accept = full_view.requestAccept();
+  ApplyResult result;
+  result.wants_accept = full_view.requestAccept();
+  result.sub_dialog_ui = full_view.subDialogUi();
+
+  // Strip commands before diffing (they're one-shot)
+  new_data.erase("__request_accept");
+  new_data.erase("__request_sub_dialog");
 
   if (enable_diff) {
     nlohmann::json diff = compute_diff(prev_data, new_data);
@@ -57,7 +69,7 @@ static bool apply_and_diff(
     applyWidgetData(root, full_view);
   }
   prev_data = std::move(new_data);
-  return wants_accept;
+  return result;
 }
 
 // ---------------------------------------------------------------------------
@@ -93,9 +105,22 @@ DialogResult DialogEngine::showDialog(QWidget* parent) {
       QObject::connect(button_box, &QDialogButtonBox::accepted, dialog, &QDialog::accept);
       QObject::connect(button_box, &QDialogButtonBox::rejected, dialog, &QDialog::reject);
     } else {
-      qWarning("DialogEngine: no QDialogButtonBox named 'buttonBox' found in UI. "
-               "OK/Cancel buttons will not work. Ensure your .ui XML has: "
-               "<widget class=\"QDialogButtonBox\" name=\"buttonBox\">");
+      qWarning(
+          "DialogEngine: no QDialogButtonBox named 'buttonBox' found in UI. "
+          "OK/Cancel buttons will not work. Ensure your .ui XML has: "
+          "<widget class=\"QDialogButtonBox\" name=\"buttonBox\">");
+    }
+  }
+
+  // Restore saved dialog geometry (keyed by plugin manifest name)
+  auto manifest_json = nlohmann::json::parse(handle_.manifest(), nullptr, false);
+  std::string plugin_name = manifest_json.is_object() ? manifest_json.value("name", "") : "";
+  QString geometry_key = QString("DialogGeometry/%1").arg(QString::fromStdString(plugin_name));
+  if (!plugin_name.empty()) {
+    QSettings settings;
+    auto saved = settings.value(geometry_key).toByteArray();
+    if (!saved.isEmpty()) {
+      dialog->restoreGeometry(saved);
     }
   }
 
@@ -115,6 +140,41 @@ DialogResult DialogEngine::showDialog(QWidget* parent) {
     applyWidgetData(binding_root, view);
   }
 
+  // Helper: open a sub-dialog from UI XML (nested modal inside parent)
+  auto maybe_open_sub_dialog = [&](const ApplyResult& ar) {
+    if (!ar.sub_dialog_ui) {
+      return;
+    }
+
+    QByteArray sub_data(ar.sub_dialog_ui->data(), static_cast<int>(ar.sub_dialog_ui->size()));
+    QBuffer sub_buffer(&sub_data);
+    sub_buffer.open(QIODevice::ReadOnly);
+
+    QUiLoader sub_loader;
+    QWidget* sub_loaded = sub_loader.load(&sub_buffer, dialog);
+    if (!sub_loaded) {
+      return;
+    }
+
+    QDialog* sub_dialog = qobject_cast<QDialog*>(sub_loaded);
+    if (!sub_dialog) {
+      sub_dialog = new QDialog(dialog);
+      sub_dialog->setWindowTitle(sub_loaded->windowTitle());
+      auto* sub_layout = new QVBoxLayout(sub_dialog);
+      sub_layout->setContentsMargins(0, 0, 0, 0);
+      sub_layout->addWidget(sub_loaded);
+
+      auto* sub_bb = sub_loaded->findChild<QDialogButtonBox*>("buttonBox");
+      if (sub_bb) {
+        QObject::connect(sub_bb, &QDialogButtonBox::accepted, sub_dialog, &QDialog::accept);
+        QObject::connect(sub_bb, &QDialogButtonBox::rejected, sub_dialog, &QDialog::reject);
+      }
+    }
+
+    sub_dialog->exec();
+    delete sub_dialog;
+  };
+
   // 4. Handle file picker actions
   auto maybe_show_file_picker = [&](const std::string& widget_name) {
     if (!config_.enable_file_picker) {
@@ -130,7 +190,8 @@ DialogResult DialogEngine::showDialog(QWidget* parent) {
         QFileDialog::getOpenFileName(dialog, QString::fromStdString(title), QString(), QString::fromStdString(filter));
     if (!path.isEmpty()) {
       if (handle_.sendEvent(widget_name, PJ::WidgetEventBuilder::fileSelected(path.toStdString()))) {
-        apply_and_diff(binding_root, handle_, prev_data, config_.enable_diff, stats_.diff_apply_count);
+        auto ar = apply_and_diff(binding_root, handle_, prev_data, config_.enable_diff, stats_.diff_apply_count);
+        maybe_open_sub_dialog(ar);
       }
     }
   };
@@ -139,12 +200,12 @@ DialogResult DialogEngine::showDialog(QWidget* parent) {
   connectWidgetSignals(binding_root, [&](const std::string& name, const std::string& event_json) {
     stats_.event_count++;
     if (handle_.sendEvent(name, event_json)) {
-      bool wants_accept =
-          apply_and_diff(binding_root, handle_, prev_data, config_.enable_diff, stats_.diff_apply_count);
-      if (wants_accept) {
+      auto ar = apply_and_diff(binding_root, handle_, prev_data, config_.enable_diff, stats_.diff_apply_count);
+      if (ar.wants_accept) {
         dialog->accept();
         return;
       }
+      maybe_open_sub_dialog(ar);
     }
     maybe_show_file_picker(name);
   });
@@ -155,7 +216,8 @@ DialogResult DialogEngine::showDialog(QWidget* parent) {
   QObject::connect(&tick_timer, &QTimer::timeout, [&]() {
     stats_.tick_count++;
     if (handle_.tick()) {
-      apply_and_diff(binding_root, handle_, prev_data, config_.enable_diff, stats_.diff_apply_count);
+      auto ar = apply_and_diff(binding_root, handle_, prev_data, config_.enable_diff, stats_.diff_apply_count);
+      maybe_open_sub_dialog(ar);
     }
   });
   tick_timer.start();
@@ -173,6 +235,12 @@ DialogResult DialogEngine::showDialog(QWidget* parent) {
     handle_.reject();
     dr = DialogResult::kRejected;
   }
+  // Save dialog geometry for next time
+  if (!plugin_name.empty()) {
+    QSettings settings;
+    settings.setValue(geometry_key, dialog->saveGeometry());
+  }
+
   delete dialog;
   return dr;
 }

@@ -8,7 +8,9 @@ class MinimalDataSource : public PJ::FileSourceBase {
     return PJ::kCapabilityDirectIngest;
   }
 
-  PJ::Status importData() override { return PJ::okStatus(); }
+  PJ::Status importData() override {
+    return PJ::okStatus();
+  }
 };
 
 }  // namespace

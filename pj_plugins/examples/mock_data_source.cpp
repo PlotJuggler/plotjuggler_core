@@ -1,5 +1,4 @@
 #include <pj_base/sdk/data_source_plugin_base.hpp>
-
 #include <string>
 
 namespace {
@@ -7,11 +6,13 @@ namespace {
 class MockDataSource : public PJ::DataSourcePluginBase {
  public:
   uint64_t capabilities() const override {
-    return PJ::kCapabilityContinuousStream | PJ::kCapabilityDirectIngest |
-           PJ::kCapabilityDelegatedIngest | PJ::kCapabilitySupportsPause;
+    return PJ::kCapabilityContinuousStream | PJ::kCapabilityDirectIngest | PJ::kCapabilityDelegatedIngest |
+           PJ::kCapabilitySupportsPause;
   }
 
-  std::string saveConfig() const override { return config_; }
+  std::string saveConfig() const override {
+    return config_;
+  }
 
   PJ::Status loadConfig(std::string_view config_json) override {
     config_ = std::string(config_json);
@@ -62,13 +63,14 @@ class MockDataSource : public PJ::DataSourcePluginBase {
 
     if (config_.find("delegated") != std::string::npos) {
       const uint8_t schema[] = {'s', 'c', 'h'};
-      auto binding = runtimeHost().ensureParserBinding(PJ::ParserBindingRequest{
-          .topic_name = "mock/topic",
-          .parser_encoding = "json",
-          .type_name = "mock_type",
-          .schema = PJ::Span<const uint8_t>(schema, sizeof(schema)),
-          .parser_config_json = R"({"mode":"test"})",
-      });
+      auto binding = runtimeHost().ensureParserBinding(
+          PJ::ParserBindingRequest{
+              .topic_name = "mock/topic",
+              .parser_encoding = "json",
+              .type_name = "mock_type",
+              .schema = PJ::Span<const uint8_t>(schema, sizeof(schema)),
+              .parser_config_json = R"({"mode":"test"})",
+          });
       if (!binding) {
         state_ = PJ::DataSourceState::kFailed;
         runtimeHost().notifyState(state_);
@@ -76,8 +78,8 @@ class MockDataSource : public PJ::DataSourcePluginBase {
       }
 
       const uint8_t payload[] = {'{', '}'};
-      auto push_status = runtimeHost().pushRawMessage(
-          *binding, PJ::Timestamp{456}, PJ::Span<const uint8_t>(payload, sizeof(payload)));
+      auto push_status =
+          runtimeHost().pushRawMessage(*binding, PJ::Timestamp{456}, PJ::Span<const uint8_t>(payload, sizeof(payload)));
       if (!push_status) {
         state_ = PJ::DataSourceState::kFailed;
         runtimeHost().notifyState(state_);
@@ -118,7 +120,9 @@ class MockDataSource : public PJ::DataSourcePluginBase {
     return PJ::okStatus();
   }
 
-  PJ::DataSourceState currentState() const override { return state_; }
+  PJ::DataSourceState currentState() const override {
+    return state_;
+  }
 
  private:
   std::string config_ = "{}";
@@ -128,6 +132,6 @@ class MockDataSource : public PJ::DataSourcePluginBase {
 
 }  // namespace
 
-PJ_DATA_SOURCE_PLUGIN(MockDataSource,
-                      R"({"name":"Mock DataSource","version":"1.0.0",)"
-                      R"("description":"Test data source for protocol and host integration"})")
+PJ_DATA_SOURCE_PLUGIN(
+    MockDataSource, R"({"name":"Mock DataSource","version":"1.0.0",)"
+                    R"("description":"Test data source for protocol and host integration"})")

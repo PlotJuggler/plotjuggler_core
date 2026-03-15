@@ -18,11 +18,13 @@ namespace {
 class MockDataSource : public PJ::DataSourcePluginBase {
  public:
   uint64_t capabilities() const override {
-    return PJ::kCapabilityContinuousStream | PJ::kCapabilityDirectIngest |
-           PJ::kCapabilityDelegatedIngest | PJ::kCapabilitySupportsPause;
+    return PJ::kCapabilityContinuousStream | PJ::kCapabilityDirectIngest | PJ::kCapabilityDelegatedIngest |
+           PJ::kCapabilitySupportsPause;
   }
 
-  std::string saveConfig() const override { return config_; }
+  std::string saveConfig() const override {
+    return config_;
+  }
 
   PJ::Status loadConfig(std::string_view config_json) override {
     config_ = std::string(config_json);
@@ -73,13 +75,14 @@ class MockDataSource : public PJ::DataSourcePluginBase {
 
     if (config_.find("delegated") != std::string::npos) {
       const uint8_t schema[] = {'s', 'c', 'h'};
-      auto binding = runtimeHost().ensureParserBinding(PJ::ParserBindingRequest{
-          .topic_name = "mock/topic",
-          .parser_encoding = "json",
-          .type_name = "mock_type",
-          .schema = PJ::Span<const uint8_t>(schema, sizeof(schema)),
-          .parser_config_json = R"({"mode":"test"})",
-      });
+      auto binding = runtimeHost().ensureParserBinding(
+          PJ::ParserBindingRequest{
+              .topic_name = "mock/topic",
+              .parser_encoding = "json",
+              .type_name = "mock_type",
+              .schema = PJ::Span<const uint8_t>(schema, sizeof(schema)),
+              .parser_config_json = R"({"mode":"test"})",
+          });
       if (!binding) {
         state_ = PJ::DataSourceState::kFailed;
         runtimeHost().notifyState(state_);
@@ -87,8 +90,8 @@ class MockDataSource : public PJ::DataSourcePluginBase {
       }
 
       const uint8_t payload[] = {'{', '}'};
-      auto push_status = runtimeHost().pushRawMessage(
-          *binding, PJ::Timestamp{456}, PJ::Span<const uint8_t>(payload, sizeof(payload)));
+      auto push_status =
+          runtimeHost().pushRawMessage(*binding, PJ::Timestamp{456}, PJ::Span<const uint8_t>(payload, sizeof(payload)));
       if (!push_status) {
         state_ = PJ::DataSourceState::kFailed;
         runtimeHost().notifyState(state_);
@@ -129,7 +132,9 @@ class MockDataSource : public PJ::DataSourcePluginBase {
     return PJ::okStatus();
   }
 
-  PJ::DataSourceState currentState() const override { return state_; }
+  PJ::DataSourceState currentState() const override {
+    return state_;
+  }
 
  private:
   std::string config_ = "{}";
@@ -140,8 +145,8 @@ class MockDataSource : public PJ::DataSourcePluginBase {
 constexpr const char* kMockManifest = R"({"name":"Mock DataSource","version":"1.0.0"})";
 
 const PJ_data_source_vtable_t* mockVtable() {
-  static const PJ_data_source_vtable_t* vt = PJ::DataSourcePluginBase::vtableWithCreate(
-      []() -> void* { return new MockDataSource(); }, kMockManifest);
+  static const PJ_data_source_vtable_t* vt =
+      PJ::DataSourcePluginBase::vtableWithCreate([]() -> void* { return new MockDataSource(); }, kMockManifest);
   return vt;
 }
 
@@ -190,16 +195,14 @@ struct WriteRecorder {
   }
 
   static bool ensureField(
-      void* ctx, PJ_topic_handle_t topic, PJ_string_view_t, PJ_primitive_type_t,
-      PJ_field_handle_t* out_field) {
+      void* ctx, PJ_topic_handle_t topic, PJ_string_view_t, PJ_primitive_type_t, PJ_field_handle_t* out_field) {
     (void)ctx;
     *out_field = PJ_field_handle_t{topic, 1};
     return true;
   }
 
   static bool appendRecord(
-      void* ctx, PJ_topic_handle_t topic, int64_t timestamp, const PJ_named_field_value_t* fields,
-      size_t field_count) {
+      void* ctx, PJ_topic_handle_t topic, int64_t timestamp, const PJ_named_field_value_t* fields, size_t field_count) {
     auto* self = static_cast<WriteRecorder*>(ctx);
     ++self->append_record_calls;
     self->last_timestamp = timestamp;
@@ -210,8 +213,7 @@ struct WriteRecorder {
     return true;
   }
 
-  static bool appendBoundRecord(void*, PJ_topic_handle_t, int64_t, const PJ_bound_field_value_t*,
-                               size_t) {
+  static bool appendBoundRecord(void*, PJ_topic_handle_t, int64_t, const PJ_bound_field_value_t*, size_t) {
     return true;
   }
 
@@ -250,15 +252,13 @@ struct RuntimeRecorder {
     return self->last_error.empty() ? nullptr : self->last_error.c_str();
   }
 
-  static void reportMessage(void* ctx, PJ_data_source_message_level_t level,
-                            PJ_string_view_t message) {
+  static void reportMessage(void* ctx, PJ_data_source_message_level_t level, PJ_string_view_t message) {
     auto* self = static_cast<RuntimeRecorder*>(ctx);
     self->messages.emplace_back(
         std::to_string(static_cast<int>(level)) + ":" + std::string(message.data, message.size));
   }
 
-  static bool progressStart(void* ctx, PJ_string_view_t label, uint64_t total_steps,
-                            bool cancellable) {
+  static bool progressStart(void* ctx, PJ_string_view_t label, uint64_t total_steps, bool cancellable) {
     auto* self = static_cast<RuntimeRecorder*>(ctx);
     ++self->progress_start_calls;
     EXPECT_EQ(std::string(label.data, label.size), "Mock Import");
@@ -287,32 +287,29 @@ struct RuntimeRecorder {
     self->states.push_back(state);
   }
 
-  static void requestStop(void* ctx, PJ_data_source_state_t terminal_state,
-                          PJ_string_view_t reason) {
+  static void requestStop(void* ctx, PJ_data_source_state_t terminal_state, PJ_string_view_t reason) {
     auto* self = static_cast<RuntimeRecorder*>(ctx);
     self->states.push_back(terminal_state);
     self->messages.emplace_back("stop:" + std::string(reason.data, reason.size));
   }
 
-  static bool ensureParserBinding(void* ctx, const PJ_parser_binding_request_t* request,
-                                  PJ_parser_binding_handle_t* out_handle) {
+  static bool ensureParserBinding(
+      void* ctx, const PJ_parser_binding_request_t* request, PJ_parser_binding_handle_t* out_handle) {
     auto* self = static_cast<RuntimeRecorder*>(ctx);
-    self->binding_requests.push_back(BindingRequestCopy{
-        .topic_name = std::string(request->topic_name.data, request->topic_name.size),
-        .parser_encoding =
-            std::string(request->parser_encoding.data, request->parser_encoding.size),
-        .type_name = std::string(request->type_name.data, request->type_name.size),
-        .schema = std::vector<uint8_t>(request->schema.data,
-                                       request->schema.data + request->schema.size),
-        .parser_config_json =
-            std::string(request->parser_config_json.data, request->parser_config_json.size),
-    });
+    self->binding_requests.push_back(
+        BindingRequestCopy{
+            .topic_name = std::string(request->topic_name.data, request->topic_name.size),
+            .parser_encoding = std::string(request->parser_encoding.data, request->parser_encoding.size),
+            .type_name = std::string(request->type_name.data, request->type_name.size),
+            .schema = std::vector<uint8_t>(request->schema.data, request->schema.data + request->schema.size),
+            .parser_config_json = std::string(request->parser_config_json.data, request->parser_config_json.size),
+        });
     *out_handle = PJ_parser_binding_handle_t{self->next_binding_id++};
     return true;
   }
 
-  static bool pushRawMessage(void* ctx, PJ_parser_binding_handle_t handle,
-                             int64_t host_timestamp_ns, PJ_bytes_view_t payload) {
+  static bool pushRawMessage(
+      void* ctx, PJ_parser_binding_handle_t handle, int64_t host_timestamp_ns, PJ_bytes_view_t payload) {
     auto* self = static_cast<RuntimeRecorder*>(ctx);
     EXPECT_EQ(payload.size, 2U);
     self->pushed_messages.emplace_back(handle.id, host_timestamp_ns);
@@ -405,11 +402,10 @@ TEST(DataSourcePluginBaseTest, LifecycleUsesBoundHostsAndRoundTripsConfig) {
   EXPECT_EQ(runtime_recorder.pushed_messages[0].first, 9U);
   EXPECT_EQ(runtime_recorder.pushed_messages[0].second, 456);
   EXPECT_EQ(
-      runtime_recorder.states,
-      (std::vector<PJ_data_source_state_t>{
-          PJ_DATA_SOURCE_STATE_STARTING,
-          PJ_DATA_SOURCE_STATE_RUNNING,
-      }));
+      runtime_recorder.states, (std::vector<PJ_data_source_state_t>{
+                                   PJ_DATA_SOURCE_STATE_STARTING,
+                                   PJ_DATA_SOURCE_STATE_RUNNING,
+                               }));
 
   EXPECT_TRUE(drv.vt->poll(drv.ctx));
   EXPECT_TRUE(drv.vt->pause(drv.ctx));
@@ -483,31 +479,31 @@ TEST(DataSourcePluginBaseTest, AppendArrowIpcRoutesToWriteHost) {
     std::vector<uint8_t>* bytes;
     std::string* ts_col;
 
-    static const char* getLastError(void*) { return nullptr; }
+    static const char* getLastError(void*) {
+      return nullptr;
+    }
 
     static bool ensureTopic(void*, PJ_string_view_t, PJ_topic_handle_t* out_topic) {
       *out_topic = PJ_topic_handle_t{1};
       return true;
     }
 
-    static bool ensureField(void*, PJ_topic_handle_t topic, PJ_string_view_t, PJ_primitive_type_t,
-                            PJ_field_handle_t* out_field) {
+    static bool ensureField(
+        void*, PJ_topic_handle_t topic, PJ_string_view_t, PJ_primitive_type_t, PJ_field_handle_t* out_field) {
       *out_field = PJ_field_handle_t{topic, 1};
       return true;
     }
 
-    static bool appendRecord(void*, PJ_topic_handle_t, int64_t, const PJ_named_field_value_t*,
-                             size_t) {
+    static bool appendRecord(void*, PJ_topic_handle_t, int64_t, const PJ_named_field_value_t*, size_t) {
       return true;
     }
 
-    static bool appendBoundRecord(void*, PJ_topic_handle_t, int64_t,
-                                  const PJ_bound_field_value_t*, size_t) {
+    static bool appendBoundRecord(void*, PJ_topic_handle_t, int64_t, const PJ_bound_field_value_t*, size_t) {
       return true;
     }
 
-    static bool appendArrowIpc(void* ctx, PJ_topic_handle_t topic, PJ_bytes_view_t ipc_stream,
-                               PJ_string_view_t timestamp_column) {
+    static bool appendArrowIpc(
+        void* ctx, PJ_topic_handle_t topic, PJ_bytes_view_t ipc_stream, PJ_string_view_t timestamp_column) {
       auto* self = static_cast<ArrowIpcWriteRecorder*>(ctx);
       *self->called = true;
       *self->topic = topic;
@@ -517,8 +513,7 @@ TEST(DataSourcePluginBaseTest, AppendArrowIpcRoutesToWriteHost) {
     }
   };
 
-  ArrowIpcWriteRecorder arrow_recorder{&arrow_ipc_called, &arrow_topic, &arrow_bytes,
-                                       &arrow_ts_col};
+  ArrowIpcWriteRecorder arrow_recorder{&arrow_ipc_called, &arrow_topic, &arrow_bytes, &arrow_ts_col};
   static const PJ_source_write_host_vtable_t arrow_vtable = {
       .abi_version = PJ_PLUGIN_DATA_API_VERSION,
       .struct_size = sizeof(PJ_source_write_host_vtable_t),

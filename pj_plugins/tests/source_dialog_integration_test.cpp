@@ -1,11 +1,11 @@
-#include "pj_plugins/host/config_envelope.hpp"
-#include "pj_plugins/host/data_source_library.hpp"
-#include "pj_plugins/host/dialog_handle.hpp"
-
 #include <gtest/gtest.h>
 
 #include <nlohmann/json.hpp>
 #include <string>
+
+#include "pj_plugins/host/config_envelope.hpp"
+#include "pj_plugins/host/data_source_library.hpp"
+#include "pj_plugins/host/dialog_handle.hpp"
 
 #ifndef PJ_MOCK_SOURCE_WITH_DIALOG_PLUGIN_PATH
 #error "PJ_MOCK_SOURCE_WITH_DIALOG_PLUGIN_PATH must be defined"

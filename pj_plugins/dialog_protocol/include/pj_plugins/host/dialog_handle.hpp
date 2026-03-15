@@ -36,8 +36,7 @@ class DialogHandle {
   }
 
   // Move-only
-  DialogHandle(DialogHandle&& other) noexcept
-      : vt_(other.vt_), ctx_(other.ctx_), owned_(other.owned_) {
+  DialogHandle(DialogHandle&& other) noexcept : vt_(other.vt_), ctx_(other.ctx_), owned_(other.owned_) {
     other.vt_ = nullptr;
     other.ctx_ = nullptr;
     other.owned_ = false;
@@ -115,8 +114,7 @@ class DialogHandle {
   }
 
  private:
-  DialogHandle(const PJ_dialog_vtable_t* vt, void* ctx, bool owned)
-      : vt_(vt), ctx_(ctx), owned_(owned) {}
+  DialogHandle(const PJ_dialog_vtable_t* vt, void* ctx, bool owned) : vt_(vt), ctx_(ctx), owned_(owned) {}
 
   const PJ_dialog_vtable_t* vt_ = nullptr;
   void* ctx_ = nullptr;

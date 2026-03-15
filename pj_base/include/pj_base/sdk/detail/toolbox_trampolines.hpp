@@ -13,8 +13,7 @@ namespace PJ {
 inline void ToolboxPluginBase::trampoline_destroy(void* ctx) {
   try {
     delete static_cast<ToolboxPluginBase*>(ctx);
-  } catch (...) {
-  }
+  } catch (...) {}
 }
 
 inline uint64_t ToolboxPluginBase::trampoline_capabilities(void* ctx) {
@@ -48,8 +47,7 @@ inline bool ToolboxPluginBase::trampoline_bind_toolbox_host(void* ctx, PJ_toolbo
   }
 }
 
-inline bool ToolboxPluginBase::trampoline_bind_runtime_host(
-    void* ctx, PJ_toolbox_runtime_host_t runtime_host) {
+inline bool ToolboxPluginBase::trampoline_bind_runtime_host(void* ctx, PJ_toolbox_runtime_host_t runtime_host) {
   auto* self = static_cast<ToolboxPluginBase*>(ctx);
   try {
     auto status = self->bindRuntimeHost(runtime_host);
@@ -84,8 +82,7 @@ inline const char* ToolboxPluginBase::trampoline_save_config(void* ctx) {
 inline bool ToolboxPluginBase::trampoline_load_config(void* ctx, const char* config_json) {
   auto* self = static_cast<ToolboxPluginBase*>(ctx);
   try {
-    auto status = self->loadConfig(
-        config_json == nullptr ? std::string_view{} : std::string_view(config_json));
+    auto status = self->loadConfig(config_json == nullptr ? std::string_view{} : std::string_view(config_json));
     if (!status) {
       self->last_error_ = std::move(status).error();
       return false;

@@ -34,10 +34,17 @@ class MainWindow : public QMainWindow {
   void onClearData();
   void onClearPlots();
   void onRefreshTimer();
+  void onTreeContextMenu(const QPoint& pos);
 
  private:
   /// Compute the current visible time range based on data and streaming state.
   std::pair<PJ::Timestamp, PJ::Timestamp> computeVisibleRange() const;
+
+  /// Find the session owning @p dataset_id, or nullptr.
+  DataSourceSession* findSessionForDataset(PJ::DatasetId dataset_id);
+
+  void removeSession(DataSourceSession* session);
+  void restartSession(DataSourceSession* session);
 
   PJ::DataEngine engine_;
   PJ::TimeDomainId default_td_id_ = 0;

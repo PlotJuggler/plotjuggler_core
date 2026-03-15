@@ -1,7 +1,5 @@
 #pragma once
 
-#include "pj_base/plugin_data_api.h"
-
 #include <initializer_list>
 #include <string>
 #include <string_view>
@@ -11,6 +9,7 @@
 #include <vector>
 
 #include "pj_base/expected.hpp"
+#include "pj_base/plugin_data_api.h"
 #include "pj_base/span.hpp"
 #include "pj_base/type_tree.hpp"
 #include "pj_base/types.hpp"
@@ -61,20 +60,9 @@ struct TypedNull {
   PrimitiveType type;
 };
 
-using ValueRef = std::variant<NullValue,
-                              TypedNull,
-                              float,
-                              double,
-                              int8_t,
-                              int16_t,
-                              int32_t,
-                              int64_t,
-                              uint8_t,
-                              uint16_t,
-                              uint32_t,
-                              uint64_t,
-                              bool,
-                              std::string_view>;
+using ValueRef = std::variant<
+    NullValue, TypedNull, float, double, int8_t, int16_t, int32_t, int64_t, uint8_t, uint16_t, uint32_t, uint64_t, bool,
+    std::string_view>;
 
 /// Returns true if the value is null (either untyped kNull or TypedNull).
 [[nodiscard]] inline bool isNull(const ValueRef& v) {
@@ -223,20 +211,35 @@ class MaterializedSeries {
   return std::visit(
       [](auto&& v) -> PrimitiveType {
         using T = std::decay_t<decltype(v)>;
-        if constexpr (std::is_same_v<T, NullValue>) return PrimitiveType::kUnspecified;
-        else if constexpr (std::is_same_v<T, TypedNull>) return v.type;
-        else if constexpr (std::is_same_v<T, float>) return PrimitiveType::kFloat32;
-        else if constexpr (std::is_same_v<T, double>) return PrimitiveType::kFloat64;
-        else if constexpr (std::is_same_v<T, int8_t>) return PrimitiveType::kInt8;
-        else if constexpr (std::is_same_v<T, int16_t>) return PrimitiveType::kInt16;
-        else if constexpr (std::is_same_v<T, int32_t>) return PrimitiveType::kInt32;
-        else if constexpr (std::is_same_v<T, int64_t>) return PrimitiveType::kInt64;
-        else if constexpr (std::is_same_v<T, uint8_t>) return PrimitiveType::kUint8;
-        else if constexpr (std::is_same_v<T, uint16_t>) return PrimitiveType::kUint16;
-        else if constexpr (std::is_same_v<T, uint32_t>) return PrimitiveType::kUint32;
-        else if constexpr (std::is_same_v<T, uint64_t>) return PrimitiveType::kUint64;
-        else if constexpr (std::is_same_v<T, bool>) return PrimitiveType::kBool;
-        else if constexpr (std::is_same_v<T, std::string_view>) return PrimitiveType::kString;
+        if constexpr (std::is_same_v<T, NullValue>) {
+          return PrimitiveType::kUnspecified;
+        } else if constexpr (std::is_same_v<T, TypedNull>) {
+          return v.type;
+        } else if constexpr (std::is_same_v<T, float>) {
+          return PrimitiveType::kFloat32;
+        } else if constexpr (std::is_same_v<T, double>) {
+          return PrimitiveType::kFloat64;
+        } else if constexpr (std::is_same_v<T, int8_t>) {
+          return PrimitiveType::kInt8;
+        } else if constexpr (std::is_same_v<T, int16_t>) {
+          return PrimitiveType::kInt16;
+        } else if constexpr (std::is_same_v<T, int32_t>) {
+          return PrimitiveType::kInt32;
+        } else if constexpr (std::is_same_v<T, int64_t>) {
+          return PrimitiveType::kInt64;
+        } else if constexpr (std::is_same_v<T, uint8_t>) {
+          return PrimitiveType::kUint8;
+        } else if constexpr (std::is_same_v<T, uint16_t>) {
+          return PrimitiveType::kUint16;
+        } else if constexpr (std::is_same_v<T, uint32_t>) {
+          return PrimitiveType::kUint32;
+        } else if constexpr (std::is_same_v<T, uint64_t>) {
+          return PrimitiveType::kUint64;
+        } else if constexpr (std::is_same_v<T, bool>) {
+          return PrimitiveType::kBool;
+        } else if constexpr (std::is_same_v<T, std::string_view>) {
+          return PrimitiveType::kString;
+        }
       },
       value);
 }
@@ -286,7 +289,9 @@ class SourceWriteHostView {
   explicit SourceWriteHostView(PJ_source_write_host_t host) : host_(host) {}
 
   /// Returns true if both context and vtable pointers are set.
-  [[nodiscard]] bool valid() const { return host_.ctx != nullptr && host_.vtable != nullptr; }
+  [[nodiscard]] bool valid() const {
+    return host_.ctx != nullptr && host_.vtable != nullptr;
+  }
 
   [[nodiscard]] Expected<TopicHandle> ensureTopic(std::string_view topic_name) const {
     if (!valid()) {
@@ -315,19 +320,19 @@ class SourceWriteHostView {
   /// Fields not included in the span are automatically filled with null.
   /// This enables sparse records — not all fields need data for every row.
   /// Pre-register all fields via ensureField() before the first appendRecord().
-  [[nodiscard]] Status appendRecord(
-      TopicHandle topic, Timestamp timestamp, Span<const NamedFieldValue> fields) const {
+  [[nodiscard]] Status appendRecord(TopicHandle topic, Timestamp timestamp, Span<const NamedFieldValue> fields) const {
     if (!valid()) {
       return unexpected("write host is not bound");
     }
     std::vector<PJ_named_field_value_t> raw_fields;
     raw_fields.reserve(fields.size());
     for (const auto& field : fields) {
-      raw_fields.push_back(PJ_named_field_value_t{
-          .name = toAbiString(field.name),
-          .is_null = isNull(field.value),
-          .value = toAbiScalar(field.value),
-      });
+      raw_fields.push_back(
+          PJ_named_field_value_t{
+              .name = toAbiString(field.name),
+              .is_null = isNull(field.value),
+              .value = toAbiScalar(field.value),
+          });
     }
     if (!host_.vtable->append_record(host_.ctx, topic, timestamp, raw_fields.data(), raw_fields.size())) {
       return unexpected(std::string(lastError()));
@@ -343,11 +348,12 @@ class SourceWriteHostView {
     std::vector<PJ_bound_field_value_t> raw_fields;
     raw_fields.reserve(fields.size());
     for (const auto& field : fields) {
-      raw_fields.push_back(PJ_bound_field_value_t{
-          .field = field.field,
-          .is_null = isNull(field.value),
-          .value = toAbiScalar(field.value),
-      });
+      raw_fields.push_back(
+          PJ_bound_field_value_t{
+              .field = field.field,
+              .is_null = isNull(field.value),
+              .value = toAbiScalar(field.value),
+          });
     }
     if (!host_.vtable->append_bound_record(host_.ctx, topic, timestamp, raw_fields.data(), raw_fields.size())) {
       return unexpected(std::string(lastError()));
@@ -370,8 +376,7 @@ class SourceWriteHostView {
     if (!valid()) {
       return unexpected("write host is not bound");
     }
-    if (!host_.vtable->append_arrow_ipc(
-            host_.ctx, topic, toAbiBytes(ipc_stream), toAbiString(timestamp_column))) {
+    if (!host_.vtable->append_arrow_ipc(host_.ctx, topic, toAbiBytes(ipc_stream), toAbiString(timestamp_column))) {
       return unexpected(std::string(lastError()));
     }
     return okStatus();
@@ -405,11 +410,12 @@ class ParserWriteHostView {
     std::vector<PJ_named_field_value_t> raw_fields;
     raw_fields.reserve(fields.size());
     for (const auto& field : fields) {
-      raw_fields.push_back(PJ_named_field_value_t{
-          .name = toAbiString(field.name),
-          .is_null = isNull(field.value),
-          .value = toAbiScalar(field.value),
-      });
+      raw_fields.push_back(
+          PJ_named_field_value_t{
+              .name = toAbiString(field.name),
+              .is_null = isNull(field.value),
+              .value = toAbiScalar(field.value),
+          });
     }
     if (!host_.vtable->append_record(host_.ctx, timestamp, raw_fields.data(), raw_fields.size())) {
       return unexpected(std::string(lastError()));
@@ -421,11 +427,12 @@ class ParserWriteHostView {
     std::vector<PJ_bound_field_value_t> raw_fields;
     raw_fields.reserve(fields.size());
     for (const auto& field : fields) {
-      raw_fields.push_back(PJ_bound_field_value_t{
-          .field = field.field,
-          .is_null = isNull(field.value),
-          .value = toAbiScalar(field.value),
-      });
+      raw_fields.push_back(
+          PJ_bound_field_value_t{
+              .field = field.field,
+              .is_null = isNull(field.value),
+              .value = toAbiScalar(field.value),
+          });
     }
     if (!host_.vtable->append_bound_record(host_.ctx, timestamp, raw_fields.data(), raw_fields.size())) {
       return unexpected(std::string(lastError()));
@@ -437,8 +444,7 @@ class ParserWriteHostView {
     return appendRecord(timestamp, Span<const NamedFieldValue>(fields.begin(), fields.size()));
   }
 
-  [[nodiscard]] Status appendBoundRecord(
-      Timestamp timestamp, std::initializer_list<BoundFieldValue> fields) const {
+  [[nodiscard]] Status appendBoundRecord(Timestamp timestamp, std::initializer_list<BoundFieldValue> fields) const {
     return appendBoundRecord(timestamp, Span<const BoundFieldValue>(fields.begin(), fields.size()));
   }
 
@@ -488,16 +494,16 @@ class ToolboxHostView {
     return handle;
   }
 
-  [[nodiscard]] Status appendRecord(
-      TopicHandle topic, Timestamp timestamp, Span<const NamedFieldValue> fields) const {
+  [[nodiscard]] Status appendRecord(TopicHandle topic, Timestamp timestamp, Span<const NamedFieldValue> fields) const {
     std::vector<PJ_named_field_value_t> raw_fields;
     raw_fields.reserve(fields.size());
     for (const auto& field : fields) {
-      raw_fields.push_back(PJ_named_field_value_t{
-          .name = toAbiString(field.name),
-          .is_null = isNull(field.value),
-          .value = toAbiScalar(field.value),
-      });
+      raw_fields.push_back(
+          PJ_named_field_value_t{
+              .name = toAbiString(field.name),
+              .is_null = isNull(field.value),
+              .value = toAbiScalar(field.value),
+          });
     }
     if (!host_.vtable->append_record(host_.ctx, topic, timestamp, raw_fields.data(), raw_fields.size())) {
       return unexpected(std::string(lastError()));
@@ -510,11 +516,12 @@ class ToolboxHostView {
     std::vector<PJ_bound_field_value_t> raw_fields;
     raw_fields.reserve(fields.size());
     for (const auto& field : fields) {
-      raw_fields.push_back(PJ_bound_field_value_t{
-          .field = field.field,
-          .is_null = isNull(field.value),
-          .value = toAbiScalar(field.value),
-      });
+      raw_fields.push_back(
+          PJ_bound_field_value_t{
+              .field = field.field,
+              .is_null = isNull(field.value),
+              .value = toAbiScalar(field.value),
+          });
     }
     if (!host_.vtable->append_bound_record(host_.ctx, topic, timestamp, raw_fields.data(), raw_fields.size())) {
       return unexpected(std::string(lastError()));
@@ -534,8 +541,7 @@ class ToolboxHostView {
 
   [[nodiscard]] Status appendArrowIpc(
       TopicHandle topic, Span<const uint8_t> ipc_stream, std::string_view timestamp_column = "_timestamp") const {
-    if (!host_.vtable->append_arrow_ipc(
-            host_.ctx, topic, toAbiBytes(ipc_stream), toAbiString(timestamp_column))) {
+    if (!host_.vtable->append_arrow_ipc(host_.ctx, topic, toAbiBytes(ipc_stream), toAbiString(timestamp_column))) {
       return unexpected(std::string(lastError()));
     }
     return okStatus();

@@ -55,7 +55,9 @@ class MessageParserPluginBase {
   }
 
   /// Serialize plugin configuration to JSON. Default returns "{}".
-  virtual std::string saveConfig() const { return "{}"; }
+  virtual std::string saveConfig() const {
+    return "{}";
+  }
 
   /// Restore plugin configuration from JSON. Default accepts any input.
   virtual Status loadConfig(std::string_view config_json) {
@@ -67,18 +69,16 @@ class MessageParserPluginBase {
   virtual Status parse(Timestamp timestamp_ns, Span<const uint8_t> payload) = 0;
 
   /// Return the last error message. Override for custom error reporting.
-  virtual std::string lastError() const { return last_error_; }
+  virtual std::string lastError() const {
+    return last_error_;
+  }
 
   template <typename CreateFn>
-  static const PJ_message_parser_vtable_t* vtableWithCreate(
-      CreateFn create_fn, const char* manifest) {
+  static const PJ_message_parser_vtable_t* vtableWithCreate(CreateFn create_fn, const char* manifest) {
     PJ_ASSERT(manifest != nullptr && manifest[0] == '{', "manifest must be a JSON object");
-    PJ_ASSERT(std::strstr(manifest, "\"name\"") != nullptr,
-              "manifest must contain a \"name\" key");
-    PJ_ASSERT(std::strstr(manifest, "\"version\"") != nullptr,
-              "manifest must contain a \"version\" key");
-    PJ_ASSERT(std::strstr(manifest, "\"encoding\"") != nullptr,
-              "manifest must contain an \"encoding\" key");
+    PJ_ASSERT(std::strstr(manifest, "\"name\"") != nullptr, "manifest must contain a \"name\" key");
+    PJ_ASSERT(std::strstr(manifest, "\"version\"") != nullptr, "manifest must contain a \"version\" key");
+    PJ_ASSERT(std::strstr(manifest, "\"encoding\"") != nullptr, "manifest must contain an \"encoding\" key");
     static const PJ_message_parser_vtable_t vt = {
         PJ_MESSAGE_PARSER_PROTOCOL_VERSION,
         sizeof(PJ_message_parser_vtable_t),
@@ -104,7 +104,9 @@ class MessageParserPluginBase {
     return sdk::ParserWriteHostView(write_host_);
   }
 
-  void setLastError(std::string error) { last_error_ = std::move(error); }
+  void setLastError(std::string error) {
+    last_error_ = std::move(error);
+  }
 
  private:
   PJ_parser_write_host_t write_host_{};
@@ -145,7 +147,6 @@ class MessageParserPluginBase {
 #define PJ_MESSAGE_PARSER_PLUGIN(ClassName, manifest)                                                       \
   extern "C" PJ_MESSAGE_PARSER_EXPORT const PJ_message_parser_vtable_t* PJ_get_message_parser_vtable() {    \
     static const PJ_message_parser_vtable_t* vt =                                                           \
-        PJ::MessageParserPluginBase::vtableWithCreate(                                                      \
-            []() -> void* { return new ClassName(); }, manifest);                                            \
+        PJ::MessageParserPluginBase::vtableWithCreate([]() -> void* { return new ClassName(); }, manifest); \
     return vt;                                                                                              \
   }
