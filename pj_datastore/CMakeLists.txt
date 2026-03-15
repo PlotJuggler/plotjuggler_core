@@ -41,55 +41,57 @@ target_link_libraries(pj_datastore
 # Tests
 # ---------------------------------------------------------------------------
 
-set(PJ_DATASTORE_TESTS
-  tests/type_registry_test.cpp
-  tests/buffer_test.cpp
-  tests/column_buffer_test.cpp
-  tests/encoding_test.cpp
-  tests/chunk_test.cpp
-  tests/topic_storage_test.cpp
-  tests/query_test.cpp
-  tests/engine_integration_test.cpp
-  tests/derived_engine_test.cpp
-  tests/array_expansion_test.cpp
-  tests/regression_test.cpp
-  tests/plugin_host_read_test.cpp
-)
+if(PJ_BUILD_TESTS)
+  set(PJ_DATASTORE_TESTS
+    tests/type_registry_test.cpp
+    tests/buffer_test.cpp
+    tests/column_buffer_test.cpp
+    tests/encoding_test.cpp
+    tests/chunk_test.cpp
+    tests/topic_storage_test.cpp
+    tests/query_test.cpp
+    tests/engine_integration_test.cpp
+    tests/derived_engine_test.cpp
+    tests/array_expansion_test.cpp
+    tests/regression_test.cpp
+    tests/plugin_host_read_test.cpp
+  )
 
-foreach(test_src ${PJ_DATASTORE_TESTS})
-  get_filename_component(test_name ${test_src} NAME_WE)
-  add_executable(${test_name} ${test_src})
-  target_link_libraries(${test_name} PRIVATE pj_datastore GTest::gtest_main)
-  add_test(NAME ${test_name} COMMAND ${test_name})
-endforeach()
+  foreach(test_src ${PJ_DATASTORE_TESTS})
+    get_filename_component(test_name ${test_src} NAME_WE)
+    add_executable(${test_name} ${test_src})
+    target_link_libraries(${test_name} PRIVATE pj_datastore GTest::gtest_main)
+    add_test(NAME ${test_name} COMMAND ${test_name})
+  endforeach()
 
-# Arrow import test (needs nanoarrow explicitly for building test IPC data)
-add_executable(arrow_import_test tests/arrow_import_test.cpp)
-target_link_libraries(arrow_import_test PRIVATE
-  pj_datastore
-  ${PJ_NANOARROW_TARGET}
-  ${PJ_NANOARROW_IPC_TARGET}
-  GTest::gtest_main)
-add_test(NAME arrow_import_test COMMAND arrow_import_test)
+  # Arrow import test (needs nanoarrow explicitly for building test IPC data)
+  add_executable(arrow_import_test tests/arrow_import_test.cpp)
+  target_link_libraries(arrow_import_test PRIVATE
+    pj_datastore
+    ${PJ_NANOARROW_TARGET}
+    ${PJ_NANOARROW_IPC_TARGET}
+    GTest::gtest_main)
+  add_test(NAME arrow_import_test COMMAND arrow_import_test)
 
-# Plugin host write test (needs nanoarrow for Arrow IPC testing)
-add_executable(plugin_host_write_test tests/plugin_host_write_test.cpp)
-target_link_libraries(plugin_host_write_test PRIVATE
-  pj_datastore
-  ${PJ_NANOARROW_TARGET}
-  ${PJ_NANOARROW_IPC_TARGET}
-  GTest::gtest_main)
-add_test(NAME plugin_host_write_test COMMAND plugin_host_write_test)
+  # Plugin host write test (needs nanoarrow for Arrow IPC testing)
+  add_executable(plugin_host_write_test tests/plugin_host_write_test.cpp)
+  target_link_libraries(plugin_host_write_test PRIVATE
+    pj_datastore
+    ${PJ_NANOARROW_TARGET}
+    ${PJ_NANOARROW_IPC_TARGET}
+    GTest::gtest_main)
+  add_test(NAME plugin_host_write_test COMMAND plugin_host_write_test)
 
-# ---------------------------------------------------------------------------
-# Benchmarks
-# ---------------------------------------------------------------------------
+  # ---------------------------------------------------------------------------
+  # Benchmarks
+  # ---------------------------------------------------------------------------
 
-add_executable(read_benchmark benchmarks/read_benchmark.cpp)
-target_link_libraries(read_benchmark PRIVATE pj_datastore benchmark::benchmark)
+  add_executable(read_benchmark benchmarks/read_benchmark.cpp)
+  target_link_libraries(read_benchmark PRIVATE pj_datastore benchmark::benchmark)
 
-add_executable(ingest_benchmark benchmarks/ingest_benchmark.cpp)
-target_link_libraries(ingest_benchmark PRIVATE pj_datastore benchmark::benchmark)
+  add_executable(ingest_benchmark benchmarks/ingest_benchmark.cpp)
+  target_link_libraries(ingest_benchmark PRIVATE pj_datastore benchmark::benchmark)
+endif() # PJ_BUILD_TESTS
 
 # ---------------------------------------------------------------------------
 # Examples

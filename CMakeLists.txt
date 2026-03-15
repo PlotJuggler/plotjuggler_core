@@ -25,6 +25,10 @@ else()
   option(PJ_BUILD_DIALOG_ENGINE_QT "Build Qt dialog engine (requires Qt6)" OFF)
 endif()
 
+option(PJ_BUILD_DATASTORE "Build pj_datastore module (requires Abseil, nanoarrow)" ON)
+option(PJ_BUILD_PORTED_PLUGINS "Build pj_ported_plugins (ported plugins collection)" ON)
+option(PJ_BUILD_TESTS "Build tests, benchmarks, and examples" ON)
+
 # ---------------------------------------------------------------------------
 # Compiler warnings
 # ---------------------------------------------------------------------------
@@ -57,9 +61,15 @@ endif()
 # External dependencies
 # ---------------------------------------------------------------------------
 
-find_package(absl REQUIRED)
-find_package(GTest REQUIRED)
-find_package(benchmark CONFIG REQUIRED)
+if(PJ_BUILD_TESTS)
+  find_package(GTest REQUIRED)
+endif()
+
+if(PJ_BUILD_DATASTORE)
+  find_package(absl REQUIRED)
+  if(PJ_BUILD_TESTS)
+    find_package(benchmark CONFIG REQUIRED)
+  endif()
 
 # --- nanoarrow core ---
 
@@ -134,14 +144,20 @@ endif()
 # already sets INTERFACE_LINK_DIRECTORIES, linking by name suffices.
 target_link_libraries(${PJ_NANOARROW_IPC_TARGET} INTERFACE flatccrt)
 
+endif() # PJ_BUILD_DATASTORE
+
 # ---------------------------------------------------------------------------
 # Modules
 # ---------------------------------------------------------------------------
 
-enable_testing()
+if(PJ_BUILD_TESTS)
+  enable_testing()
+endif()
 
 add_subdirectory(pj_base)
-add_subdirectory(pj_datastore)
+if(PJ_BUILD_DATASTORE)
+  add_subdirectory(pj_datastore)
+endif()
 add_subdirectory(pj_plugins)
 
 if(PJ_BUILD_DIALOG_ENGINE_QT)
@@ -151,7 +167,7 @@ if(PJ_BUILD_DIALOG_ENGINE_QT)
   endif()
 endif()
 
-if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/pj_ported_plugins/CMakeLists.txt")
+if(PJ_BUILD_PORTED_PLUGINS AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/pj_ported_plugins/CMakeLists.txt")
   add_subdirectory(pj_ported_plugins)
 endif()
 

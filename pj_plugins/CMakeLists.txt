@@ -18,6 +18,8 @@ target_link_libraries(pj_data_source_host
     ${CMAKE_DL_LIBS}
 )
 
+if(PJ_BUILD_TESTS)
+
 # ---------------------------------------------------------------------------
 # Mock DataSource plugin (shared library, for dlopen tests)
 # ---------------------------------------------------------------------------
@@ -45,6 +47,8 @@ target_compile_features(mock_file_source_plugin PRIVATE cxx_std_20)
 target_compile_options(mock_file_source_plugin PRIVATE ${PJ_WARNING_FLAGS})
 target_link_libraries(mock_file_source_plugin PRIVATE pj_base)
 
+endif() # PJ_BUILD_TESTS
+
 # ---------------------------------------------------------------------------
 # pj_message_parser_host — host-side MessageParser library loader
 # ---------------------------------------------------------------------------
@@ -62,6 +66,8 @@ target_link_libraries(pj_message_parser_host
   PRIVATE
     ${CMAKE_DL_LIBS}
 )
+
+if(PJ_BUILD_TESTS)
 
 # ---------------------------------------------------------------------------
 # Mock MessageParser plugin (shared library, for dlopen tests)
@@ -81,6 +87,8 @@ target_compile_features(mock_schema_parser_plugin PRIVATE cxx_std_20)
 target_compile_options(mock_schema_parser_plugin PRIVATE ${PJ_WARNING_FLAGS})
 target_link_libraries(mock_schema_parser_plugin PRIVATE pj_base)
 
+endif() # PJ_BUILD_TESTS
+
 # ---------------------------------------------------------------------------
 # pj_toolbox_host — host-side Toolbox library loader
 # ---------------------------------------------------------------------------
@@ -97,6 +105,8 @@ target_link_libraries(pj_toolbox_host
   PRIVATE
     ${CMAKE_DL_LIBS}
 )
+
+if(PJ_BUILD_TESTS)
 
 # ---------------------------------------------------------------------------
 # Mock Toolbox plugin (shared library, for dlopen tests)
@@ -177,3 +187,5 @@ target_link_libraries(toolbox_plugin_test PRIVATE
   pj_toolbox_host pj_base GTest::gtest_main
 )
 add_test(NAME toolbox_plugin_test COMMAND toolbox_plugin_test)
+
+endif() # PJ_BUILD_TESTS

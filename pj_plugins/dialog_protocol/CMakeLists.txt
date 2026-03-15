@@ -48,6 +48,8 @@ target_link_libraries(pj_dialog_library
     ${CMAKE_DL_LIBS}
 )
 
+if(PJ_BUILD_TESTS)
+
 # --- Mock plugins (shared libraries for integration testing) ---
 
 add_library(mock_dialog_plugin SHARED examples/mock_dialog.cpp)
@@ -116,6 +118,8 @@ foreach(_test ${PJ_PLUGIN_TESTS})
   target_compile_options(${_test} PRIVATE ${PJ_WARNING_FLAGS})
 endforeach()
 
+endif() # PJ_BUILD_TESTS
+
 # --- Install (guarded by PJ_INSTALL_SDK in root CMakeLists.txt) ---
 
 if(PJ_INSTALL_SDK)
@@ -161,13 +165,15 @@ if(PJ_BUILD_DIALOG_ENGINE_QT)
   )
   target_include_directories(pj_dialog_engine_qt PUBLIC include)
 
-  # Qt dialog engine tests (uses custom main with QApplication)
-  add_executable(dialog_engine_test
-    tests/dialog_engine_test.cpp
-    examples/mock_dialog.cpp
-  )
-  target_link_libraries(dialog_engine_test
-    PRIVATE pj_dialog_engine_qt pj_dialog_sdk GTest::gtest
-  )
-  add_test(NAME dialog_engine_test COMMAND dialog_engine_test)
+  if(PJ_BUILD_TESTS)
+    # Qt dialog engine tests (uses custom main with QApplication)
+    add_executable(dialog_engine_test
+      tests/dialog_engine_test.cpp
+      examples/mock_dialog.cpp
+    )
+    target_link_libraries(dialog_engine_test
+      PRIVATE pj_dialog_engine_qt pj_dialog_sdk GTest::gtest
+    )
+    add_test(NAME dialog_engine_test COMMAND dialog_engine_test)
+  endif()
 endif()
