@@ -20,6 +20,7 @@ class SeriesTreeModel : public QAbstractItemModel {
   explicit SeriesTreeModel(const PJ::DataEngine& engine, QObject* parent = nullptr);
 
   void rebuild();
+  void rebuildIfChanged();
 
   void setDatasetState(PJ::DatasetId id, PJ_data_source_state_t state);
   void hideDataset(PJ::DatasetId id);

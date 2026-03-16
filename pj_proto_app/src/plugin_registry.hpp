@@ -19,8 +19,7 @@ struct LoadedDataSource {
 struct LoadedMessageParser {
   PJ::MessageParserLibrary library;
   std::string name;
-  std::string encoding;
-  std::vector<std::string> additional_encodings;
+  std::vector<std::string> encodings;
 };
 
 class PluginRegistry {

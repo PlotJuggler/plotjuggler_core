@@ -28,6 +28,9 @@ class MainWindow : public QMainWindow {
   /// Plot the first N fields from the loaded data (used by --plot CLI option).
   void plotFirstFields(int count);
 
+  /// Start the "Dummy Streamer" plugin programmatically (used by --dummy-stream CLI option).
+  void startDummyStream();
+
  private slots:
   void onLoadFile();
   void onStartStream();

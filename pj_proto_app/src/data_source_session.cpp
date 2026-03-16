@@ -192,10 +192,15 @@ bool DataSourceSession::setupAndStart(const std::string& config_json) {
 
 bool DataSourceSession::startFileImport(const std::string& config_json) {
   if (!setupAndStart(config_json)) {
+    last_error_ = "failed to create dataset or bind hosts";
     return false;
   }
 
   bool ok = handle_.start();
+  if (!ok) {
+    last_error_ = handle_.lastError();
+    std::cerr << "[import] start failed for '" << source_name_ << "': " << last_error_ << "\n";
+  }
   write_host_->flushPending();
   // Flush all parser write hosts (delegated ingest creates per-topic writers)
   for (auto& [id, binding] : runtime_state_.parser_bindings) {
@@ -207,11 +212,17 @@ bool DataSourceSession::startFileImport(const std::string& config_json) {
 
 bool DataSourceSession::startStream(const std::string& config_json) {
   if (!setupAndStart(config_json)) {
+    last_error_ = "failed to create dataset or bind hosts";
     return false;
   }
   is_stream_ = true;
   last_config_json_ = config_json;
-  return handle_.start();
+  bool ok = handle_.start();
+  if (!ok) {
+    last_error_ = handle_.lastError();
+    std::cerr << "[stream] start failed for '" << source_name_ << "': " << last_error_ << "\n";
+  }
+  return ok;
 }
 
 void DataSourceSession::stopStream() {

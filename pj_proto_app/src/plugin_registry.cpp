@@ -63,11 +63,16 @@ void PluginRegistry::scanDirectory() {
       try {
         auto manifest = nlohmann::json::parse(manifest_str);
         loaded.name = manifest.value("name", entry.path().stem().string());
-        loaded.encoding = manifest.value("encoding", "");
-        if (manifest.contains("additional_encodings") && manifest["additional_encodings"].is_array()) {
-          for (const auto& e : manifest["additional_encodings"]) {
-            if (e.is_string()) {
-              loaded.additional_encodings.push_back(e.get<std::string>());
+        // "encoding" can be a string or an array of strings
+        if (manifest.contains("encoding")) {
+          auto& enc = manifest["encoding"];
+          if (enc.is_string()) {
+            loaded.encodings.push_back(enc.get<std::string>());
+          } else if (enc.is_array()) {
+            for (const auto& e : enc) {
+              if (e.is_string()) {
+                loaded.encodings.push_back(e.get<std::string>());
+              }
             }
           }
         }
@@ -171,11 +176,8 @@ std::vector<LoadedDataSource*> PluginRegistry::findSourcesForExtension(std::stri
 
 LoadedMessageParser* PluginRegistry::findParserByEncoding(std::string_view encoding) {
   for (auto& mp : message_parsers_) {
-    if (mp.encoding == encoding) {
-      return &mp;
-    }
-    for (const auto& alt : mp.additional_encodings) {
-      if (alt == encoding) {
+    for (const auto& enc : mp.encodings) {
+      if (enc == encoding) {
         return &mp;
       }
     }

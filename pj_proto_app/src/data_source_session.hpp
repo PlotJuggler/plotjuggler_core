@@ -89,6 +89,9 @@ class DataSourceSession : public QObject {
   [[nodiscard]] const std::string& lastConfigJson() const {
     return last_config_json_;
   }
+  [[nodiscard]] const std::string& lastError() const {
+    return last_error_;
+  }
 
  signals:
   void importComplete();
@@ -108,6 +111,7 @@ class DataSourceSession : public QObject {
   std::unique_ptr<PJ::DatastoreSourceWriteHost> write_host_;
   RuntimeHostState runtime_state_;
   std::string last_config_json_;
+  std::string last_error_;
   bool is_stream_ = false;
 };
 

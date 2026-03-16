@@ -109,7 +109,9 @@ void MainWindow::loadFile(const QString& file_path) {
 
   auto session =
       std::make_unique<DataSourceSession>(engine_, source->library, default_td_id_, display_name, &registry_, this);
-  (void)session->startFileImport(config);
+  if (!session->startFileImport(config)) {
+    qWarning("Import failed for '%s': %s", display_name.c_str(), session->lastError().c_str());
+  }
   sessions_.push_back(std::move(session));
 
   tree_model_.rebuild();
@@ -253,16 +255,21 @@ void MainWindow::onStartStream() {
   auto settings_key = QString("PluginConfig/%1").arg(QString::fromStdString(source->name));
   std::string config = settings.value(settings_key, "").toString().toStdString();
 
-  // Dialog flow
+  // Create session first so the dialog runs on the SAME handle that will stream.
+  // This matches the original plugin architecture: one object, one socket.
+  auto session =
+      std::make_unique<DataSourceSession>(engine_, source->library, default_td_id_, source->name, &registry_, this);
+
+  // Restore saved config so the dialog remembers previous choices
+  if (!config.empty()) {
+    (void)session->handle().loadConfig(config);
+  }
+
+  // Dialog flow — use the session's own handle, not a temp handle
   if ((source->capabilities & PJ_DATA_SOURCE_CAPABILITY_HAS_DIALOG) != 0) {
     auto vt_result = source->library.resolveDialogVtable();
     if (vt_result) {
-      auto temp_handle = source->library.createHandle();
-      // Restore saved config so the dialog remembers previous choices
-      if (!config.empty()) {
-        (void)temp_handle.loadConfig(config);
-      }
-      auto* dialog_ctx = temp_handle.dialogContext();
+      auto* dialog_ctx = session->handle().dialogContext();
       if (dialog_ctx != nullptr) {
         auto dialog_handle = PJ::DialogHandle::borrowed(*vt_result, dialog_ctx);
         PJ::DialogEngine dialog_engine(std::move(dialog_handle));
@@ -274,9 +281,9 @@ void MainWindow::onStartStream() {
     }
   }
 
-  auto session =
-      std::make_unique<DataSourceSession>(engine_, source->library, default_td_id_, source->name, &registry_, this);
-  session->startStream(config);
+  if (!session->startStream(config)) {
+    QMessageBox::warning(this, "Stream Failed", QString::fromStdString(source->name + ": " + session->lastError()));
+  }
   sessions_.push_back(std::move(session));
 
   // Persist the config
@@ -286,6 +293,34 @@ void MainWindow::onStartStream() {
   if (!refresh_timer_.isActive()) {
     refresh_timer_.start(33);  // ~30 Hz
   }
+}
+
+void MainWindow::startDummyStream() {
+  auto sources = registry_.streamSources();
+  LoadedDataSource* dummy = nullptr;
+  for (auto* s : sources) {
+    if (s->name == "Dummy Streamer") {
+      dummy = s;
+      break;
+    }
+  }
+  if (dummy == nullptr) {
+    qWarning("Dummy Streamer plugin not found in plugin directory");
+    return;
+  }
+
+  auto session =
+      std::make_unique<DataSourceSession>(engine_, dummy->library, default_td_id_, dummy->name, &registry_, this);
+  session->startStream("{}");
+  sessions_.push_back(std::move(session));
+
+  streaming_active_ = true;
+  if (!refresh_timer_.isActive()) {
+    refresh_timer_.start(33);  // ~30 Hz
+  }
+
+  tree_model_.rebuild();
+  tree_view_->expandAll();
 }
 
 void MainWindow::onClearData() {
@@ -339,7 +374,7 @@ void MainWindow::onRefreshTimer() {
   refresh_tick_++;
   if (refresh_tick_ >= 30) {
     refresh_tick_ = 0;
-    tree_model_.rebuild();
+    tree_model_.rebuildIfChanged();
   }
 }
 

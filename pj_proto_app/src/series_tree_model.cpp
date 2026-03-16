@@ -56,6 +56,80 @@ void SeriesTreeModel::rebuild() {
   endResetModel();
 }
 
+void SeriesTreeModel::rebuildIfChanged() {
+  // Build a candidate snapshot and compare to current state.
+  // Only reset the model if the structure actually differs.
+  std::vector<DatasetNode> candidate;
+
+  auto reader = engine_.createReader();
+  for (auto ds_id : reader.listDatasets()) {
+    if (hidden_datasets_.count(ds_id) != 0) {
+      continue;
+    }
+    DatasetNode ds_node;
+    ds_node.dataset_id = ds_id;
+    auto* ds_info = engine_.getDataset(ds_id);
+    ds_node.name = ds_info ? ds_info->source_name : ("dataset_" + std::to_string(ds_id));
+
+    for (auto topic_id : reader.listTopics(ds_id)) {
+      TopicNode topic_node;
+      topic_node.topic_id = topic_id;
+
+      auto meta = reader.getMetadata(topic_id);
+      topic_node.name = meta ? meta->name : ("topic_" + std::to_string(topic_id));
+
+      auto* storage = engine_.getTopicStorage(topic_id);
+      if (storage) {
+        const auto& col_descs = storage->columnDescriptors();
+        for (size_t i = 0; i < col_descs.size(); ++i) {
+          FieldNode field;
+          field.name = col_descs[i].field_path;
+          field.topic_id = topic_id;
+          field.col_index = i;
+          topic_node.fields.push_back(std::move(field));
+        }
+      }
+
+      ds_node.topics.push_back(std::move(topic_node));
+    }
+
+    candidate.push_back(std::move(ds_node));
+  }
+
+  // Compare: same structure?
+  if (candidate.size() == datasets_.size()) {
+    bool same = true;
+    for (size_t d = 0; d < candidate.size() && same; ++d) {
+      const auto& a = candidate[d];
+      const auto& b = datasets_[d];
+      if (a.dataset_id != b.dataset_id || a.name != b.name || a.topics.size() != b.topics.size()) {
+        same = false;
+        break;
+      }
+      for (size_t t = 0; t < a.topics.size() && same; ++t) {
+        const auto& ta = a.topics[t];
+        const auto& tb = b.topics[t];
+        if (ta.topic_id != tb.topic_id || ta.name != tb.name || ta.fields.size() != tb.fields.size()) {
+          same = false;
+          break;
+        }
+        for (size_t f = 0; f < ta.fields.size() && same; ++f) {
+          if (ta.fields[f].name != tb.fields[f].name || ta.fields[f].col_index != tb.fields[f].col_index) {
+            same = false;
+          }
+        }
+      }
+    }
+    if (same) {
+      return;  // no change — skip reset
+    }
+  }
+
+  beginResetModel();
+  datasets_ = std::move(candidate);
+  endResetModel();
+}
+
 // Internal ID encoding:
 // Level 0 (dataset): internalId = kNoParent
 // Level 1 (topic): internalId = dataset_index

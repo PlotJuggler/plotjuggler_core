@@ -17,10 +17,12 @@ int main(int argc, char* argv[]) {
   QCommandLineOption load_opt("load", "Automatically load a file at startup", "filepath");
   QCommandLineOption screenshot_opt("screenshot", "Take a screenshot after loading and save to path", "path");
   QCommandLineOption plot_opt("plot", "Auto-plot first N fields after loading", "count", "3");
+  QCommandLineOption dummy_stream_opt("dummy-stream", "Start the dummy streaming plugin automatically");
   parser.addOption(plugin_dir_opt);
   parser.addOption(load_opt);
   parser.addOption(screenshot_opt);
   parser.addOption(plot_opt);
+  parser.addOption(dummy_stream_opt);
   parser.process(app);
 
   auto plugin_dir = parser.value(plugin_dir_opt).toStdString();
@@ -44,10 +46,21 @@ int main(int argc, char* argv[]) {
     });
   }
 
+  // Auto-start dummy stream if --dummy-stream was specified
+  if (parser.isSet(dummy_stream_opt)) {
+    int plot_count = has_plot ? parser.value(plot_opt).toInt() : 3;
+    QTimer::singleShot(100, [&window, plot_count]() {
+      window.startDummyStream();
+      if (plot_count > 0) {
+        window.plotFirstFields(plot_count);
+      }
+    });
+  }
+
   // Take screenshot if --screenshot was specified
   if (parser.isSet(screenshot_opt)) {
     auto screenshot_path = parser.value(screenshot_opt);
-    int delay = has_load ? 500 : 200;
+    int delay = has_load ? 500 : (parser.isSet(dummy_stream_opt) ? 2000 : 200);
     QTimer::singleShot(delay, [&window, &app, screenshot_path]() {
       window.grab().save(screenshot_path);
       qDebug("Screenshot saved to %s", qPrintable(screenshot_path));
