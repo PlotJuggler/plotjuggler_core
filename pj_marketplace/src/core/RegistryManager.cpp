@@ -54,24 +54,24 @@ Extension RegistryManager::findById(const QString& id) const {
       return ext;
     }
   }
-  return {};  // Default-constructed: id is empty, callers must check is_valid()
+  return {};  // Default-constructed: id is empty, callers must check id.isEmpty()
 }
 
 // ---------------------------------------------------------------------------
 // Private helpers
 // ---------------------------------------------------------------------------
 
-// Reads a required string field from a JSON object.
-// Returns false and emits fetchError() when the field is missing or not a string.
-static std::optional<QString> requiredString(const QJsonObject& obj, const QString& key, RegistryManager* self) {
-  if (!obj.contains(key) || !obj[key].isString()) {
-    emit self->fetchError(QString("Registry parse error: missing required field \"%1\"").arg(key));
-    return std::nullopt;
-  }
-  return obj[key].toString();
-}
-
 bool RegistryManager::parseJson(const QByteArray& data) {
+  // Reads a required string field; emits fetchError() and returns nullopt if missing.
+  auto required_string = [this](const QJsonObject& obj, const QString& key)
+      -> std::optional<QString> {
+    if (!obj.contains(key) || !obj[key].isString()) {
+      emit fetchError(QString("Registry parse error: missing required field \"%1\"").arg(key));
+      return std::nullopt;
+    }
+    return obj[key].toString();
+  };
+
   QJsonParseError parse_error;
   const QJsonDocument doc = QJsonDocument::fromJson(data, &parse_error);
 
@@ -104,9 +104,9 @@ bool RegistryManager::parseJson(const QByteArray& data) {
     Extension ext;
 
     // Required fields — abort the entire fetch if any are missing.
-    auto id = requiredString(obj, "id", this);
-    auto name = requiredString(obj, "name", this);
-    auto version = requiredString(obj, "version", this);
+    auto id = required_string(obj, "id");
+    auto name = required_string(obj, "name");
+    auto version = required_string(obj, "version");
 
     if (!id || !name || !version) {
       return false;

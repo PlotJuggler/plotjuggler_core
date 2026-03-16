@@ -90,8 +90,8 @@ class ExtensionManager : public QObject {
  private:
   void loadState();
   void saveState();
-  void disconnect_dl_conns();
-  void save_pending_meta(const Extension& ext);
+  void disconnectDlConns();
+  void savePendingMeta(const Extension& ext);
 
   // Extracted content is typically 2-4x the compressed download size.
   // This factor is applied to the Content-Length when checking available disk space.

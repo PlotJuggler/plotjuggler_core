@@ -534,7 +534,7 @@ TEST_F(ExtensionManagerTest, HasUpdateReturnsFalseForOlderVersion) {
 // applyPendingInstalls() promotes a staged extension to extensions/, registers it,
 // emits installFinished(id, true), and removes the pj_meta.json staging artifact.
 TEST_F(ExtensionManagerTest, ApplyPendingInstallsPromotesStagedExtension) {
-  // Replicate what save_pending_meta() and DownloadManager::fetch() produce on Windows.
+  // Replicate what savePendingMeta() and DownloadManager::fetch() produce on Windows.
   const QString staged_dir = pending_dir_.path() + "/mcap-loader";
   ASSERT_TRUE(QDir().mkpath(staged_dir));
 
