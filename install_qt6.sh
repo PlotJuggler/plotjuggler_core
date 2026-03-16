@@ -18,6 +18,7 @@ fi
 
 echo "Installing Qt ${QT_VERSION} via aqtinstall..."
 aqt install-qt linux desktop "$QT_VERSION" gcc_64 \
+  --modules qtcharts qtwebsockets \
   --outputdir "${SCRIPT_DIR}/.qt"
 
 echo ""

@@ -29,8 +29,8 @@ struct ArrowColumnMapping {
 /// Parse schema from Arrow IPC stream bytes (reads first message).
 /// Returns a TypeTreeNode and column mappings for supported types.
 /// Unsupported Arrow types are skipped.
-[[nodiscard]] PJ::Expected<std::pair<std::shared_ptr<PJ::TypeTreeNode>, std::vector<ArrowColumnMapping>>>
-schemaFromIpc(PJ::Span<const uint8_t> ipc_stream);
+[[nodiscard]] PJ::Expected<std::pair<std::shared_ptr<PJ::TypeTreeNode>, std::vector<ArrowColumnMapping>>> schemaFromIpc(
+    PJ::Span<const uint8_t> ipc_stream);
 
 /// Import all record batches from Arrow IPC stream bytes into a DataWriter topic.
 ///

@@ -1,9 +1,10 @@
 #include "pj_datastore/topic_storage.hpp"
 
+#include <fmt/format.h>
+
 #include <utility>
 #include <variant>
 
-#include "absl/strings/str_cat.h"
 #include "pj_base/expected.hpp"
 
 namespace PJ {
@@ -12,13 +13,13 @@ TopicStorage::TopicStorage(TopicId topic_id, TopicDescriptor descriptor)
     : topic_id_(topic_id), descriptor_(std::move(descriptor)) {}
 
 PJ::Status TopicStorage::appendSealedChunk(TopicChunk chunk) {
-  if (!sealed_chunks_.empty() &&
-      chunk.stats.t_min < sealed_chunks_.back().stats.t_max) {
+  if (!sealed_chunks_.empty() && chunk.stats.t_min < sealed_chunks_.back().stats.t_max) {
     // Reject any chunk whose t_min overlaps with the previous chunk's time range.
     // Using t_max (not t_min) as the boundary: a new chunk starting exactly at
     // the previous t_max is allowed (equal-boundary chunks from normal chunking).
-    return PJ::unexpected(absl::StrCat("Overlapping chunk: new t_min=", chunk.stats.t_min,
-                                       " < last t_max=", sealed_chunks_.back().stats.t_max));
+    return PJ::unexpected(
+        fmt::format(
+            "Overlapping chunk: new t_min={} < last t_max={}", chunk.stats.t_min, sealed_chunks_.back().stats.t_max));
   }
   sealed_chunks_.push_back(std::move(chunk));
   return PJ::okStatus();
@@ -68,17 +69,13 @@ TopicMetadata TopicStorage::metadata() const {
 
     // Approximate byte size: sum encoded timestamp buffer + all encoded column buffers
     meta.total_byte_size += chunk.timestamps.size() * sizeof(Timestamp);
-    for (const auto& col_buf : chunk.encoded_columns) {
-      meta.total_byte_size += col_buf.size();
-    }
-    for (const auto& validity_buf : chunk.validity_bitmaps) {
-      meta.total_byte_size += validity_buf.sizeBytes();
-    }
-    for (const auto& enc : chunk.encoding_data) {
+    for (const auto& col : chunk.columns) {
       std::visit(
           [&](const auto& v) {
             using T = std::decay_t<decltype(v)>;
-            if constexpr (std::is_same_v<T, encoding::DictionaryEncoded>) {
+            if constexpr (std::is_same_v<T, RawBuffer>) {
+              meta.total_byte_size += v.size();
+            } else if constexpr (std::is_same_v<T, encoding::DictionaryEncoded>) {
               meta.total_byte_size += v.indices.size();
               for (const auto& s : v.dictionary) {
                 meta.total_byte_size += s.size();
@@ -90,9 +87,11 @@ TopicMetadata TopicStorage::metadata() const {
             } else if constexpr (std::is_same_v<T, encoding::FrameOfReferenceEncoded>) {
               meta.total_byte_size += v.offsets.size();
             }
-            // std::monostate (kRaw): already counted via encoded_columns
           },
-          enc);
+          col.data);
+      if (col.validity_bitmap) {
+        meta.total_byte_size += col.validity_bitmap->sizeBytes();
+      }
     }
   }
 

@@ -84,6 +84,11 @@ class WidgetEvent {
     return getInt("tab_index");
   }
 
+  /// QListWidget: item double-clicked (returns row index)
+  std::optional<int> itemDoubleClickedIndex() const {
+    return getInt("item_double_clicked_index");
+  }
+
   /// Check if a key exists in the event data
   bool has(std::string_view key) const {
     return data_.contains(std::string(key));

@@ -45,7 +45,7 @@ for dir in "${source_dirs[@]}"; do
 done
 echo "-----------------------------------------------------------"
 
-find "${source_dirs[@]}" \( -name '*.cpp' -o -name '*.hpp' -o -name '*.h' \) -print0 \
+find "${source_dirs[@]}" -name '*.cpp' -print0 \
   | xargs -0 -n 1 -P $(nproc) bash -c '
     set -o pipefail
     echo "$@"

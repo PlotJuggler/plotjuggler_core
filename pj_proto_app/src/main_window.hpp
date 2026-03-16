@@ -1,0 +1,66 @@
+#pragma once
+
+#include <QMainWindow>
+#include <QSpinBox>
+#include <QSplitter>
+#include <QTimer>
+#include <QTreeView>
+#include <memory>
+#include <vector>
+
+#include "chart_panel.hpp"
+#include "data_source_session.hpp"
+#include "pj_datastore/engine.hpp"
+#include "plugin_registry.hpp"
+#include "series_tree_model.hpp"
+
+namespace proto {
+
+class MainWindow : public QMainWindow {
+  Q_OBJECT
+
+ public:
+  explicit MainWindow(const std::string& plugin_dir, QWidget* parent = nullptr);
+
+  /// Load a file programmatically (used by --load CLI option).
+  void loadFile(const QString& file_path);
+
+  /// Plot the first N fields from the loaded data (used by --plot CLI option).
+  void plotFirstFields(int count);
+
+  /// Start the "Dummy Streamer" plugin programmatically (used by --dummy-stream CLI option).
+  void startDummyStream();
+
+ private slots:
+  void onLoadFile();
+  void onStartStream();
+  void onClearData();
+  void onClearPlots();
+  void onRefreshTimer();
+  void onTreeContextMenu(const QPoint& pos);
+
+ private:
+  /// Compute the current visible time range based on data and streaming state.
+  std::pair<PJ::Timestamp, PJ::Timestamp> computeVisibleRange() const;
+
+  /// Find the session owning @p dataset_id, or nullptr.
+  DataSourceSession* findSessionForDataset(PJ::DatasetId dataset_id);
+
+  void removeSession(DataSourceSession* session);
+  void restartSession(DataSourceSession* session);
+
+  PJ::DataEngine engine_;
+  PJ::TimeDomainId default_td_id_ = 0;
+  PluginRegistry registry_;
+  std::vector<std::unique_ptr<DataSourceSession>> sessions_;
+  SeriesTreeModel tree_model_;
+
+  QTreeView* tree_view_ = nullptr;
+  ChartPanel* chart_panel_ = nullptr;
+  QSpinBox* buffer_spinbox_ = nullptr;
+  QTimer refresh_timer_;
+  int refresh_tick_ = 0;
+  bool streaming_active_ = false;
+};
+
+}  // namespace proto

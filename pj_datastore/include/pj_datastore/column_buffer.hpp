@@ -54,6 +54,8 @@ enum class StorageKind : uint8_t {
       return StorageKind::kBool;
     case PrimitiveType::kString:
       return StorageKind::kString;
+    case PrimitiveType::kUnspecified:
+      break;
   }
   return StorageKind::kFloat64;
 }
@@ -81,7 +83,6 @@ enum class StorageKind : uint8_t {
 
 enum class EncodingType : uint8_t {
   kRaw,               // Unencoded typed storage
-  kDelta,             // Delta encoding (timestamps)
   kDictionary,        // Dictionary encoding (strings)
   kPackedBool,        // Packed bitfield (bools)
   kConstant,          // Single repeated value

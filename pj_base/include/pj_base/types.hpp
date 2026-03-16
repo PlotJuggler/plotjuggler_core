@@ -20,8 +20,8 @@ using SchemaId = uint32_t;
 /// Stable identifier for a plugin instance.
 using PluginId = uint32_t;
 
-/// Timestamp in nanoseconds since epoch (or domain origin).
-using Timestamp = int64_t;  // nanoseconds since epoch
+/// Timestamp in nanoseconds since the Unix epoch (1970-01-01T00:00:00Z).
+using Timestamp = int64_t;  // nanoseconds since Unix epoch
 
 /// Numeric scalar kind used by scalar APIs.
 enum class NumericType : uint8_t {
@@ -86,5 +86,9 @@ constexpr ChunkId kInvalidChunkId = 0;
 
 /// Sentinel value for an invalid/uninitialized node id.
 constexpr NodeId kInvalidNodeId = 0;
+
+/// Sentinel type representing a null/missing value in a variant.
+struct NullValue {};
+constexpr NullValue kNull;
 
 }  // namespace PJ
