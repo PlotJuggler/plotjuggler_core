@@ -26,6 +26,8 @@ ExtensionManager::ExtensionManager(DownloadManager* downloader, const QString& e
   loadState();
 }
 
+static constexpr const char* kManifestFileName = "manifest.json";
+
 // ---------------------------------------------------------------------------
 // Public interface
 // ---------------------------------------------------------------------------
@@ -91,20 +93,26 @@ void ExtensionManager::install(const Extension& ext) {
     pending_op_id_ = -1;
 
     if (staging) {
-      // Save metadata so applyPendingInstalls() can reconstruct the record after restart.
-      savePendingMeta(ext);
       emit installPendingRestart(finished_id);
     } else {
+      const QString ext_root = extensions_dir_ + "/" + ext.id;
+
       InstalledExtension record;
       record.id = ext.id;
       record.version = ext.version;
       record.install_date = QDateTime::currentDateTimeUtc();
-      record.path = extensions_dir_ + "/" + ext.id;
+      record.path = ext_root;
       record.enabled = true;
 
-      installed_[ext.id] = record;
-      saveState();
+      QFile manifest_file(ext_root + "/" + kManifestFileName);
+      if (manifest_file.open(QIODevice::ReadOnly)) {
+        const QJsonObject manifest = QJsonDocument::fromJson(manifest_file.readAll()).object();
+        if (!manifest["version"].toString().isEmpty()) {
+          record.version = manifest["version"].toString();
+        }
+      }
 
+      installed_[ext.id] = record;
       emit installFinished(finished_id, true);
     }
   });
@@ -169,7 +177,6 @@ void ExtensionManager::uninstall(const QString& extension_id) {
   }
 
   installed_.remove(extension_id);
-  saveState();
   emit uninstallFinished(extension_id, true);
 }
 
@@ -178,7 +185,6 @@ void ExtensionManager::update(const Extension& ext) {
   if (installed_.contains(ext.id)) {
     QDir(installed_[ext.id].path).removeRecursively();
     installed_.remove(ext.id);
-    saveState();
   }
   install(ext);
 }
@@ -189,20 +195,22 @@ void ExtensionManager::applyPendingInstalls() {
     return;
   }
 
-  bool state_changed = false;
-
   for (const QFileInfo& entry : pending.entryInfoList(QDir::Dirs | QDir::NoDotAndDotDot)) {
-    const QString id = entry.fileName();
     const QString src = entry.absoluteFilePath();
-    const QString dst = extensions_dir_ + "/" + id;
+    const QString dst = extensions_dir_ + "/" + entry.fileName();
 
-    // Read the metadata written at staging time to recover version and install date.
-    QFile meta_file(src + "/pj_meta.json");
-    if (!meta_file.open(QIODevice::ReadOnly)) {
+    // manifest.json is part of the artifact — read it before moving the directory.
+    QFile manifest_file(src + "/" + kManifestFileName);
+    if (!manifest_file.open(QIODevice::ReadOnly)) {
       continue;
     }
-    const QJsonObject meta = QJsonDocument::fromJson(meta_file.readAll()).object();
-    meta_file.close();
+    const QJsonObject manifest = QJsonDocument::fromJson(manifest_file.readAll()).object();
+    manifest_file.close();
+
+    const QString id = manifest["id"].toString();
+    if (id.isEmpty()) {
+      continue;
+    }
 
     // Remove any existing installation so the rename cannot fail on a non-empty target.
     QDir(dst).removeRecursively();
@@ -211,24 +219,15 @@ void ExtensionManager::applyPendingInstalls() {
       continue;
     }
 
-    // Remove the metadata file from the now-active directory — it is only needed for staging.
-    QFile::remove(dst + "/pj_meta.json");
-
     InstalledExtension record;
     record.id = id;
-    record.version = meta["version"].toString();
-    record.install_date = QDateTime::fromString(meta["install_date"].toString(), Qt::ISODate);
+    record.version = manifest["version"].toString();
+    record.install_date = QDateTime::currentDateTimeUtc();
     record.path = dst;
     record.enabled = true;
 
     installed_[id] = record;
-    state_changed = true;
-
     emit installFinished(id, true);
-  }
-
-  if (state_changed) {
-    saveState();
   }
 }
 
@@ -279,62 +278,54 @@ void ExtensionManager::savePendingMeta(const Extension& ext) {
 // Private — state persistence
 // ---------------------------------------------------------------------------
 
-// installed.json lives inside extensions_dir so that a test pointing to a temp
-// directory gets a fully self-contained state without touching ~/.plotjuggler
-static constexpr const char* kStateFileName = "/installed.json";
-
 void ExtensionManager::loadState() {
-  QFile file(extensions_dir_ + kStateFileName);
-  if (!file.open(QIODevice::ReadOnly)) {
-    return;  // First run — no state yet.
-  }
+  const QDir dir(extensions_dir_);
+  for (const QFileInfo& entry : dir.entryInfoList(QDir::Dirs | QDir::NoDotAndDotDot)) {
+    const QString ext_root = entry.absoluteFilePath();
 
-  const QJsonDocument doc = QJsonDocument::fromJson(file.readAll());
-  if (!doc.isObject()) {
-    return;
-  }
-
-  for (const QJsonValue& val : doc.object()["installed"].toArray()) {
-    if (!val.isObject()) {
+    QFile manifest_file(ext_root + "/" + kManifestFileName);
+    if (!manifest_file.open(QIODevice::ReadOnly)) {
       continue;
     }
-    const QJsonObject obj = val.toObject();
+    const QJsonObject manifest = QJsonDocument::fromJson(manifest_file.readAll()).object();
+    const QString id = manifest["id"].toString();
+    if (id.isEmpty()) {
+      continue;
+    }
 
     InstalledExtension inst;
-    inst.id = obj["id"].toString();
-    inst.version = obj["version"].toString();
-    inst.install_date = QDateTime::fromString(obj["install_date"].toString(), Qt::ISODate);
-    inst.path = obj["path"].toString();
-    inst.enabled = obj["enabled"].toBool(true);
-    inst.backup_path = obj["backup_path"].toString();
+    inst.id = id;
+    inst.version = manifest["version"].toString();
+    inst.install_date = entry.lastModified();
+    inst.path = ext_root;
+    inst.enabled = true;
 
-    if (!inst.id.isEmpty()) {
-      installed_[inst.id] = inst;
-    }
+    installed_[id] = inst;
   }
 }
 
 void ExtensionManager::saveState() {
-  QJsonArray array;
-  for (const InstalledExtension& inst : installed_) {
-    QJsonObject obj;
-    obj["id"] = inst.id;
-    obj["version"] = inst.version;
-    obj["install_date"] = inst.install_date.toString(Qt::ISODate);
-    obj["path"] = inst.path;
-    obj["enabled"] = inst.enabled;
-    if (!inst.backup_path.isEmpty()) {
-      obj["backup_path"] = inst.backup_path;
-    }
-    array.append(obj);
-  }
+  // QJsonArray array;
+  // for (const InstalledExtension& inst : installed_) {
+  //   QJsonObject obj;
+  //   obj["id"] = inst.id;
+  //   obj["version"] = inst.version;
+  //   obj["install_date"] = inst.install_date.toString(Qt::ISODate);
+  //   obj["path"] = inst.path;
+  //   obj["enabled"] = inst.enabled;
+  //   if (!inst.backup_path.isEmpty()) {
+  //     obj["backup_path"] = inst.backup_path;
+  //   }
+  //   array.append(obj);
+  // }
 
-  const QJsonDocument doc(QJsonObject{{"installed", array}});
+  // const QJsonDocument doc(QJsonObject{{"installed", array}});
 
-  QFile file(extensions_dir_ + kStateFileName);
-  if (file.open(QIODevice::WriteOnly)) {
-    file.write(doc.toJson());
-  }
+  // static constexpr const char* kStateFileName = "/installed.json";
+  // QFile file(extensions_dir_ + kStateFileName);
+  // if (file.open(QIODevice::WriteOnly)) {
+  //   file.write(doc.toJson());
+  // }
 }
 
 }  // namespace PJ
