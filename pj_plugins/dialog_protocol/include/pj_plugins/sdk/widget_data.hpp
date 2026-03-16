@@ -85,6 +85,11 @@ class WidgetData {
     return *this;
   }
 
+  WidgetData& setSelectedRows(std::string_view name, const std::vector<int>& rows) {
+    entry(name)["selected_rows"] = rows;
+    return *this;
+  }
+
   // --- QLabel ---
   WidgetData& setLabel(std::string_view name, std::string_view text) {
     entry(name)["label"] = text;
@@ -108,6 +113,12 @@ class WidgetData {
   }
 
   // --- QDialogButtonBox ---
+  /// Set OK button enabled state. The widget name defaults to "buttonBox"
+  /// which is the required name for the DialogEngine to wire accept/reject.
+  WidgetData& setOkEnabled(bool enabled) {
+    entry("buttonBox")["ok_enabled"] = enabled;
+    return *this;
+  }
   WidgetData& setOkEnabled(std::string_view name, bool enabled) {
     entry(name)["ok_enabled"] = enabled;
     return *this;
@@ -127,6 +138,23 @@ class WidgetData {
 
   WidgetData& setVisible(std::string_view name, bool visible) {
     entry(name)["visible"] = visible;
+    return *this;
+  }
+
+  // --- Dialog-level commands ---
+
+  /// Request that the dialog accept (close with OK) after applying this widget data.
+  /// Typically used to implement double-click-to-accept on list items.
+  WidgetData& requestAccept() {
+    data_["__request_accept"] = true;
+    return *this;
+  }
+
+  /// Request that the host open a sub-dialog with the given UI XML.
+  /// The sub-dialog is shown as a nested modal. When the user closes it,
+  /// the main dialog resumes. The sub-dialog is read-only (no plugin events).
+  WidgetData& requestSubDialog(std::string_view ui_xml) {
+    data_["__request_sub_dialog"] = nlohmann::json{{"ui", ui_xml}};
     return *this;
   }
 

@@ -2,6 +2,8 @@
 #include <QComboBox>
 #include <QDialogButtonBox>
 #include <QDoubleSpinBox>
+#include <QGroupBox>
+#include <QHeaderView>
 #include <QLabel>
 #include <QLineEdit>
 #include <QListWidget>
@@ -9,6 +11,7 @@
 #include <QRadioButton>
 #include <QSignalBlocker>
 #include <QSpinBox>
+#include <QSplitter>
 #include <QTabWidget>
 #include <QTableWidget>
 #include <pj_plugins/host/widget_event_builder.hpp>
@@ -128,6 +131,14 @@ static void apply_to_widget(QWidget* w, std::string_view name, const PJ::WidgetD
       }
       tw->setColumnCount(static_cast<int>(hdr.size()));
       tw->setHorizontalHeaderLabels(hdr);
+      // Stretch first column, resize-to-contents for the rest
+      auto* header = tw->horizontalHeader();
+      if (hdr.size() > 0) {
+        header->setSectionResizeMode(0, QHeaderView::Stretch);
+        for (int i = 1; i < hdr.size(); ++i) {
+          header->setSectionResizeMode(i, QHeaderView::ResizeToContents);
+        }
+      }
     }
     if (auto v = view.tableRows(name)) {
       tw->setRowCount(static_cast<int>(v->size()));
@@ -135,6 +146,14 @@ static void apply_to_widget(QWidget* w, std::string_view name, const PJ::WidgetD
         const auto& row = (*v)[r];
         for (std::size_t c = 0; c < row.size(); ++c) {
           tw->setItem(static_cast<int>(r), static_cast<int>(c), new QTableWidgetItem(QString::fromStdString(row[c])));
+        }
+      }
+    }
+    if (auto v = view.selectedRows(name)) {
+      tw->clearSelection();
+      for (int r : *v) {
+        if (r >= 0 && r < tw->rowCount()) {
+          tw->selectRow(r);
         }
       }
     }
@@ -180,6 +199,14 @@ static void apply_to_widget(QWidget* w, std::string_view name, const PJ::WidgetD
   }
 
   // Containers (QFrame, QGroupBox, QWidget) — only generic properties applied above.
+  // Warn about widget types that have data in the view but aren't handled.
+  // Skip known container types that only use generic enabled/visible properties.
+  if (!qobject_cast<QFrame*>(w) && !qobject_cast<QGroupBox*>(w) && !qobject_cast<QSplitter*>(w)) {
+    qWarning(
+        "WidgetBinding: unsupported widget type '%s' for '%s'; "
+        "see dialog-plugin-guide.md for supported types",
+        w->metaObject()->className(), std::string(name).c_str());
+  }
 }
 
 void applyWidgetData(QWidget* root, const PJ::WidgetDataView& view) {
@@ -251,6 +278,21 @@ void connectWidgetSignals(QWidget* root, WidgetEventCallback callback) {
         std::vector<std::string> sel;
         for (auto* item : lw->selectedItems()) {
           sel.push_back(item->text().toStdString());
+        }
+        callback(name, WidgetEventBuilder::selectionChanged(sel));
+      });
+      QObject::connect(lw, &QListWidget::itemDoubleClicked, lw, [callback, name, lw](QListWidgetItem* item) {
+        callback(name, WidgetEventBuilder::itemDoubleClicked(lw->row(item)));
+      });
+      continue;
+    }
+    if (auto* tw = qobject_cast<QTableWidget*>(w)) {
+      QObject::connect(tw, &QTableWidget::itemSelectionChanged, tw, [callback, name, tw]() {
+        std::vector<std::string> sel;
+        for (auto* item : tw->selectedItems()) {
+          if (item->column() == 0) {
+            sel.push_back(item->text().toStdString());
+          }
         }
         callback(name, WidgetEventBuilder::selectionChanged(sel));
       });

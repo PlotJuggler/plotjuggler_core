@@ -100,6 +100,25 @@ class WidgetDataView {
     return result;
   }
 
+  [[nodiscard]] std::optional<std::vector<int>> selectedRows(std::string_view name) const {
+    const nlohmann::json* w = widget(name);
+    if (!w) {
+      return std::nullopt;
+    }
+    auto it = w->find("selected_rows");
+    if (it == w->end() || !it->is_array()) {
+      return std::nullopt;
+    }
+    std::vector<int> result;
+    result.reserve(it->size());
+    for (const auto& item : *it) {
+      if (item.is_number_integer()) {
+        result.push_back(item.get<int>());
+      }
+    }
+    return result;
+  }
+
   // --- QLabel ---
   [[nodiscard]] std::optional<std::string> label(std::string_view name) const {
     return getString(name, "label");
@@ -143,6 +162,25 @@ class WidgetDataView {
   }
   [[nodiscard]] std::optional<bool> visible(std::string_view name) const {
     return getBool(name, "visible");
+  }
+
+  // --- Dialog-level commands ---
+  [[nodiscard]] bool requestAccept() const {
+    auto it = data_.find("__request_accept");
+    return it != data_.end() && it->is_boolean() && it->get<bool>();
+  }
+
+  /// Returns the sub-dialog UI XML if a sub-dialog was requested, or nullopt.
+  [[nodiscard]] std::optional<std::string> subDialogUi() const {
+    auto it = data_.find("__request_sub_dialog");
+    if (it == data_.end() || !it->is_object()) {
+      return std::nullopt;
+    }
+    auto ui_it = it->find("ui");
+    if (ui_it == it->end() || !ui_it->is_string()) {
+      return std::nullopt;
+    }
+    return ui_it->get<std::string>();
   }
 
   // --- Enumeration ---

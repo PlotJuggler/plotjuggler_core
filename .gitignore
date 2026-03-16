@@ -8,7 +8,5 @@ pj_plugins/dialog_protocol/build*
 .vscode/
 .worktrees/
 .cache/
-/pj_datastore/docs/node_modules/*
-aqtinstall.log
-.aqt_venv/
-pj-plugin-registry/
+/pj_datastore/docs/node_modules/
+pj_ported_plugins

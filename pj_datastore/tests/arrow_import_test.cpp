@@ -292,8 +292,7 @@ TEST(ArrowImportTest, ImportWithTimestampColumn) {
   auto tid = *writer.registerTopic(*ds_or, desc);
 
   // Import with timestamp_column=0
-  auto status =
-      importIpcStream(writer, tid, PJ::Span<const uint8_t>(ipc_bytes.data(), ipc_bytes.size()), mappings, 0);
+  auto status = importIpcStream(writer, tid, PJ::Span<const uint8_t>(ipc_bytes.data(), ipc_bytes.size()), mappings, 0);
   ASSERT_TRUE(status.has_value()) << status.error();
 
   auto flushed = writer.flushAll();
@@ -368,8 +367,7 @@ TEST(ArrowImportTest, ImportStrings) {
   std::vector<std::string> read_strings;
   auto cursor_or = reader.rangeQuery(QueryRange{.topic_id = tid, .t_min = 0, .t_max = 10});
   ASSERT_TRUE(cursor_or.has_value());
-  cursor_or->forEach(
-      [&](const SampleRow& row) { read_strings.emplace_back(row.chunk->readString(0, row.row_index)); });
+  cursor_or->forEach([&](const SampleRow& row) { read_strings.emplace_back(row.chunk->readString(0, row.row_index)); });
   ASSERT_EQ(read_strings.size(), 3u);
   EXPECT_EQ(read_strings[0], "alpha");
   EXPECT_EQ(read_strings[1], "bravo");
@@ -428,8 +426,7 @@ TEST(ArrowImportTest, ImportNarrowIntegerWidening) {
   std::vector<double> values;
   auto cursor_or = reader.rangeQuery(QueryRange{.topic_id = tid, .t_min = 0, .t_max = 10});
   ASSERT_TRUE(cursor_or.has_value());
-  cursor_or->forEach(
-      [&](const SampleRow& row) { values.push_back(row.chunk->readNumericAsDouble(0, row.row_index)); });
+  cursor_or->forEach([&](const SampleRow& row) { values.push_back(row.chunk->readNumericAsDouble(0, row.row_index)); });
   ASSERT_EQ(values.size(), 3u);
   EXPECT_DOUBLE_EQ(values[0], 10.0);
   EXPECT_DOUBLE_EQ(values[1], -20.0);

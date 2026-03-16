@@ -51,6 +51,10 @@ class DialogPluginTyped : public DialogPluginBase {
     return false;
   }
 
+  virtual bool onItemDoubleClicked(std::string_view /*widget_name*/, int /*index*/) {
+    return false;
+  }
+
  private:
   /// Parses event_json and dispatches to the appropriate typed virtual above.
   bool onWidgetEvent(std::string_view widget_name, std::string_view event_json) final {
@@ -76,6 +80,9 @@ class DialogPluginTyped : public DialogPluginBase {
     }
     if (auto v = event.tabIndex()) {
       return onTabChanged(widget_name, *v);
+    }
+    if (auto v = event.itemDoubleClickedIndex()) {
+      return onItemDoubleClicked(widget_name, *v);
     }
     // value: try int first, then double
     if (auto v = event.valueInt()) {

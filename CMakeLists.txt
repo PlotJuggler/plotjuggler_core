@@ -11,6 +11,7 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 option(PJ_ASSERT_THROWS "Use exceptions instead of assert() for PJ_ASSERT" OFF)
 option(PJ_ENABLE_SANITIZERS "Enable ASAN for Debug builds" OFF)
 option(PJ_ENABLE_TSAN "Enable ThreadSanitizer for Debug builds" OFF)
+option(PJ_INSTALL_SDK "Install PlotJugglerSDK package (DataSource + Dialog)" OFF)
 option(
   PJ_BUILD_PARQUET_IMPORT_EXAMPLE
   "Build parquet_import example (requires full Arrow C++ and Parquet)"
@@ -23,6 +24,10 @@ if(Qt6_FOUND)
 else()
   option(PJ_BUILD_DIALOG_ENGINE_QT "Build Qt dialog engine (requires Qt6)" OFF)
 endif()
+
+option(PJ_BUILD_DATASTORE "Build pj_datastore module (requires nanoarrow)" ON)
+option(PJ_BUILD_PORTED_PLUGINS "Build pj_ported_plugins (ported plugins collection)" ON)
+option(PJ_BUILD_TESTS "Build tests, benchmarks, and examples" ON)
 
 # ---------------------------------------------------------------------------
 # Compiler warnings
@@ -56,9 +61,16 @@ endif()
 # External dependencies
 # ---------------------------------------------------------------------------
 
-find_package(absl REQUIRED)
-find_package(GTest REQUIRED)
-find_package(benchmark CONFIG REQUIRED)
+if(PJ_BUILD_TESTS)
+  find_package(GTest REQUIRED)
+endif()
+
+if(PJ_BUILD_DATASTORE)
+  find_package(fmt REQUIRED)
+  find_package(tsl-robin-map REQUIRED)
+  if(PJ_BUILD_TESTS)
+    find_package(benchmark CONFIG REQUIRED)
+  endif()
 
 # --- nanoarrow core ---
 
@@ -133,13 +145,64 @@ endif()
 # already sets INTERFACE_LINK_DIRECTORIES, linking by name suffices.
 target_link_libraries(${PJ_NANOARROW_IPC_TARGET} INTERFACE flatccrt)
 
+endif() # PJ_BUILD_DATASTORE
+
 # ---------------------------------------------------------------------------
 # Modules
 # ---------------------------------------------------------------------------
 
-enable_testing()
+if(PJ_BUILD_TESTS)
+  enable_testing()
+endif()
 
 add_subdirectory(pj_base)
-add_subdirectory(pj_datastore)
+if(PJ_BUILD_DATASTORE)
+  add_subdirectory(pj_datastore)
+endif()
 add_subdirectory(pj_plugins)
 add_subdirectory(pj_marketplace)
+
+if(PJ_BUILD_DIALOG_ENGINE_QT)
+  find_package(Qt6 COMPONENTS Charts QUIET)
+  if(Qt6Charts_FOUND)
+    add_subdirectory(pj_proto_app)
+  endif()
+endif()
+
+if(PJ_BUILD_PORTED_PLUGINS AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/pj_ported_plugins/CMakeLists.txt")
+  add_subdirectory(pj_ported_plugins)
+endif()
+
+# ---------------------------------------------------------------------------
+# PlotJugglerSDK package install
+# ---------------------------------------------------------------------------
+
+if(PJ_INSTALL_SDK)
+  include(CMakePackageConfigHelpers)
+
+  set(PJ_SDK_VERSION "1.0.0")
+  set(PJ_SDK_CMAKE_DIR lib/cmake/PlotJugglerSDK)
+
+  install(EXPORT PlotJugglerSDKTargets
+    NAMESPACE PlotJugglerSDK::
+    DESTINATION ${PJ_SDK_CMAKE_DIR}
+  )
+
+  configure_package_config_file(
+    cmake/PlotJugglerSDKConfig.cmake.in
+    "${CMAKE_CURRENT_BINARY_DIR}/PlotJugglerSDKConfig.cmake"
+    INSTALL_DESTINATION ${PJ_SDK_CMAKE_DIR}
+  )
+
+  write_basic_package_version_file(
+    "${CMAKE_CURRENT_BINARY_DIR}/PlotJugglerSDKConfigVersion.cmake"
+    VERSION ${PJ_SDK_VERSION}
+    COMPATIBILITY SameMajorVersion
+  )
+
+  install(FILES
+    "${CMAKE_CURRENT_BINARY_DIR}/PlotJugglerSDKConfig.cmake"
+    "${CMAKE_CURRENT_BINARY_DIR}/PlotJugglerSDKConfigVersion.cmake"
+    DESTINATION ${PJ_SDK_CMAKE_DIR}
+  )
+endif()
