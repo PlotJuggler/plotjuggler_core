@@ -160,6 +160,7 @@ if(PJ_BUILD_DATASTORE)
   add_subdirectory(pj_datastore)
 endif()
 add_subdirectory(pj_plugins)
+add_subdirectory(pj_marketplace)
 
 if(PJ_BUILD_DIALOG_ENGINE_QT)
   find_package(Qt6 COMPONENTS Charts QUIET)
