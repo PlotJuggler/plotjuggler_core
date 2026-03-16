@@ -22,7 +22,7 @@ class DownloadManager;
 //   - On Windows: extracts to a staging directory (.pending/) because in-use DLLs
 //     cannot be overwritten; the extension becomes active after the next restart
 //   - At startup: applies any pending staged installs via applyPendingInstalls()
-//   - Persists installation state to <extensions_dir>/installed.json
+//   - Discovers installed extensions by scanning extensions_dir and reading manifest.json
 //
 // All constructor dependencies are injected, so tests can pass a DownloadManager stub
 // and temp directories to exercise the full flow without touching the real filesystem
@@ -49,7 +49,7 @@ class ExtensionManager : public QObject {
   void install(const Extension& ext);
 
   // Synchronously deletes <extensions_dir>/<id>/ and removes the entry from
-  // installed.json. Emits uninstallFinished(id, false) if the directory cannot
+  // memory. Emits uninstallFinished(id, false) if the directory cannot
   // be removed (e.g. a DLL is still loaded on Windows — F-14 staging is deferred).
   void uninstall(const QString& extension_id);
 
