@@ -1,7 +1,7 @@
 # PlotJuggler Marketplace — Requirements
 
 > **Version:** 1.0.0
-> **Last Updated:** 2026-03-11
+> **Last Updated:** 2026-03-16
 > **Purpose:** Define WHAT the application should do, not HOW
 
 ---
@@ -41,7 +41,7 @@ PlotJuggler has grown significantly, evolving from an internal tool to a de fact
 |                    | Confirmation         | Confirmation dialog before uninstalling                       |
 | **Management**     | Enable/Disable       | Activate/deactivate extensions without uninstalling           |
 |                    | Rollback             | Automatic restoration if a plugin fails to load               |
-|                    | Persistent state     | Local storage of installed extensions (JSON)                  |
+|                    | Persistent state     | Installed state derived from disk — each extension's manifest.json is the source of truth |
 |                    | Registry URL settings | Configure registry URL at runtime via ⚙ settings dialog; change triggers immediate refresh |
 |                    | Registry URL persistence | Last configured registry URL saved and restored between sessions |
 | **UI/UX**          | Download progress    | Progress bar in status bar                                    |
@@ -104,7 +104,7 @@ PlotJuggler has grown significantly, evolving from an internal tool to a de fact
 | F-05 | Show selected extension detail | Clicking an extension shows full information panel |
 | F-06 | Download ZIP with SHA256 verification | Download fails if checksum doesn't match |
 | F-07 | Extract ZIP to extensions directory | ZIP contents are extracted to correct location |
-| F-08 | Register installed extension (installed.json) | Local state tracks what's installed |
+| F-08 | Register installed extension | Installed state is derived from disk by scanning extensions_dir and reading manifest.json from each subdirectory |
 | F-09 | Detect updates (local vs registry version) | User sees "Update available" badge when newer version exists |
 | F-10 | Uninstall extension | User can remove installed extensions |
 
@@ -380,22 +380,21 @@ The minimum viable product is successful if:
 }
 ```
 
-### 11.2 Local State (installed.json) Schema
+### 11.2 Installed State
 
-```json
-{
-  "installed": [
-    {
-      "id": "extension-id",
-      "version": "semver",
-      "install_date": "ISO8601",
-      "path": "/absolute/path/to/extension/",
-      "enabled": true,
-      "backup_path": "/path/to/backup/ (optional)"
-    }
-  ]
-}
-```
+There is no separate local state file. Installed extensions are discovered at runtime by
+scanning `extensions_dir` and reading the `manifest.json` present in each subdirectory.
+The `manifest.json` is part of the artifact ZIP and is never modified by the marketplace.
+
+Fields read from `manifest.json`:
+
+| Field | Source |
+|-------|--------|
+| `id` | `manifest.json → "id"` |
+| `version` | `manifest.json → "version"` |
+| `install_date` | Last-modified timestamp of the extension root directory |
+| `path` | The scanned subdirectory itself |
+| `enabled` | Always `true` by default (no persistence yet) |
 
 ### 11.3 Extension Manifest Schema
 
