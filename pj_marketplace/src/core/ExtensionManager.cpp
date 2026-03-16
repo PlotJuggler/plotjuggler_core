@@ -83,7 +83,7 @@ void ExtensionManager::install(const Extension& ext) {
     if (id != pending_op_id_) {
       return;
     }
-    disconnect_dl_conns();
+    disconnectDlConns();
     disk_space_checked_ = false;
 
     const QString finished_id = pending_id_;
@@ -92,7 +92,7 @@ void ExtensionManager::install(const Extension& ext) {
 
     if (staging) {
       // Save metadata so applyPendingInstalls() can reconstruct the record after restart.
-      save_pending_meta(ext);
+      savePendingMeta(ext);
       emit installPendingRestart(finished_id);
     } else {
       InstalledExtension record;
@@ -113,7 +113,7 @@ void ExtensionManager::install(const Extension& ext) {
     if (id != pending_op_id_) {
       return;
     }
-    disconnect_dl_conns();
+    disconnectDlConns();
     disk_space_checked_ = false;
 
     const QString failed_id = pending_id_;
@@ -131,7 +131,7 @@ void ExtensionManager::install(const Extension& ext) {
     if (id != pending_op_id_) {
       return;
     }
-    disconnect_dl_conns();
+    disconnectDlConns();
 
     const QString cancelled_id = pending_id_;
     pending_id_.clear();
@@ -243,9 +243,9 @@ bool ExtensionManager::hasUpdate(const Extension& ext) const {
 
   // QVersionNumber handles multi-segment comparison correctly:
   // "1.10.0" > "1.9.0", unlike a raw string compare which would invert them.
-  const QVersionNumber installed = QVersionNumber::fromString(installed_[ext.id].version);
+  const QVersionNumber installed_ver = QVersionNumber::fromString(installed_[ext.id].version);
   const QVersionNumber latest = QVersionNumber::fromString(ext.version);
-  return QVersionNumber::compare(latest, installed) > 0;
+  return QVersionNumber::compare(latest, installed_ver) > 0;
 }
 
 QMap<QString, InstalledExtension> ExtensionManager::installedExtensions() const {
@@ -256,14 +256,14 @@ QMap<QString, InstalledExtension> ExtensionManager::installedExtensions() const 
 // Private helpers
 // ---------------------------------------------------------------------------
 
-void ExtensionManager::disconnect_dl_conns() {
+void ExtensionManager::disconnectDlConns() {
   disconnect(dl_progress_conn_);
   disconnect(dl_finished_conn_);
   disconnect(dl_failed_conn_);
   disconnect(dl_cancelled_conn_);
 }
 
-void ExtensionManager::save_pending_meta(const Extension& ext) {
+void ExtensionManager::savePendingMeta(const Extension& ext) {
   QJsonObject obj;
   obj["id"] = ext.id;
   obj["version"] = ext.version;

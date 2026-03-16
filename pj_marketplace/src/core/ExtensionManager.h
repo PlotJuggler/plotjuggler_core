@@ -88,8 +88,8 @@ class ExtensionManager : public QObject {
  private:
   void loadState();
   void saveState();
-  void disconnect_dl_conns();
-  void save_pending_meta(const Extension& ext);
+  void disconnectDlConns();
+  void savePendingMeta(const Extension& ext);
 
   DownloadManager* downloader_;
   QString extensions_dir_;

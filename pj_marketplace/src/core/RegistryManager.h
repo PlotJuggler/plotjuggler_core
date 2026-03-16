@@ -44,9 +44,9 @@ class RegistryManager : public QObject {
   void fetchError(const QString& error_message);
 
  private:
-  // Parses raw JSON bytes into m_extensions.
+  // Parses raw JSON bytes into extensions_.
   // Emits fetchError() and returns false on any parse failure.
-  bool parseJson(const QByteArray& data);
+ bool parseJson(const QByteArray& data);
 
   QNetworkAccessManager* network_;
   QNetworkReply* pending_reply_ = nullptr;  // Non-owning; owned by network_
