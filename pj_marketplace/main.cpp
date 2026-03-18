@@ -1,6 +1,6 @@
 #include <QApplication>
 #include <QUrl>
-#include "pj_marketplace/marketplace_window.hpp"
+#include "pj_marketplace/marketplace.hpp"
 
 int main(int argc, char* argv[]) {
   QApplication app(argc, argv);
