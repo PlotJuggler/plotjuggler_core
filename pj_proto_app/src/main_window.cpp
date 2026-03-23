@@ -68,6 +68,7 @@ MainWindow::MainWindow(const std::string& plugin_dir, QWidget* parent)
   tree_view_ = new QTreeView();
   tree_view_->setModel(&tree_model_);
   tree_view_->setDragEnabled(true);
+  tree_view_->setSelectionMode(QAbstractItemView::ExtendedSelection);
   tree_view_->setHeaderHidden(true);
   tree_view_->setContextMenuPolicy(Qt::CustomContextMenu);
   connect(tree_view_, &QTreeView::customContextMenuRequested, this, &MainWindow::onTreeContextMenu);
