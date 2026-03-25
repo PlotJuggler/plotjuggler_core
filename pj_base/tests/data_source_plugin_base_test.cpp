@@ -345,6 +345,7 @@ PJ_data_source_runtime_host_t makeRuntimeHost(RuntimeRecorder* recorder) {
       .request_stop = RuntimeRecorder::requestStop,
       .ensure_parser_binding = RuntimeRecorder::ensureParserBinding,
       .push_raw_message = RuntimeRecorder::pushRawMessage,
+      .query_parser_options_metadata = nullptr,
   };
   return PJ_data_source_runtime_host_t{.ctx = recorder, .vtable = &vtable};
 }

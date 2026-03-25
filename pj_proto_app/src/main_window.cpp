@@ -271,6 +271,12 @@ void MainWindow::onStartStream() {
     (void)session->handle().loadConfig(config);
   }
 
+  // Bind a partial runtime host (registry only) before showing the dialog so
+  // that the plugin can query parser options metadata at dialog time.
+  // Mirrors the original PlotJuggler pattern where parserFactories() is
+  // available process-wide before any dialog is shown.
+  session->bindRuntimeHostEarly();
+
   // Dialog flow — use the session's own handle, not a temp handle
   if ((source->capabilities & PJ_DATA_SOURCE_CAPABILITY_HAS_DIALOG) != 0) {
     auto vt_result = source->library.resolveDialogVtable();

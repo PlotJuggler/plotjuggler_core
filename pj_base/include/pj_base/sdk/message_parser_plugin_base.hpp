@@ -73,6 +73,17 @@ class MessageParserPluginBase {
     return last_error_;
   }
 
+  /**
+   * Return a WidgetData JSON fragment describing this parser's configurable
+   * options. A data source dialog (e.g. MQTT) calls this at dialog time via
+   * the runtime host to dynamically show parser-specific option widgets.
+   * Mirrors the original PlotJuggler optionsWidget() factory pattern.
+   * Return "{}" if this parser has no configurable options.
+   */
+  virtual std::string optionsMetadata() const {
+    return "{}";
+  }
+
   template <typename CreateFn>
   static const PJ_message_parser_vtable_t* vtableWithCreate(CreateFn create_fn, const char* manifest) {
     PJ_ASSERT(manifest != nullptr && manifest[0] == '{', "manifest must be a JSON object");
@@ -91,6 +102,7 @@ class MessageParserPluginBase {
         trampoline_load_config,
         trampoline_parse,
         trampoline_get_last_error,
+        trampoline_options_metadata,
     };
     return &vt;
   }
@@ -111,6 +123,7 @@ class MessageParserPluginBase {
  private:
   PJ_parser_write_host_t write_host_{};
   std::string config_buf_;
+  mutable std::string options_buf_;
   mutable std::string last_error_;
 
   // C ABI trampolines — exception-safe bridges between host vtable calls and
@@ -122,6 +135,7 @@ class MessageParserPluginBase {
   static bool trampoline_load_config(void* ctx, const char* config_json);
   static bool trampoline_parse(void* ctx, int64_t timestamp_ns, PJ_bytes_view_t payload);
   static const char* trampoline_get_last_error(void* ctx);
+  static const char* trampoline_options_metadata(void* ctx);
 };
 
 }  // namespace PJ

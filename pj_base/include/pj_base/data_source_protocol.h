@@ -150,7 +150,32 @@ typedef struct PJ_data_source_runtime_host_vtable_t {
    */
   bool (*push_raw_message)(
       void* ctx, PJ_parser_binding_handle_t handle, int64_t host_timestamp_ns, PJ_bytes_view_t payload);
+
+  /**
+   * Query the options metadata for the parser that handles @p encoding.
+   * Returns a WidgetData JSON fragment (same format as optionsMetadata() on
+   * MessageParserPluginBase), or NULL / "{}" if no parser is found.
+   * Mirrors the original PlotJuggler parserFactories()->at(enc)->optionsWidget()
+   * pattern, adapted for the headless SDK.
+   * Plugin-owned string; valid until the next call on the same context.
+   *
+   * @note Added as extension field. Plugin MUST check struct_size before
+   *       accessing this field to maintain backward compatibility with older hosts.
+   */
+  const char* (*query_parser_options_metadata)(void* ctx, PJ_string_view_t encoding);
 } PJ_data_source_runtime_host_vtable_t;
+
+/**
+ * Check if a runtime host vtable supports the query_parser_options_metadata field.
+ * Use this before calling vtable->query_parser_options_metadata() to maintain
+ * backward compatibility with older hosts.
+ */
+static inline bool PJ_runtime_host_has_query_parser_options_metadata(
+    const PJ_data_source_runtime_host_vtable_t* vtable) {
+  return vtable &&
+         vtable->struct_size >= offsetof(PJ_data_source_runtime_host_vtable_t, query_parser_options_metadata) +
+                                    sizeof(vtable->query_parser_options_metadata);
+}
 
 /** Fat pointer pairing a runtime host context with its vtable. */
 typedef struct {

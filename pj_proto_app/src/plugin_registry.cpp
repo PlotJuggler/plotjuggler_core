@@ -76,6 +76,14 @@ void PluginRegistry::scanDirectory() {
             }
           }
         }
+        // "additional_encodings" lists extra encodings handled by the same parser
+        if (manifest.contains("additional_encodings") && manifest["additional_encodings"].is_array()) {
+          for (const auto& e : manifest["additional_encodings"]) {
+            if (e.is_string()) {
+              loaded.encodings.push_back(e.get<std::string>());
+            }
+          }
+        }
       } catch (...) {
         loaded.name = entry.path().stem().string();
       }

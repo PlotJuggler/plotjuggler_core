@@ -131,6 +131,24 @@ bool rhPushRawMessage(void* ctx, PJ_parser_binding_handle_t handle, int64_t time
   return it->second.parser->parse(timestamp_ns, PJ::Span<const uint8_t>(payload.data, payload.size));
 }
 
+const char* rhQueryParserOptionsMetadata(void* ctx, PJ_string_view_t encoding_view) {
+  auto* state = static_cast<RuntimeHostState*>(ctx);
+  if (state->registry == nullptr) {
+    return nullptr;
+  }
+  std::string_view encoding(encoding_view.data, encoding_view.size);
+  auto* parser_entry = state->registry->findParserByEncoding(encoding);
+  if (parser_entry == nullptr) {
+    return nullptr;
+  }
+  auto handle = parser_entry->library.createHandle();
+  if (!handle.valid()) {
+    return nullptr;
+  }
+  state->options_metadata_buf = handle.optionsMetadata();
+  return state->options_metadata_buf.c_str();
+}
+
 }  // namespace
 
 PJ_data_source_runtime_host_t DataSourceSession::makeRuntimeHost(RuntimeHostState* state) {
@@ -147,8 +165,14 @@ PJ_data_source_runtime_host_t DataSourceSession::makeRuntimeHost(RuntimeHostStat
       .request_stop = rhRequestStop,
       .ensure_parser_binding = rhEnsureParserBinding,
       .push_raw_message = rhPushRawMessage,
+      .query_parser_options_metadata = rhQueryParserOptionsMetadata,
   };
   return PJ_data_source_runtime_host_t{.ctx = state, .vtable = &vtable};
+}
+
+void DataSourceSession::bindRuntimeHostEarly() {
+  runtime_state_.registry = registry_;
+  (void)handle_.bindRuntimeHost(makeRuntimeHost(&runtime_state_));
 }
 
 DataSourceSession::DataSourceSession(

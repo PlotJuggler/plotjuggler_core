@@ -174,6 +174,22 @@ class DataSourceRuntimeHostView {
     return okStatus();
   }
 
+  /**
+   * Query the options metadata for the parser that handles @p encoding.
+   * Returns a WidgetData JSON fragment or "{}" if unavailable.
+   * Mirrors the original PlotJuggler parserFactories()->at(enc)->optionsWidget().
+   */
+  [[nodiscard]] std::string queryParserOptionsMetadata(std::string_view encoding) const {
+    // Check struct_size for backward compatibility with older hosts
+    if (!valid() || !PJ_runtime_host_has_query_parser_options_metadata(host_.vtable) ||
+        host_.vtable->query_parser_options_metadata == nullptr) {
+      return "{}";
+    }
+    PJ_string_view_t enc{encoding.data(), encoding.size()};
+    const char* result = host_.vtable->query_parser_options_metadata(host_.ctx, enc);
+    return (result != nullptr && result[0] != '\0') ? std::string(result) : std::string("{}");
+  }
+
   /// Access the underlying C ABI struct.
   [[nodiscard]] const PJ_data_source_runtime_host_t& raw() const {
     return host_;

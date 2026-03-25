@@ -87,7 +87,30 @@ typedef struct PJ_message_parser_vtable_t {
 
   /** Return the last error message, or NULL if none. Plugin-owned string. */
   const char* (*get_last_error)(void* ctx);
+
+  /**
+   * Return a WidgetData JSON fragment describing this parser's configurable
+   * options (e.g. checkboxes, spin boxes). The host uses this to dynamically
+   * build a parser-specific options section in a data source dialog.
+   * Mirrors the original PlotJuggler optionsWidget() factory pattern.
+   * Returns a JSON object in WidgetData format, or NULL / "{}" if none.
+   * Plugin-owned string; valid until the next call on the same context.
+   *
+   * @note Added in struct version with size >= 80 bytes (original was 72).
+   *       Host MUST check struct_size before accessing this field.
+   */
+  const char* (*options_metadata)(void* ctx);
 } PJ_message_parser_vtable_t;
+
+/**
+ * Check if a parser vtable supports the options_metadata field.
+ * Use this before calling vtable->options_metadata() to maintain
+ * backward compatibility with older plugins.
+ */
+static inline bool PJ_parser_vtable_has_options_metadata(const PJ_message_parser_vtable_t* vtable) {
+  return vtable && vtable->struct_size >= offsetof(PJ_message_parser_vtable_t, options_metadata) +
+                                              sizeof(vtable->options_metadata);
+}
 
 /** Signature of the exported entry point: `PJ_get_message_parser_vtable`. */
 typedef const PJ_message_parser_vtable_t* (*PJ_get_message_parser_vtable_fn)(void);

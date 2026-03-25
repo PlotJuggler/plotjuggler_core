@@ -116,4 +116,18 @@ inline const char* MessageParserPluginBase::trampoline_get_last_error(void* ctx)
   return self->last_error_.empty() ? nullptr : self->last_error_.c_str();
 }
 
+inline const char* MessageParserPluginBase::trampoline_options_metadata(void* ctx) {
+  auto* self = static_cast<MessageParserPluginBase*>(ctx);
+  try {
+    self->options_buf_ = self->optionsMetadata();
+    return self->options_buf_.c_str();
+  } catch (const std::exception& e) {
+    self->last_error_ = e.what();
+    return "{}";
+  } catch (...) {
+    self->last_error_ = "Unknown exception in options_metadata";
+    return "{}";
+  }
+}
+
 }  // namespace PJ

@@ -153,6 +153,7 @@ PJ_data_source_runtime_host_t makeRuntimeHost(RuntimeHostState* state) {
       .request_stop = rhRequestStop,
       .ensure_parser_binding = rhEnsureParserBinding,
       .push_raw_message = rhPushRawMessage,
+      .query_parser_options_metadata = nullptr,
   };
   return PJ_data_source_runtime_host_t{.ctx = state, .vtable = &vtable};
 }

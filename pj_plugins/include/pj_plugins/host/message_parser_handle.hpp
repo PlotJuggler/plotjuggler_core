@@ -90,6 +90,14 @@ class MessageParserHandle {
     return safeString(vt_->get_last_error(ctx_));
   }
 
+  [[nodiscard]] std::string optionsMetadata() const {
+    // Check struct_size for backward compatibility with older plugins
+    if (!PJ_parser_vtable_has_options_metadata(vt_) || vt_->options_metadata == nullptr) {
+      return "{}";
+    }
+    return safeString(vt_->options_metadata(ctx_));
+  }
+
   [[nodiscard]] const PJ_message_parser_vtable_t* vtable() const {
     return vt_;
   }

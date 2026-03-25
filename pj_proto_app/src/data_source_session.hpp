@@ -46,6 +46,9 @@ struct RuntimeHostState {
   PluginRegistry* registry = nullptr;
   uint32_t next_binding_id = 1;
   std::unordered_map<uint32_t, ParserBinding> parser_bindings;
+
+  // Scratch buffer for query_parser_options_metadata return value
+  std::string options_metadata_buf;
 };
 
 class DataSourceSession : public QObject {
@@ -55,6 +58,10 @@ class DataSourceSession : public QObject {
   DataSourceSession(
       PJ::DataEngine& engine, PJ::DataSourceLibrary& library, PJ::TimeDomainId td_id, std::string source_name,
       PluginRegistry* registry, QObject* parent = nullptr);
+
+  /// Bind a partial runtime host (registry only) so the dialog can query
+  /// parser options metadata before start(). Must be called before showDialog.
+  void bindRuntimeHostEarly();
 
   bool startFileImport(const std::string& config_json);
   bool startStream(const std::string& config_json);
