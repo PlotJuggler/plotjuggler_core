@@ -18,7 +18,7 @@ void PluginRegistry::scanDirectory() {
     return;
   }
 
-  for (const auto& entry : fs::directory_iterator(plugin_dir_)) {
+  for (const auto& entry : fs::recursive_directory_iterator(plugin_dir_)) {
     if (!entry.is_regular_file()) {
       continue;
     }
