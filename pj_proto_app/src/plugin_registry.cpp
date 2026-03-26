@@ -66,8 +66,7 @@ void PluginRegistry::scanDirectory() {
         auto manifest = nlohmann::json::parse(manifest_str);
         loaded.name = manifest.value("name", entry.path().stem().string());
         // "encoding" can be a string or an array of strings
-        if (manifest.contains("encoding")) {
-          auto& enc = manifest["encoding"];
+        auto push_encoding = [&](const nlohmann::json& enc) {
           if (enc.is_string()) {
             loaded.encodings.push_back(enc.get<std::string>());
           } else if (enc.is_array()) {
@@ -77,6 +76,12 @@ void PluginRegistry::scanDirectory() {
               }
             }
           }
+        };
+        if (manifest.contains("encoding")) {
+          push_encoding(manifest["encoding"]);
+        }
+        if (manifest.contains("additional_encodings")) {
+          push_encoding(manifest["additional_encodings"]);
         }
       } catch (...) {
         loaded.name = entry.path().stem().string();
