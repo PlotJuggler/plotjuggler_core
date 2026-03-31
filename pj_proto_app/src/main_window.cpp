@@ -16,7 +16,9 @@
 #include <limits>
 #include <nlohmann/json.hpp>
 
+#include "pj_marketplace/extension_manager.hpp"
 #include "pj_marketplace/marketplace_window.hpp"
+
 
 #include "pj_datastore/reader.hpp"
 #include "pj_plugins/host_qt/dialog_engine.hpp"
@@ -30,6 +32,8 @@ MainWindow::MainWindow(const std::string& plugin_dir, QWidget* parent)
     default_td_id_ = *td_result;
   }
 
+  ext_mgr_ = std::make_unique<PJ::ExtensionManager>();
+  ext_mgr_->applyPendingUninstalls();
   registry_.scanDirectory();
   ext_mgr_ = std::make_unique<PJ::ExtensionManager>();
 
