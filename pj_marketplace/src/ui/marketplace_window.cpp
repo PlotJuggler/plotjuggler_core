@@ -57,7 +57,6 @@ MarketplaceWindow::MarketplaceWindow(ExtensionManager* ext_mgr, const QUrl& regi
   ui_->setupUi(this);
   setupUi();
   setupSignals();
-  ext_mgr_->applyPendingInstalls();
   registry_mgr_->fetchRegistry(registry_url_);
 }
 
