@@ -33,7 +33,7 @@ MarketplaceWindow::MarketplaceWindow(const QUrl& registry_url, QWidget* parent)
   download_mgr_ = new DownloadManager(this);
   registry_mgr_ = new RegistryManager(this);
   ext_mgr_ = new ExtensionManager(download_mgr_, PlatformUtils::extensionsDir(),
-                                   PlatformUtils::pendingDir(), this);
+                                    PlatformUtils::pendingDir(), this);
   QSettings settings("PlotJuggler", "Marketplace");
   const QString saved = settings.value("registry_url").toString();
   registry_url_ = saved.isEmpty() ? registry_url : QUrl(saved);
@@ -43,7 +43,21 @@ MarketplaceWindow::MarketplaceWindow(const QUrl& registry_url, QWidget* parent)
   setupSignals();
   ext_mgr_->applyPendingInstalls();
   registry_mgr_->fetchRegistry(registry_url_);
-  // extensions_ is now populated via the fetchFinished signal above.
+}
+
+MarketplaceWindow::MarketplaceWindow(ExtensionManager* ext_mgr, const QUrl& registry_url,
+                                     QWidget* parent)
+    : QDialog(parent), ui_(new Ui::MarketplaceWindow) {
+  registry_mgr_ = new RegistryManager(this);
+  ext_mgr_ = ext_mgr;
+  QSettings settings("PlotJuggler", "Marketplace");
+  const QString saved = settings.value("registry_url").toString();
+  registry_url_ = saved.isEmpty() ? registry_url : QUrl(saved);
+
+  ui_->setupUi(this);
+  setupUi();
+  setupSignals();
+  registry_mgr_->fetchRegistry(registry_url_);
 }
 
 MarketplaceWindow::~MarketplaceWindow() {
@@ -101,6 +115,15 @@ void MarketplaceWindow::setupSignals() {
           populateCards();
           setStatus("Extension staged — will be active after restart");
    });   
+
+
+  connect(ext_mgr_, &ExtensionManager::uninstallPendingRestart, this,
+        [this](const QString& id) {
+          pending_restart_ids_.insert(id);
+          ui_->progress_bar_->setVisible(false);
+          populateCards();
+          setStatus("Extension staged — will be uninstalled after restart");
+   });  
 
   connect(registry_mgr_, &RegistryManager::fetchError, this,
           [this](const QString& error) { setStatus("Registry error: " + error, true); });

@@ -110,10 +110,12 @@ void ChartPanel::updateData(PJ::Timestamp t_min, PJ::Timestamp t_max) {
     s.line->replace(points);
   }
 
-  // Auto-scale axes
-  double x_min_s = static_cast<double>(t_min - first_timestamp_) / 1e9;
-  double x_max_s = static_cast<double>(t_max - first_timestamp_) / 1e9;
-  x_axis_->setRange(x_min_s, x_max_s);
+  // Auto-scale x-axis only when the user has not zoomed manually
+  if (!user_zoom_) {
+    double x_min_s = static_cast<double>(t_min - first_timestamp_) / 1e9;
+    double x_max_s = static_cast<double>(t_max - first_timestamp_) / 1e9;
+    x_axis_->setRange(x_min_s, x_max_s);
+  }
 
   if (y_min < y_max) {
     double margin = (y_max - y_min) * 0.05;
@@ -139,15 +141,42 @@ void ChartPanel::dragMoveEvent(QDragMoveEvent* event) {
 void ChartPanel::dropEvent(QDropEvent* event) {
   auto field_data = event->mimeData()->data("application/x-pj-field");
   QDataStream stream(field_data);
-  quint32 topic_id = 0;
-  quint32 col_index = 0;
-  QString label;
-  stream >> topic_id >> col_index >> label;
-  addSeries(topic_id, col_index, label.toStdString());
+
+  quint32 count = 0;
+  stream >> count;
+
+  for (quint32 i = 0; i < count; ++i) {
+    quint32 topic_id = 0;
+    quint32 col_index = 0;
+    QString label;
+    stream >> topic_id >> col_index >> label;
+    if (stream.status() != QDataStream::Ok) {
+      break;
+    }
+    addSeries(topic_id, col_index, label.toStdString());
+  }
+
   event->acceptProposedAction();
 
-  // Trigger an immediate chart update after adding a series.
+  // Trigger an immediate chart update after adding the series.
   emit seriesDropped();
+}
+
+void ChartPanel::wheelEvent(QWheelEvent* event) {
+  double factor = (event->angleDelta().y() > 0) ? 0.8 : 1.25;
+  QPointF scene_pos = mapToScene(event->position().toPoint());
+  double mouse_x_s = chart()->mapToValue(scene_pos).x();
+  double x_min = x_axis_->min();
+  double x_max = x_axis_->max();
+  x_axis_->setRange(mouse_x_s - (mouse_x_s - x_min) * factor, mouse_x_s + (x_max - mouse_x_s) * factor);
+  user_zoom_ = true;
+  event->accept();
+}
+
+void ChartPanel::mouseDoubleClickEvent(QMouseEvent* event) {
+  user_zoom_ = false;
+  emit seriesDropped();  // triggers MainWindow to redraw with the full data range
+  QChartView::mouseDoubleClickEvent(event);
 }
 
 void ChartPanel::contextMenuEvent(QContextMenuEvent* event) {

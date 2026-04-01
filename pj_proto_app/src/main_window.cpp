@@ -16,7 +16,9 @@
 #include <limits>
 #include <nlohmann/json.hpp>
 
+#include "pj_marketplace/extension_manager.hpp"
 #include "pj_marketplace/marketplace_window.hpp"
+
 
 #include "pj_datastore/reader.hpp"
 #include "pj_plugins/host_qt/dialog_engine.hpp"
@@ -30,7 +32,10 @@ MainWindow::MainWindow(const std::string& plugin_dir, QWidget* parent)
     default_td_id_ = *td_result;
   }
 
+  ext_mgr_ = std::make_unique<PJ::ExtensionManager>();
+  ext_mgr_->applyPendingUninstalls();
   registry_.scanDirectory();
+  ext_mgr_ = std::make_unique<PJ::ExtensionManager>();
 
   // --- Toolbar ---
   auto* toolbar = addToolBar("Main");
@@ -68,6 +73,7 @@ MainWindow::MainWindow(const std::string& plugin_dir, QWidget* parent)
   tree_view_ = new QTreeView();
   tree_view_->setModel(&tree_model_);
   tree_view_->setDragEnabled(true);
+  tree_view_->setSelectionMode(QAbstractItemView::ExtendedSelection);
   tree_view_->setHeaderHidden(true);
   tree_view_->setContextMenuPolicy(Qt::CustomContextMenu);
   connect(tree_view_, &QTreeView::customContextMenuRequested, this, &MainWindow::onTreeContextMenu);
@@ -563,7 +569,7 @@ std::pair<PJ::Timestamp, PJ::Timestamp> MainWindow::computeVisibleRange() const 
 void MainWindow::onOpenMarketplace() {
   const QUrl registry_url(
       "https://raw.githubusercontent.com/PlotJuggler/pj-plugin-registry/refs/heads/development/registry.json");
-  PJ::MarketplaceWindow window(registry_url, this);
+  PJ::MarketplaceWindow window(ext_mgr_.get(), registry_url, this);
   window.resize(700, 500);
   window.exec();
   if (window.installationsChanged()) {
