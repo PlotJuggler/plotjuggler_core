@@ -141,14 +141,24 @@ void ChartPanel::dragMoveEvent(QDragMoveEvent* event) {
 void ChartPanel::dropEvent(QDropEvent* event) {
   auto field_data = event->mimeData()->data("application/x-pj-field");
   QDataStream stream(field_data);
-  quint32 topic_id = 0;
-  quint32 col_index = 0;
-  QString label;
-  stream >> topic_id >> col_index >> label;
-  addSeries(topic_id, col_index, label.toStdString());
+
+  quint32 count = 0;
+  stream >> count;
+
+  for (quint32 i = 0; i < count; ++i) {
+    quint32 topic_id = 0;
+    quint32 col_index = 0;
+    QString label;
+    stream >> topic_id >> col_index >> label;
+    if (stream.status() != QDataStream::Ok) {
+      break;
+    }
+    addSeries(topic_id, col_index, label.toStdString());
+  }
+
   event->acceptProposedAction();
 
-  // Trigger an immediate chart update after adding a series.
+  // Trigger an immediate chart update after adding the series.
   emit seriesDropped();
 }
 
