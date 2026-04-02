@@ -53,8 +53,7 @@ std::optional<LoadedMessageParser> PluginRegistry::tryLoadMessageParser(const st
     auto manifest = nlohmann::json::parse(handle.manifest());
     loaded.name = manifest.value("name", so_path.stem().string());
     // "encoding" can be a string or an array of strings
-    if (manifest.contains("encoding")) {
-      const auto& enc = manifest["encoding"];
+    auto push_encoding = [&](const nlohmann::json& enc) {
       if (enc.is_string()) {
         loaded.encodings.push_back(enc.get<std::string>());
       } else if (enc.is_array()) {
@@ -64,6 +63,12 @@ std::optional<LoadedMessageParser> PluginRegistry::tryLoadMessageParser(const st
           }
         }
       }
+    };
+    if (manifest.contains("encoding")) {
+      push_encoding(manifest["encoding"]);
+    }
+    if (manifest.contains("additional_encodings")) {
+      push_encoding(manifest["additional_encodings"]);
     }
   } catch (...) {
     loaded.name = so_path.stem().string();
