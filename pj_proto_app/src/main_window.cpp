@@ -276,6 +276,16 @@ void MainWindow::onLoadFile() {
       base = nlohmann::json::object();
     }
     base["filepath"] = file_path.toStdString();
+
+    // Inject available encodings so the dialog can populate encoding combos dynamically
+    auto encodings_json = registry_.listAvailableEncodings();
+    if (!encodings_json.empty()) {
+      auto parsed = nlohmann::json::parse(encodings_json, nullptr, false);
+      if (!parsed.is_discarded()) {
+        base["__available_encodings"] = std::move(parsed);
+      }
+    }
+
     config = base.dump();
   }
 
@@ -339,7 +349,24 @@ void MainWindow::onStartStream() {
 
   QSettings settings;
   auto settings_key = QString("PluginConfig/%1").arg(QString::fromStdString(source->name));
-  std::string config = settings.value(settings_key, "").toString().toStdString();
+  std::string saved_config = settings.value(settings_key, "").toString().toStdString();
+
+  // Inject available encodings so the dialog can populate encoding combos dynamically
+  std::string config;
+  {
+    auto base = saved_config.empty() ? nlohmann::json::object() : nlohmann::json::parse(saved_config, nullptr, false);
+    if (base.is_discarded()) {
+      base = nlohmann::json::object();
+    }
+    auto encodings_json = registry_.listAvailableEncodings();
+    if (!encodings_json.empty()) {
+      auto parsed = nlohmann::json::parse(encodings_json, nullptr, false);
+      if (!parsed.is_discarded()) {
+        base["__available_encodings"] = std::move(parsed);
+      }
+    }
+    config = base.dump();
+  }
 
   // Create session first so the dialog runs on the SAME handle that will stream.
   // This matches the original plugin architecture: one object, one socket.
