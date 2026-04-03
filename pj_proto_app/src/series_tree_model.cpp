@@ -326,28 +326,43 @@ QMimeData* SeriesTreeModel::mimeData(const QModelIndexList& indexes) const {
     return nullptr;
   }
 
-  auto idx = indexes.first();
-  auto id = idx.internalId();
-  if ((id & 0x80000000u) == 0) {
-    return nullptr;
-  }
-
-  auto ds_idx = static_cast<size_t>((id >> 16) & 0x7FFF);
-  auto topic_idx = static_cast<size_t>(id & 0xFFFF);
-  auto row = static_cast<size_t>(idx.row());
-
-  if (ds_idx >= datasets_.size() || topic_idx >= datasets_[ds_idx].topics.size() ||
-      row >= datasets_[ds_idx].topics[topic_idx].fields.size()) {
-    return nullptr;
-  }
-
-  const auto& field = datasets_[ds_idx].topics[topic_idx].fields[row];
-
-  auto* mime = new QMimeData();
   QByteArray encoded;
   QDataStream stream(&encoded, QIODevice::WriteOnly);
-  stream << static_cast<quint32>(field.topic_id) << static_cast<quint32>(field.col_index)
-         << QString::fromStdString(field.name);
+
+  quint32 count = 0;
+  // Reserve space for the count; we'll overwrite it after collecting valid fields
+  stream << count;
+
+  for (const auto& idx : indexes) {
+    auto id = idx.internalId();
+    if ((id & 0x80000000u) == 0) {
+      continue;  // skip dataset/topic nodes
+    }
+
+    auto ds_idx = static_cast<size_t>((id >> 16) & 0x7FFF);
+    auto topic_idx = static_cast<size_t>(id & 0xFFFF);
+    auto row = static_cast<size_t>(idx.row());
+
+    if (ds_idx >= datasets_.size() || topic_idx >= datasets_[ds_idx].topics.size() ||
+        row >= datasets_[ds_idx].topics[topic_idx].fields.size()) {
+      continue;
+    }
+
+    const auto& field = datasets_[ds_idx].topics[topic_idx].fields[row];
+    stream << static_cast<quint32>(field.topic_id) << static_cast<quint32>(field.col_index)
+           << QString::fromStdString(field.name);
+    ++count;
+  }
+
+  if (count == 0) {
+    return nullptr;
+  }
+
+  // Overwrite the count at the start of the buffer
+  QDataStream fix(&encoded, QIODevice::WriteOnly);
+  fix << count;
+
+  auto* mime = new QMimeData();
   mime->setData("application/x-pj-field", encoded);
   return mime;
 }

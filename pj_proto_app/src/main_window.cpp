@@ -16,12 +16,86 @@
 #include <limits>
 #include <nlohmann/json.hpp>
 
+#include "pj_marketplace/extension_manager.hpp"
 #include "pj_marketplace/marketplace_window.hpp"
+
 
 #include "pj_datastore/reader.hpp"
 #include "pj_plugins/host_qt/dialog_engine.hpp"
 
 namespace proto {
+
+namespace {
+
+/// Creates a callback that shows a QMessageBox.
+/// Assumes caller is on GUI thread (protoapp calls plugin methods from GUI thread).
+ShowMessageBoxCallback makeMessageBoxCallback(QWidget* parent) {
+  return [parent](PJ_message_box_type_t type, std::string_view title, std::string_view message, int buttons) -> int {
+    QString q_title = QString::fromUtf8(title.data(), static_cast<qsizetype>(title.size()));
+    QString q_message = QString::fromUtf8(message.data(), static_cast<qsizetype>(message.size()));
+
+    // Use manual QMessageBox to support custom button text (e.g., "Continue")
+    QMessageBox msg_box(parent);
+    msg_box.setWindowTitle(q_title);
+    msg_box.setText(q_message);
+
+    // Set icon based on type
+    switch (type) {
+      case PJ_MESSAGE_BOX_WARNING:
+        msg_box.setIcon(QMessageBox::Warning);
+        break;
+      case PJ_MESSAGE_BOX_ERROR:
+        msg_box.setIcon(QMessageBox::Critical);
+        break;
+      case PJ_MESSAGE_BOX_QUESTION:
+        msg_box.setIcon(QMessageBox::Question);
+        break;
+      case PJ_MESSAGE_BOX_INFO:
+      default:
+        msg_box.setIcon(QMessageBox::Information);
+        break;
+    }
+
+    // Map to track custom buttons -> PJ constants
+    std::vector<std::pair<QPushButton*, int>> button_map;
+
+    auto add_button = [&](int pj_btn, const QString& text, QMessageBox::ButtonRole role) {
+      if (buttons & pj_btn) {
+        auto* btn = msg_box.addButton(text, role);
+        button_map.emplace_back(btn, pj_btn);
+      }
+    };
+
+    if (buttons == 0) {
+      auto* btn = msg_box.addButton(QMessageBox::Ok);
+      button_map.emplace_back(btn, PJ_MSG_BTN_OK);
+    } else {
+      // Add buttons with proper labels
+      add_button(PJ_MSG_BTN_OK, QStringLiteral("OK"), QMessageBox::AcceptRole);
+      add_button(PJ_MSG_BTN_CANCEL, QStringLiteral("Cancel"), QMessageBox::RejectRole);
+      add_button(PJ_MSG_BTN_YES, QStringLiteral("Yes"), QMessageBox::YesRole);
+      add_button(PJ_MSG_BTN_NO, QStringLiteral("No"), QMessageBox::NoRole);
+      add_button(PJ_MSG_BTN_ABORT, QStringLiteral("Abort"), QMessageBox::RejectRole);
+      add_button(PJ_MSG_BTN_RETRY, QStringLiteral("Retry"), QMessageBox::AcceptRole);
+      add_button(PJ_MSG_BTN_IGNORE, QStringLiteral("Ignore"), QMessageBox::AcceptRole);
+      add_button(PJ_MSG_BTN_CONTINUE, QStringLiteral("Continue"), QMessageBox::AcceptRole);
+    }
+
+    msg_box.exec();
+
+    // Find which button was clicked
+    QAbstractButton* clicked = msg_box.clickedButton();
+    for (const auto& [btn, pj_val] : button_map) {
+      if (btn == clicked) {
+        return pj_val;
+      }
+    }
+
+    return PJ_MSG_BTN_OK;  // fallback
+  };
+}
+
+}  // namespace
 
 MainWindow::MainWindow(const std::string& plugin_dir, QWidget* parent)
     : QMainWindow(parent), registry_(plugin_dir), tree_model_(engine_) {
@@ -30,7 +104,10 @@ MainWindow::MainWindow(const std::string& plugin_dir, QWidget* parent)
     default_td_id_ = *td_result;
   }
 
+  ext_mgr_ = std::make_unique<PJ::ExtensionManager>();
+  ext_mgr_->applyPendingUninstalls();
   registry_.scanDirectory();
+  ext_mgr_ = std::make_unique<PJ::ExtensionManager>();
 
   // --- Toolbar ---
   auto* toolbar = addToolBar("Main");
@@ -68,6 +145,7 @@ MainWindow::MainWindow(const std::string& plugin_dir, QWidget* parent)
   tree_view_ = new QTreeView();
   tree_view_->setModel(&tree_model_);
   tree_view_->setDragEnabled(true);
+  tree_view_->setSelectionMode(QAbstractItemView::ExtendedSelection);
   tree_view_->setHeaderHidden(true);
   tree_view_->setContextMenuPolicy(Qt::CustomContextMenu);
   connect(tree_view_, &QTreeView::customContextMenuRequested, this, &MainWindow::onTreeContextMenu);
@@ -115,6 +193,7 @@ void MainWindow::loadFile(const QString& file_path) {
 
   auto session =
       std::make_unique<DataSourceSession>(engine_, source->library, default_td_id_, display_name, &registry_, this);
+  session->setMessageBoxCallback(makeMessageBoxCallback(this));
   if (!session->startFileImport(config)) {
     qWarning("Import failed for '%s': %s", display_name.c_str(), session->lastError().c_str());
   }
@@ -184,13 +263,12 @@ void MainWindow::onLoadFile() {
     source = sources[idx];
   }
 
-  std::string config;
-
   // Restore last-used config for this plugin (preserves user choices across sessions)
   auto settings_key = QString("PluginConfig/%1").arg(QString::fromStdString(source->name));
   std::string saved_config = settings.value(settings_key, "").toString().toStdString();
 
   // Merge the new filepath into the saved config (or create a fresh one)
+  std::string config;
   {
     auto base = saved_config.empty() ? nlohmann::json::object() : nlohmann::json::parse(saved_config, nullptr, false);
     if (base.is_discarded()) {
@@ -200,14 +278,24 @@ void MainWindow::onLoadFile() {
     config = base.dump();
   }
 
-  // Dialog flow
+  auto display_name = QFileInfo(file_path).fileName().toStdString();
+
+  // Create session early so the dialog can call listAvailableEncodings()
+  auto session =
+      std::make_unique<DataSourceSession>(engine_, source->library, default_td_id_, display_name, &registry_, this);
+  session->setMessageBoxCallback(makeMessageBoxCallback(this));
+
+  // Bind runtime host early so the dialog can call listAvailableEncodings()
+  session->bindRuntimeHostForDialog();
+
+  // Load merged config (filepath + last-used settings) so the dialog is pre-populated
+  (void)session->handle().loadConfig(config);
+
+  // Dialog flow — use the session's own handle
   if ((source->capabilities & PJ_DATA_SOURCE_CAPABILITY_HAS_DIALOG) != 0) {
     auto vt_result = source->library.resolveDialogVtable();
     if (vt_result) {
-      auto temp_handle = source->library.createHandle();
-      // Load merged config (filepath + last-used settings) so the dialog is pre-populated
-      (void)temp_handle.loadConfig(config);
-      auto* dialog_ctx = temp_handle.dialogContext();
+      auto* dialog_ctx = session->handle().dialogContext();
       if (dialog_ctx != nullptr) {
         auto dialog_handle = PJ::DialogHandle::borrowed(*vt_result, dialog_ctx);
         PJ::DialogEngine dialog_engine(std::move(dialog_handle));
@@ -219,10 +307,6 @@ void MainWindow::onLoadFile() {
     }
   }
 
-  auto display_name = QFileInfo(file_path).fileName().toStdString();
-
-  auto session =
-      std::make_unique<DataSourceSession>(engine_, source->library, default_td_id_, display_name, &registry_, this);
   session->startFileImport(config);
   sessions_.push_back(std::move(session));
 
@@ -259,19 +343,24 @@ void MainWindow::onStartStream() {
 
   QSettings settings;
   auto settings_key = QString("PluginConfig/%1").arg(QString::fromStdString(source->name));
-  std::string config = settings.value(settings_key, "").toString().toStdString();
+  std::string saved_config = settings.value(settings_key, "").toString().toStdString();
 
   // Create session first so the dialog runs on the SAME handle that will stream.
   // This matches the original plugin architecture: one object, one socket.
   auto session =
       std::make_unique<DataSourceSession>(engine_, source->library, default_td_id_, source->name, &registry_, this);
+  session->setMessageBoxCallback(makeMessageBoxCallback(this));
+
+  // Bind runtime host early so the dialog can call listAvailableEncodings()
+  session->bindRuntimeHostForDialog();
 
   // Restore saved config so the dialog remembers previous choices
-  if (!config.empty()) {
-    (void)session->handle().loadConfig(config);
+  if (!saved_config.empty()) {
+    (void)session->handle().loadConfig(saved_config);
   }
 
   // Dialog flow — use the session's own handle, not a temp handle
+  std::string config = saved_config;
   if ((source->capabilities & PJ_DATA_SOURCE_CAPABILITY_HAS_DIALOG) != 0) {
     auto vt_result = source->library.resolveDialogVtable();
     if (vt_result) {
@@ -317,6 +406,7 @@ void MainWindow::startDummyStream() {
 
   auto session =
       std::make_unique<DataSourceSession>(engine_, dummy->library, default_td_id_, dummy->name, &registry_, this);
+  session->setMessageBoxCallback(makeMessageBoxCallback(this));
   session->startStream("{}");
   sessions_.push_back(std::move(session));
 
@@ -526,6 +616,7 @@ void MainWindow::restartSession(DataSourceSession* session) {
 
   // Create and start a new session with the same config
   auto new_session = std::make_unique<DataSourceSession>(engine_, library, default_td_id_, name, &registry_, this);
+  new_session->setMessageBoxCallback(makeMessageBoxCallback(this));
   new_session->startStream(config);
   sessions_.push_back(std::move(new_session));
 
@@ -563,7 +654,7 @@ std::pair<PJ::Timestamp, PJ::Timestamp> MainWindow::computeVisibleRange() const 
 void MainWindow::onOpenMarketplace() {
   const QUrl registry_url(
       "https://raw.githubusercontent.com/PlotJuggler/pj-plugin-registry/refs/heads/development/registry.json");
-  PJ::MarketplaceWindow window(registry_url, this);
+  PJ::MarketplaceWindow window(ext_mgr_.get(), registry_url, this);
   window.resize(700, 500);
   window.exec();
   if (window.installationsChanged()) {

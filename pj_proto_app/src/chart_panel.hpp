@@ -5,6 +5,7 @@
 #include <QMenu>
 #include <QMouseEvent>
 #include <QPoint>
+#include <QWheelEvent>
 #include <QtCharts/QChartView>
 #include <QtCharts/QLineSeries>
 #include <QtCharts/QValueAxis>
@@ -42,6 +43,7 @@ class ChartPanel : public QChartView {
   void dragMoveEvent(QDragMoveEvent* event) override;
   void dropEvent(QDropEvent* event) override;
   void contextMenuEvent(QContextMenuEvent* event) override;
+  void wheelEvent(QWheelEvent* event) override;
   void mousePressEvent(QMouseEvent* event) override;
   void mouseMoveEvent(QMouseEvent* event) override;
   void mouseReleaseEvent(QMouseEvent* event) override;
@@ -53,6 +55,7 @@ class ChartPanel : public QChartView {
   QValueAxis* y_axis_;
   std::vector<PlottedSeries> series_;
   PJ::Timestamp first_timestamp_ = 0;
+  bool user_zoom_ = false;
   bool is_panning_ = false;
   bool user_panned_ = false;
   QPoint last_pan_pos_;

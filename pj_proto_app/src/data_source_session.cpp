@@ -10,8 +10,9 @@ namespace proto {
 
 namespace {
 
-const char* rhGetLastError(void*) {
-  return nullptr;
+const char* rhGetLastError(void* ctx) {
+  auto* s = static_cast<RuntimeHostState*>(ctx);
+  return s->last_error.empty() ? nullptr : s->last_error.c_str();
 }
 
 void rhReportMessage(void* ctx, PJ_data_source_message_level_t level, PJ_string_view_t msg) {
@@ -68,14 +69,16 @@ bool rhEnsureParserBinding(void* ctx, const PJ_parser_binding_request_t* request
 
   auto* parser_entry = state->registry->findParserByEncoding(encoding);
   if (parser_entry == nullptr) {
-    std::cerr << "[bridge] no parser found for encoding '" << encoding << "'\n";
+    state->last_error = "no parser found for encoding '" + std::string(encoding) + "'";
+    std::cerr << "[bridge] " << state->last_error << "\n";
     return false;
   }
 
   // Create parser instance
   auto parser = std::make_unique<PJ::MessageParserHandle>(parser_entry->library.createHandle());
   if (!parser->valid()) {
-    std::cerr << "[bridge] failed to create parser instance for '" << encoding << "'\n";
+    state->last_error = "failed to create parser instance for '" + std::string(encoding) + "'";
+    std::cerr << "[bridge] " << state->last_error << "\n";
     return false;
   }
 
@@ -83,7 +86,8 @@ bool rhEnsureParserBinding(void* ctx, const PJ_parser_binding_request_t* request
   auto topic_result =
       state->engine->createTopic(state->dataset_id, PJ::TopicDescriptor{.name = std::string(topic_name)});
   if (!topic_result) {
-    std::cerr << "[bridge] failed to create topic '" << topic_name << "': " << topic_result.error() << "\n";
+    state->last_error = "failed to create topic '" + std::string(topic_name) + "': " + topic_result.error();
+    std::cerr << "[bridge] " << state->last_error << "\n";
     return false;
   }
 
@@ -94,7 +98,8 @@ bool rhEnsureParserBinding(void* ctx, const PJ_parser_binding_request_t* request
 
   // Bind write host to parser
   if (!parser->bindWriteHost(write_host->raw())) {
-    std::cerr << "[bridge] failed to bind write host to parser\n";
+    state->last_error = "failed to bind write host to parser";
+    std::cerr << "[bridge] " << state->last_error << "\n";
     return false;
   }
 
@@ -102,6 +107,7 @@ bool rhEnsureParserBinding(void* ctx, const PJ_parser_binding_request_t* request
   if (request->schema.size > 0) {
     PJ::Span<const uint8_t> schema_span(request->schema.data, request->schema.size);
     if (!parser->bindSchema(type_name, schema_span)) {
+      state->last_error = "failed to parse " + std::string(type_name) + ": " + parser->lastError();
       std::cerr << "[bridge] parser schema binding failed for type '" << type_name << "': " << parser->lastError()
                 << "\n";
       return false;
@@ -131,6 +137,28 @@ bool rhPushRawMessage(void* ctx, PJ_parser_binding_handle_t handle, int64_t time
   return it->second.parser->parse(timestamp_ns, PJ::Span<const uint8_t>(payload.data, payload.size));
 }
 
+int rhShowMessageBox(
+    void* ctx, PJ_message_box_type_t type, PJ_string_view_t title, PJ_string_view_t message, int buttons) {
+  auto* state = static_cast<RuntimeHostState*>(ctx);
+  if (!state->show_message_box_callback) {
+    // No callback bound - return positive default (headless mode)
+    if (buttons & PJ_MSG_BTN_CONTINUE) return PJ_MSG_BTN_CONTINUE;
+    if (buttons & PJ_MSG_BTN_YES) return PJ_MSG_BTN_YES;
+    return PJ_MSG_BTN_OK;
+  }
+  return state->show_message_box_callback(
+      type, std::string_view(title.data, title.size), std::string_view(message.data, message.size), buttons);
+}
+
+const char* rhListAvailableEncodings(void* ctx) {
+  auto* state = static_cast<RuntimeHostState*>(ctx);
+  if (state->registry == nullptr) {
+    return nullptr;
+  }
+  state->available_encodings_cache = state->registry->listAvailableEncodings();
+  return state->available_encodings_cache.c_str();
+}
+
 }  // namespace
 
 PJ_data_source_runtime_host_t DataSourceSession::makeRuntimeHost(RuntimeHostState* state) {
@@ -147,6 +175,8 @@ PJ_data_source_runtime_host_t DataSourceSession::makeRuntimeHost(RuntimeHostStat
       .request_stop = rhRequestStop,
       .ensure_parser_binding = rhEnsureParserBinding,
       .push_raw_message = rhPushRawMessage,
+      .show_message_box = rhShowMessageBox,
+      .list_available_encodings = rhListAvailableEncodings,
   };
   return PJ_data_source_runtime_host_t{.ctx = state, .vtable = &vtable};
 }
@@ -161,6 +191,16 @@ DataSourceSession::DataSourceSession(
       source_name_(std::move(source_name)),
       registry_(registry),
       handle_(library.createHandle()) {}
+
+void DataSourceSession::bindRuntimeHostForDialog() {
+  // Bind a minimal runtime host so the dialog can call listAvailableEncodings().
+  // Only registry is needed for that callback; engine/dataset_id are set later in setupAndStart().
+  runtime_state_.registry = registry_;
+  runtime_state_.engine = nullptr;
+  runtime_state_.dataset_id = 0;
+
+  (void)handle_.bindRuntimeHost(makeRuntimeHost(&runtime_state_));
+}
 
 bool DataSourceSession::setupAndStart(const std::string& config_json) {
   auto ds_result = engine_.createDataset(PJ::DatasetDescriptor{.source_name = source_name_, .time_domain_id = td_id_});

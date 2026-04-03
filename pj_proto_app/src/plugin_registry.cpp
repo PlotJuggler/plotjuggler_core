@@ -11,10 +11,10 @@ namespace proto {
 
 PluginRegistry::PluginRegistry(std::string_view plugin_dir) : plugin_dir_(plugin_dir) {}
 
-std::optional<LoadedDataSource> PluginRegistry::tryLoadDataSource(const std::filesystem::path& so_path) {
+bool PluginRegistry::loadAndRegisterDataSource(const std::filesystem::path& so_path) {
   auto result = PJ::DataSourceLibrary::load(so_path.string());
   if (!result) {
-    return std::nullopt;
+    return false;
   }
   LoadedDataSource loaded;
   loaded.library = std::move(*result);
@@ -35,13 +35,14 @@ std::optional<LoadedDataSource> PluginRegistry::tryLoadDataSource(const std::fil
     loaded.name = so_path.stem().string();
   }
   std::cerr << "Loaded DataSource: " << loaded.name << " from " << loaded.path << "\n";
-  return loaded;
+  data_sources_.push_back(std::move(loaded));
+  return true;
 }
 
-std::optional<LoadedMessageParser> PluginRegistry::tryLoadMessageParser(const std::filesystem::path& so_path) {
+bool PluginRegistry::loadAndRegisterMessageParser(const std::filesystem::path& so_path) {
   auto result = PJ::MessageParserLibrary::load(so_path.string());
   if (!result) {
-    return std::nullopt;
+    return false;
   }
   LoadedMessageParser loaded;
   loaded.library = std::move(*result);
@@ -52,9 +53,8 @@ std::optional<LoadedMessageParser> PluginRegistry::tryLoadMessageParser(const st
   try {
     auto manifest = nlohmann::json::parse(handle.manifest());
     loaded.name = manifest.value("name", so_path.stem().string());
-    // "encoding" can be a string or an array of strings
-    if (manifest.contains("encoding")) {
-      const auto& enc = manifest["encoding"];
+    // Helper to push encoding(s) from a JSON value (string or array of strings)
+    auto push_encodings = [&](const nlohmann::json& enc) {
       if (enc.is_string()) {
         loaded.encodings.push_back(enc.get<std::string>());
       } else if (enc.is_array()) {
@@ -64,12 +64,21 @@ std::optional<LoadedMessageParser> PluginRegistry::tryLoadMessageParser(const st
           }
         }
       }
+    };
+    // Primary encoding field
+    if (manifest.contains("encoding")) {
+      push_encodings(manifest["encoding"]);
+    }
+    // Additional encoding aliases (e.g., "ros1"/"ros2" for ROS parser)
+    if (manifest.contains("additional_encodings")) {
+      push_encodings(manifest["additional_encodings"]);
     }
   } catch (...) {
     loaded.name = so_path.stem().string();
   }
   std::cerr << "Loaded MessageParser: " << loaded.name << " from " << loaded.path << "\n";
-  return loaded;
+  message_parsers_.push_back(std::move(loaded));
+  return true;
 }
 
 void PluginRegistry::scanDirectory() {
@@ -85,11 +94,8 @@ void PluginRegistry::scanDirectory() {
         entry.path().extension() != PJ::PlatformUtils::pluginExtension()) {
       continue;
     }
-    if (auto ds = tryLoadDataSource(entry.path())) {
-      data_sources_.push_back(std::move(*ds));
-    } else if (auto mp = tryLoadMessageParser(entry.path())) {
-      message_parsers_.push_back(std::move(*mp));
-    } else {
+    if (!loadAndRegisterDataSource(entry.path()) &&
+        !loadAndRegisterMessageParser(entry.path())) {
       std::cerr << "Failed to load plugin: " << entry.path() << "\n";
     }
   }
@@ -157,11 +163,8 @@ void PluginRegistry::reload() {
       }
     }
 
-    if (auto ds = tryLoadDataSource(so_path)) {
-      data_sources_.push_back(std::move(*ds));
-    } else if (auto mp = tryLoadMessageParser(so_path)) {
-      message_parsers_.push_back(std::move(*mp));
-    } else {
+    if (!loadAndRegisterDataSource(so_path) &&
+        !loadAndRegisterMessageParser(so_path)) {
       std::cerr << "Failed to load plugin: " << path_str << "\n";
     }
   }
@@ -257,6 +260,28 @@ LoadedMessageParser* PluginRegistry::findParserByEncoding(std::string_view encod
     }
   }
   return nullptr;
+}
+
+std::string PluginRegistry::listAvailableEncodings() const {
+  std::vector<std::string> unique_encodings;
+  for (const auto& parser : message_parsers_) {
+    for (const auto& enc : parser.encodings) {
+      if (std::find(unique_encodings.begin(), unique_encodings.end(), enc) == unique_encodings.end()) {
+        unique_encodings.push_back(enc);
+      }
+    }
+  }
+
+  // Build JSON array
+  std::string json = "[";
+  for (size_t i = 0; i < unique_encodings.size(); ++i) {
+    if (i > 0) {
+      json += ",";
+    }
+    json += "\"" + unique_encodings[i] + "\"";
+  }
+  json += "]";
+  return json;
 }
 
 }  // namespace proto

@@ -2,9 +2,11 @@
 
 #include <QObject>
 #include <atomic>
+#include <functional>
 #include <memory>
 #include <mutex>
 #include <string>
+#include <string_view>
 #include <unordered_map>
 #include <vector>
 
@@ -31,6 +33,11 @@ struct DedupMessage {
   int count = 0;
 };
 
+/// Signature for the message box callback bound by the Qt layer.
+/// Returns the button that was clicked (a PJ_message_box_buttons_t value).
+using ShowMessageBoxCallback =
+    std::function<int(PJ_message_box_type_t type, std::string_view title, std::string_view message, int buttons)>;
+
 struct RuntimeHostState {
   std::mutex callback_mutex;  // protects messages and state_transitions from plugin threads
   std::vector<PJ_data_source_state_t> state_transitions;
@@ -39,6 +46,7 @@ struct RuntimeHostState {
   int progress_finishes = 0;
   std::atomic<bool> stop_requested{false};
   std::unordered_map<std::string, DedupMessage> messages;
+  std::string last_error;
 
   // Delegated ingest bridge state
   PJ::DataEngine* engine = nullptr;
@@ -46,6 +54,12 @@ struct RuntimeHostState {
   PluginRegistry* registry = nullptr;
   uint32_t next_binding_id = 1;
   std::unordered_map<uint32_t, ParserBinding> parser_bindings;
+
+  // Qt-layer callback for showing message boxes (bound at runtime by host app)
+  ShowMessageBoxCallback show_message_box_callback;
+
+  // Cached JSON array for list_available_encodings (lifetime: until next call)
+  std::string available_encodings_cache;
 };
 
 class DataSourceSession : public QObject {
@@ -55,6 +69,10 @@ class DataSourceSession : public QObject {
   DataSourceSession(
       PJ::DataEngine& engine, PJ::DataSourceLibrary& library, PJ::TimeDomainId td_id, std::string source_name,
       PluginRegistry* registry, QObject* parent = nullptr);
+
+  /// Bind a minimal runtime host so the dialog can call listAvailableEncodings().
+  /// Must be called before showing the dialog. setupAndStart() will complete the binding.
+  void bindRuntimeHostForDialog();
 
   bool startFileImport(const std::string& config_json);
   bool startStream(const std::string& config_json);
@@ -91,6 +109,11 @@ class DataSourceSession : public QObject {
   }
   [[nodiscard]] const std::string& lastError() const {
     return last_error_;
+  }
+
+  /// Bind the message box callback from the Qt layer. Must be called before start.
+  void setMessageBoxCallback(ShowMessageBoxCallback callback) {
+    runtime_state_.show_message_box_callback = std::move(callback);
   }
 
  signals:

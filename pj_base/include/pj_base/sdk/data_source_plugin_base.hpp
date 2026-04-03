@@ -14,6 +14,7 @@
 #include <exception>
 #include <string>
 #include <string_view>
+#include <vector>
 
 #include "pj_base/data_source_protocol.h"
 #include "pj_base/expected.hpp"
@@ -39,6 +40,34 @@ enum class DataSourceMessageLevel : uint32_t {
   kWarning = PJ_DATA_SOURCE_MESSAGE_WARNING,
   kError = PJ_DATA_SOURCE_MESSAGE_ERROR,
 };
+
+/// Type of message box to display (determines icon).
+enum class MessageBoxType : uint32_t {
+  kInfo = PJ_MESSAGE_BOX_INFO,
+  kWarning = PJ_MESSAGE_BOX_WARNING,
+  kError = PJ_MESSAGE_BOX_ERROR,
+  kQuestion = PJ_MESSAGE_BOX_QUESTION,
+};
+
+/// Standard buttons for message boxes (combinable with |).
+enum class MessageBoxButton : int {
+  kOk = PJ_MSG_BTN_OK,
+  kCancel = PJ_MSG_BTN_CANCEL,
+  kYes = PJ_MSG_BTN_YES,
+  kNo = PJ_MSG_BTN_NO,
+  kContinue = PJ_MSG_BTN_CONTINUE,
+  kAbort = PJ_MSG_BTN_ABORT,
+  kRetry = PJ_MSG_BTN_RETRY,
+  kIgnore = PJ_MSG_BTN_IGNORE,
+};
+
+/// Allow combining MessageBoxButton values with |.
+inline int operator|(MessageBoxButton a, MessageBoxButton b) {
+  return static_cast<int>(a) | static_cast<int>(b);
+}
+inline int operator|(int a, MessageBoxButton b) {
+  return a | static_cast<int>(b);
+}
 
 /// @name Capability flag constants
 /// @{
@@ -173,6 +202,154 @@ class DataSourceRuntimeHostView {
     }
     return okStatus();
   }
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // Modal message box API
+  // ─────────────────────────────────────────────────────────────────────────────
+
+  /**
+   * Display a modal message box and wait for user response.
+   * @param type    Dialog type (determines icon).
+   * @param title   Window title.
+   * @param message Message text (may contain newlines).
+   * @param buttons Bitmask of MessageBoxButton values.
+   * @return The button clicked, or MessageBoxButton::kOk if host doesn't support dialogs.
+   */
+  [[nodiscard]] MessageBoxButton showMessageBox(
+      MessageBoxType type, std::string_view title, std::string_view message, int buttons = 0) const {
+    if (!valid() || host_.vtable->show_message_box == nullptr) {
+      // Host doesn't support message boxes — return positive default
+      if (buttons & static_cast<int>(MessageBoxButton::kContinue)) return MessageBoxButton::kContinue;
+      if (buttons & static_cast<int>(MessageBoxButton::kYes)) return MessageBoxButton::kYes;
+      return MessageBoxButton::kOk;
+    }
+    int result = host_.vtable->show_message_box(
+        host_.ctx, static_cast<PJ_message_box_type_t>(type), sdk::toAbiString(title), sdk::toAbiString(message),
+        buttons == 0 ? PJ_MSG_BTN_OK : buttons);
+    return static_cast<MessageBoxButton>(result);
+  }
+
+  /// Show an information message box with OK button.
+  void showInfo(std::string_view title, std::string_view message) const {
+    (void)showMessageBox(MessageBoxType::kInfo, title, message, static_cast<int>(MessageBoxButton::kOk));
+  }
+
+  /// Show a warning message box with OK button.
+  void showWarning(std::string_view title, std::string_view message) const {
+    (void)showMessageBox(MessageBoxType::kWarning, title, message, static_cast<int>(MessageBoxButton::kOk));
+  }
+
+  /// Show an error message box with OK button.
+  void showError(std::string_view title, std::string_view message) const {
+    (void)showMessageBox(MessageBoxType::kError, title, message, static_cast<int>(MessageBoxButton::kOk));
+  }
+
+  /// Show a question dialog with Continue/Abort buttons. Returns true if user chose Continue.
+  [[nodiscard]] bool askContinue(std::string_view title, std::string_view message) const {
+    auto result =
+        showMessageBox(MessageBoxType::kQuestion, title, message, MessageBoxButton::kContinue | MessageBoxButton::kAbort);
+    return result == MessageBoxButton::kContinue;
+  }
+
+  /// Show a question dialog with Yes/No buttons. Returns true if user chose Yes.
+  [[nodiscard]] bool askYesNo(std::string_view title, std::string_view message) const {
+    auto result =
+        showMessageBox(MessageBoxType::kQuestion, title, message, MessageBoxButton::kYes | MessageBoxButton::kNo);
+    return result == MessageBoxButton::kYes;
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // Dynamic parser discovery API
+  // ─────────────────────────────────────────────────────────────────────────────
+
+  /**
+   * List all available parser encodings as a JSON string.
+   *
+   * Returns a JSON array string of encoding names, e.g. ["json","cbor","protobuf"].
+   * Prefer using listAvailableEncodings() which returns a parsed vector.
+   *
+   * @return JSON array string, or empty string if host doesn't support this or no parsers loaded.
+   * @note Check that the host vtable has this method (newer hosts only).
+   */
+  [[nodiscard]] std::string_view listAvailableEncodingsJson() const {
+    if (!valid()) {
+      return {};
+    }
+    // Check struct_size to see if this field exists (forward compatibility)
+    constexpr size_t field_offset =
+        offsetof(PJ_data_source_runtime_host_vtable_t, list_available_encodings);
+    if (host_.vtable->struct_size < field_offset + sizeof(void*)) {
+      return {};  // Older host without this method
+    }
+    if (host_.vtable->list_available_encodings == nullptr) {
+      return {};
+    }
+    const char* result = host_.vtable->list_available_encodings(host_.ctx);
+    return result == nullptr ? std::string_view{} : std::string_view(result);
+  }
+
+  /**
+   * List all available parser encodings.
+   *
+   * Returns a vector of encoding names, e.g. {"json", "cbor", "protobuf"}.
+   * Plugins can use this to dynamically populate encoding selection UI instead
+   * of hardcoding a static list.
+   *
+   * @return Vector of encoding names, or empty vector if host doesn't support this.
+   */
+  [[nodiscard]] std::vector<std::string> listAvailableEncodings() const {
+    auto json = listAvailableEncodingsJson();
+    return parseJsonStringArray(json);
+  }
+
+ private:
+  /// Parse a simple JSON array of strings: ["a","b","c"] -> {"a","b","c"}
+  /// Handles escaped quotes within strings. Returns empty vector on malformed input.
+  static std::vector<std::string> parseJsonStringArray(std::string_view json) {
+    std::vector<std::string> result;
+    if (json.empty()) return result;
+
+    size_t i = 0;
+    // Skip whitespace and find opening bracket
+    while (i < json.size() && (json[i] == ' ' || json[i] == '\t' || json[i] == '\n')) ++i;
+    if (i >= json.size() || json[i] != '[') return result;
+    ++i;
+
+    while (i < json.size()) {
+      // Skip whitespace
+      while (i < json.size() && (json[i] == ' ' || json[i] == '\t' || json[i] == '\n' || json[i] == ',')) ++i;
+      if (i >= json.size() || json[i] == ']') break;
+
+      // Expect opening quote
+      if (json[i] != '"') return {};  // Malformed
+      ++i;
+
+      // Parse string content (handle escaped quotes)
+      std::string str;
+      while (i < json.size() && json[i] != '"') {
+        if (json[i] == '\\' && i + 1 < json.size()) {
+          ++i;  // Skip backslash
+          if (json[i] == '"' || json[i] == '\\') {
+            str += json[i];
+          } else {
+            str += '\\';
+            str += json[i];
+          }
+        } else {
+          str += json[i];
+        }
+        ++i;
+      }
+      if (i >= json.size()) return {};  // Unclosed string
+      ++i;  // Skip closing quote
+
+      result.push_back(std::move(str));
+    }
+
+    return result;
+  }
+
+ public:
 
   /// Access the underlying C ABI struct.
   [[nodiscard]] const PJ_data_source_runtime_host_t& raw() const {
