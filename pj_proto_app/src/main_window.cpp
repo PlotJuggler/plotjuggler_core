@@ -374,10 +374,9 @@ void MainWindow::onStartStream() {
   // Bind runtime host early so the dialog can call listAvailableEncodings()
   session->bindRuntimeHostForDialog();
 
-  // Restore saved config so the dialog remembers previous choices
-  if (!saved_config.empty()) {
-    (void)session->handle().loadConfig(saved_config);
-  }
+  // Always call loadConfig() so the plugin can initialize (e.g., populate encodings list)
+  // even if there's no saved config yet
+  (void)session->handle().loadConfig(saved_config);
 
   // Dialog flow — use the session's own handle, not a temp handle
   std::string config = saved_config;
