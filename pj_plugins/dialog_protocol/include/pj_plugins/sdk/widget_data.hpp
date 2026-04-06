@@ -90,6 +90,11 @@ class WidgetData {
     return *this;
   }
 
+  WidgetData& setDisabledRows(std::string_view name, const std::vector<int>& rows) {
+    entry(name)["disabled_rows"] = rows;
+    return *this;
+  }
+
   // --- QPlainTextEdit ---
   WidgetData& setPlainText(std::string_view name, std::string_view text) {
     entry(name)["plain_text"] = text;
