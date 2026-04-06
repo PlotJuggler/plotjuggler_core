@@ -161,6 +161,25 @@ static void apply_to_widget(QWidget* w, std::string_view name, const PJ::WidgetD
         }
       }
     }
+    if (auto v = view.disabledRows(name)) {
+      std::set<int> disabled(v->begin(), v->end());
+      for (int r = 0; r < tw->rowCount(); ++r) {
+        bool is_disabled = disabled.count(r) > 0;
+        for (int c = 0; c < tw->columnCount(); ++c) {
+          if (auto* item = tw->item(r, c)) {
+            auto flags = item->flags();
+            if (is_disabled) {
+              flags &= ~Qt::ItemIsEnabled;
+              flags &= ~Qt::ItemIsSelectable;
+            } else {
+              flags |= Qt::ItemIsEnabled;
+              flags |= Qt::ItemIsSelectable;
+            }
+            item->setFlags(flags);
+          }
+        }
+      }
+    }
     if (auto v = view.selectedRows(name)) {
       tw->clearSelection();
       for (int r : *v) {

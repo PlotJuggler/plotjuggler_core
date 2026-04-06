@@ -119,6 +119,25 @@ class WidgetDataView {
     return result;
   }
 
+  [[nodiscard]] std::optional<std::vector<int>> disabledRows(std::string_view name) const {
+    const nlohmann::json* w = widget(name);
+    if (!w) {
+      return std::nullopt;
+    }
+    auto it = w->find("disabled_rows");
+    if (it == w->end() || !it->is_array()) {
+      return std::nullopt;
+    }
+    std::vector<int> result;
+    result.reserve(it->size());
+    for (const auto& item : *it) {
+      if (item.is_number_integer()) {
+        result.push_back(item.get<int>());
+      }
+    }
+    return result;
+  }
+
   // --- QPlainTextEdit ---
   [[nodiscard]] std::optional<std::string> plainText(std::string_view name) const {
     return getString(name, "plain_text");
