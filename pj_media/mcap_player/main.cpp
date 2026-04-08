@@ -15,18 +15,22 @@
 #include <unordered_map>
 #include <vector>
 
+#include "video_widget.hpp"
+
 #define MCAP_IMPLEMENTATION
 #include <mcap/reader.hpp>
 #include <nanocdr/nanocdr.hpp>
 
 // ---------------------------------------------------------------------------
-// LRU Cache
+// Proximity cache — fixed capacity, evicts the entry furthest from current key
 // ---------------------------------------------------------------------------
 
 template <typename Key, typename Value>
-class LruCache {
+class ProximityCache {
  public:
-  explicit LruCache(size_t capacity) : capacity_(capacity) {}
+  explicit ProximityCache(size_t capacity) : capacity_(capacity) {
+    entries_.resize(capacity);
+  }
 
   const Value* get(const Key& key) {
     auto it = map_.find(key);
@@ -35,23 +39,36 @@ class LruCache {
       return nullptr;
     }
     ++hits_;
-    order_.splice(order_.begin(), order_, it->second);
-    return &it->second->second;
+    return &entries_[it->second].value;
   }
 
-  void put(const Key& key, Value value) {
+  const Value* put(const Key& key, Value value) {
     auto it = map_.find(key);
     if (it != map_.end()) {
-      it->second->second = std::move(value);
-      order_.splice(order_.begin(), order_, it->second);
-      return;
+      entries_[it->second].value = std::move(value);
+      return &entries_[it->second].value;
     }
-    if (map_.size() >= capacity_) {
-      map_.erase(order_.back().first);
-      order_.pop_back();
+
+    size_t slot;
+    if (count_ < capacity_) {
+      slot = count_++;
+    } else {
+      // Evict the entry furthest from the key being inserted
+      slot = findFurthest(key);
+      map_.erase(entries_[slot].key);
     }
-    order_.emplace_front(key, std::move(value));
-    map_[key] = order_.begin();
+
+    entries_[slot].key = key;
+    entries_[slot].value = std::move(value);
+    map_[key] = slot;
+    return &entries_[slot].value;
+  }
+
+  template <typename Fn>
+  void forEach(Fn&& fn) const {
+    for (size_t i = 0; i < count_; ++i) {
+      fn(entries_[i].value);
+    }
   }
 
   size_t hits() const {
@@ -61,15 +78,38 @@ class LruCache {
     return misses_;
   }
   size_t size() const {
-    return map_.size();
+    return count_;
   }
 
  private:
+  size_t findFurthest(const Key& key) const {
+    size_t worst = 0;
+    auto worst_dist = distance(key, entries_[0].key);
+    for (size_t i = 1; i < count_; ++i) {
+      auto d = distance(key, entries_[i].key);
+      if (d > worst_dist) {
+        worst_dist = d;
+        worst = i;
+      }
+    }
+    return worst;
+  }
+
+  static auto distance(const Key& a, const Key& b) {
+    return a > b ? a - b : b - a;
+  }
+
+  struct Entry {
+    Key key{};
+    Value value{};
+  };
+
   size_t capacity_;
+  size_t count_ = 0;
   size_t hits_ = 0;
   size_t misses_ = 0;
-  std::list<std::pair<Key, Value>> order_;
-  std::unordered_map<Key, typename std::list<std::pair<Key, Value>>::iterator> map_;
+  std::vector<Entry> entries_;
+  std::unordered_map<Key, size_t> map_;
 };
 
 // ---------------------------------------------------------------------------
@@ -128,7 +168,7 @@ class McapFrameStore {
 
   void close() {
     timestamps_.clear();
-    cache_ = LruCache<int64_t, QImage>(kCacheCapacity);
+    cache_ = ProximityCache<int64_t, QImage>(kCacheCapacity);
     channel_id_ = 0;
     reader_.close();
   }
@@ -160,27 +200,16 @@ class McapFrameStore {
 
       QImage img = decodeJpegFromCdr(reinterpret_cast<const uint8_t*>(msg.data), msg.dataSize);
       if (!img.isNull()) {
-        cache_.put(ts, std::move(img));
-        return *cache_.get(ts);
+        cache_.put(ts, img);
       }
       return img;
     }
     return {};
   }
 
-  size_t cacheHits() const {
-    return cache_.hits();
-  }
-  size_t cacheMisses() const {
-    return cache_.misses();
-  }
-  size_t cacheSize() const {
-    return cache_.size();
-  }
-
  private:
   static constexpr const char* kTargetTopic = "/camera/color/image_raw/compressed";
-  static constexpr size_t kCacheCapacity = 30;
+  static constexpr size_t kCacheCapacity = 10;
 
   static std::function<bool(std::string_view)> topicFilter() {
     return [](std::string_view topic) { return topic == kTargetTopic; };
@@ -215,7 +244,6 @@ class McapFrameStore {
       return {};
     }
 
-    // turbojpeg takes non-const pointers (legacy C API)
     auto* jpeg_ptr = const_cast<uint8_t*>(buf.data());
 
     int width = 0, height = 0, subsamp = 0;
@@ -236,7 +264,7 @@ class McapFrameStore {
   mcap::McapReader reader_;
   uint16_t channel_id_ = 0;
   std::vector<int64_t> timestamps_;
-  LruCache<int64_t, QImage> cache_{kCacheCapacity};
+  ProximityCache<int64_t, QImage> cache_{kCacheCapacity};
 };
 
 // ---------------------------------------------------------------------------
@@ -258,12 +286,10 @@ class McapPlayerWindow : public QMainWindow {
     load_button_ = new QPushButton("Load MCAP", this);
     layout->addWidget(load_button_);
 
-    image_label_ = new QLabel(this);
-    image_label_->setAlignment(Qt::AlignCenter);
-    image_label_->setMinimumSize(320, 240);
-    image_label_->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
-    image_label_->setStyleSheet("background-color: black;");
-    layout->addWidget(image_label_, 1);
+    video_widget_ = new VideoWidget(this);
+    video_widget_->setMinimumSize(320, 240);
+    video_widget_->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
+    layout->addWidget(video_widget_, 1);
 
     auto* controls = new QHBoxLayout();
     play_button_ = new QPushButton("\u25B6", this);
@@ -276,7 +302,7 @@ class McapPlayerWindow : public QMainWindow {
     controls->addWidget(slider_);
 
     time_label_ = new QLabel("0 / 0", this);
-    time_label_->setFixedWidth(300);
+    time_label_->setFixedWidth(120);
     controls->addWidget(time_label_);
 
     layout->addLayout(controls);
@@ -302,7 +328,6 @@ class McapPlayerWindow : public QMainWindow {
     setCursor(Qt::ArrowCursor);
 
     if (!ok) {
-      image_label_->setText("Failed to open MCAP or no matching channel found");
       return;
     }
 
@@ -340,24 +365,10 @@ class McapPlayerWindow : public QMainWindow {
     showFrame(next);
   }
 
- protected:
-  void resizeEvent(QResizeEvent* event) override {
-    QMainWindow::resizeEvent(event);
-    updatePixmap();
-  }
-
  private:
   void stopPlayback() {
     play_timer_->stop();
     play_button_->setText("\u25B6");
-  }
-
-  void updatePixmap() {
-    if (current_image_.isNull()) {
-      return;
-    }
-    image_label_->setPixmap(
-        QPixmap::fromImage(current_image_).scaled(image_label_->size(), Qt::KeepAspectRatio, Qt::FastTransformation));
   }
 
   void showFrame(size_t index) {
@@ -365,20 +376,16 @@ class McapPlayerWindow : public QMainWindow {
       return;
     }
 
-    current_image_ = store_.resolve(index);
-    updatePixmap();
+    QImage img = store_.resolve(index);
+    if (!img.isNull()) {
+      video_widget_->setFrame(img);
+    }
 
-    time_label_->setText(QString("%1/%2  H:%3 M:%4 (%5)")
-                             .arg(index + 1)
-                             .arg(store_.frameCount())
-                             .arg(store_.cacheHits())
-                             .arg(store_.cacheMisses())
-                             .arg(store_.cacheSize()));
+    time_label_->setText(QString("%1 / %2").arg(index + 1).arg(store_.frameCount()));
   }
 
   McapFrameStore store_;
-  QImage current_image_;
-  QLabel* image_label_ = nullptr;
+  VideoWidget* video_widget_ = nullptr;
   QSlider* slider_ = nullptr;
   QPushButton* load_button_ = nullptr;
   QPushButton* play_button_ = nullptr;

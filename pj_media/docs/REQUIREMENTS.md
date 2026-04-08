@@ -121,13 +121,8 @@ A single interface used by viewers to obtain decoded frames:
 - The backend behind the interface is either a ring buffer (streaming) or a
   file-backed lazy reader (dataset import). The viewer does not distinguish
   between them.
-- A small LRU cache keyed by (channel, timestamp) avoids re-decoding when the
-  user scrubs back to a recently viewed frame. The cache is capped by memory.
-  The cache stores full-resolution decoded frames — display scaling is a
-  viewer concern and is cheap; re-decoding is expensive. Window resize must
-  not invalidate the cache.
 - For per-frame codecs (JPEG, PNG), decode cost dominates over I/O. The lazy
-  model saves memory; the LRU cache saves decode cost.
+  model saves memory by not decoding until the frame is actually needed.
 - The viewer must support zoom (mouse wheel) and pan (mouse drag) on the
   rendered frame. With GPU rendering this is essentially free via a view
   transform matrix in the vertex shader.
