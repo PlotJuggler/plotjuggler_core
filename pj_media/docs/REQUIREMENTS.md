@@ -14,14 +14,19 @@ requests a specific frame at a specific time.
 
 - Lazy storage: store lightweight handles at ingest, decode on demand — never
   load multi-GB media into memory
+
 - Unified query interface: viewer asks "give me the frame at time T for
   channel C" regardless of whether the backend is a file, a buffer, or a
   live stream
+
 - Time synchronization: media channels share the same nanosecond timeline as
   pj_datastore time-series
+
 - Multi-camera: multiple named channels per data source, each independently
   queryable
+
 - GPU-accelerated decode: hardware video decoding with software fallback
+
 - Streaming with buffered replay: live mode shows the latest frame; when
   paused, the buffer becomes seekable
 
@@ -43,8 +48,7 @@ requests a specific frame at a specific time.
 
 - **Multi-camera robotics** — a robotics dataset with multiple RGB cameras,
   depth cameras, and segmentation overlays per camera. Each is a separate
-  named channel. The viewer composites layers per camera using shared
-  frame_id.
+  named channel. The viewer composites layers per camera.
 
 - **Paused stream replay** — during a live session the user pauses. The
   buffer of recent compressed data becomes seekable. The user scrubs through
@@ -60,11 +64,6 @@ All media data types are defined in [datatypes_2D.md](datatypes_2D.md):
 |------|------|
 | Image | Raw, compressed, depth, and segmentation frames (self-contained) |
 | VideoFrame | H.264 / H.265 / AV1 / VP9 encoded frames (GOP-dependent) |
-| CameraCalibration | Intrinsics, distortion, projection matrices |
-| ImageAnnotation | 2D pixel-space overlays (boxes, circles, text) |
-| PointCloud | Packed 3D point data with per-point fields |
-| ScenePrimitive | 3D markers, meshes, text, models (variant payload) |
-| Grid | Occupancy / costmap grids |
 
 This document does not duplicate type definitions. See datatypes_2D.md for
 field-level schemas, encoding rules, and design rationale.
@@ -76,11 +75,17 @@ decoded pixel data:
 
 - A handle stores: timestamp, channel name, and an opaque reference to the
   data's location (file offset, buffer pointer, or callback).
+
 - Metadata (width, height, encoding) is available eagerly when cheap (images
   carry it inline) and lazily when expensive (video requires parsing
   SPS/VPS from the bitstream).
+
 - When a viewer requests a frame, the handle is resolved: the backend seeks
-  to the data, reads compressed bytes, decodes, and returns pixels.
+  to the data, reads compressed bytes, decodes, and writes pixels into a
+  caller-provided buffer. The caller passes a mutable reference to a
+  pre-allocated pixel buffer, allowing memory reuse across frames. The
+  buffer type is Qt-independent.
+
 - Handle implementations vary by backend:
   - MCAP: file handle + message index entry
   - LeRobot MP4: file path + presentation timestamp (PTS)
@@ -94,12 +99,15 @@ cameras.
 
 - **Live mode**: always display the latest decoded frame. No random access
   during live playback.
+
 - **Buffer accumulation**: while live, accumulate compressed bytes alongside
   their timestamps in a bounded buffer.
+
 - **Eviction**: buffer is bounded by a time window (configurable, tens of
   seconds) OR a memory cap, whichever is reached first. For video, eviction
   is GOP-aware — entire GOPs are evicted as a unit; no partial GOP removal
   and no re-encoding.
+
 - **Paused replay**: when the user pauses, the buffer becomes seekable. Frame
   handles pointing into the buffer support the same resolve interface as
   file-backed handles. Resuming returns to live mode.
@@ -115,6 +123,11 @@ A single interface used by viewers to obtain decoded frames:
   between them.
 - A small LRU cache keyed by (channel, timestamp) avoids re-decoding when the
   user scrubs back to a recently viewed frame. The cache is capped by memory.
+  The cache stores full-resolution decoded frames — display scaling is a
+  viewer concern and is cheap; re-decoding is expensive. Window resize must
+  not invalidate the cache.
+- For per-frame codecs (JPEG, PNG), decode cost dominates over I/O. The lazy
+  model saves memory; the LRU cache saves decode cost.
 
 ### 4.5 Time Synchronization
 
