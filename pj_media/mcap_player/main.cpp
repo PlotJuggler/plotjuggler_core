@@ -9,10 +9,11 @@
 #include <QSlider>
 #include <QTimer>
 #include <QVBoxLayout>
+#include <algorithm>
 #include <cstdint>
-#include <list>
+#include <functional>
+#include <memory>
 #include <string>
-#include <unordered_map>
 #include <vector>
 
 #include "video_widget.hpp"
@@ -22,212 +23,79 @@
 #include <nanocdr/nanocdr.hpp>
 
 // ---------------------------------------------------------------------------
-// Proximity cache — fixed capacity, evicts the entry furthest from current key
+// LazyMediaSeries — timestamps + resolve callbacks, no data stored in memory
 // ---------------------------------------------------------------------------
 
-template <typename Key, typename Value>
-class ProximityCache {
+template <typename T>
+class LazyMediaSeries {
  public:
-  explicit ProximityCache(size_t capacity) : capacity_(capacity) {
-    entries_.resize(capacity);
+  struct Entry {
+    int64_t timestamp;
+    std::function<T()> resolve;
+  };
+
+  void addEntry(int64_t timestamp, std::function<T()> resolve_fn) {
+    entries_.push_back({timestamp, std::move(resolve_fn)});
   }
 
-  const Value* get(const Key& key) {
-    auto it = map_.find(key);
-    if (it == map_.end()) {
-      ++misses_;
+  /// Find the entry at or before the given timestamp (nearest-before).
+  const Entry* latestAt(int64_t ts) const {
+    if (entries_.empty()) {
       return nullptr;
     }
-    ++hits_;
-    return &entries_[it->second].value;
-  }
-
-  const Value* put(const Key& key, Value value) {
-    auto it = map_.find(key);
-    if (it != map_.end()) {
-      entries_[it->second].value = std::move(value);
-      return &entries_[it->second].value;
+    // entries_ is sorted by timestamp (insertion order from MCAP)
+    auto it = std::upper_bound(
+        entries_.begin(), entries_.end(), ts, [](int64_t t, const Entry& e) { return t < e.timestamp; });
+    if (it == entries_.begin()) {
+      return nullptr;
     }
-
-    size_t slot;
-    if (count_ < capacity_) {
-      slot = count_++;
-    } else {
-      // Evict the entry furthest from the key being inserted
-      slot = findFurthest(key);
-      map_.erase(entries_[slot].key);
-    }
-
-    entries_[slot].key = key;
-    entries_[slot].value = std::move(value);
-    map_[key] = slot;
-    return &entries_[slot].value;
+    return &*(--it);
   }
 
-  template <typename Fn>
-  void forEach(Fn&& fn) const {
-    for (size_t i = 0; i < count_; ++i) {
-      fn(entries_[i].value);
-    }
+  /// Direct index access (for slider / sequential playback).
+  const Entry* at(size_t index) const {
+    return index < entries_.size() ? &entries_[index] : nullptr;
   }
 
-  size_t hits() const {
-    return hits_;
-  }
-  size_t misses() const {
-    return misses_;
-  }
   size_t size() const {
-    return count_;
+    return entries_.size();
+  }
+  bool empty() const {
+    return entries_.empty();
+  }
+
+  int64_t minTimestamp() const {
+    return entries_.empty() ? 0 : entries_.front().timestamp;
+  }
+  int64_t maxTimestamp() const {
+    return entries_.empty() ? 0 : entries_.back().timestamp;
+  }
+
+  void clear() {
+    entries_.clear();
   }
 
  private:
-  size_t findFurthest(const Key& key) const {
-    size_t worst = 0;
-    auto worst_dist = distance(key, entries_[0].key);
-    for (size_t i = 1; i < count_; ++i) {
-      auto d = distance(key, entries_[i].key);
-      if (d > worst_dist) {
-        worst_dist = d;
-        worst = i;
-      }
-    }
-    return worst;
-  }
-
-  static auto distance(const Key& a, const Key& b) {
-    return a > b ? a - b : b - a;
-  }
-
-  struct Entry {
-    Key key{};
-    Value value{};
-  };
-
-  size_t capacity_;
-  size_t count_ = 0;
-  size_t hits_ = 0;
-  size_t misses_ = 0;
   std::vector<Entry> entries_;
-  std::unordered_map<Key, size_t> map_;
 };
 
 // ---------------------------------------------------------------------------
-// McapFrameStore — builds timestamp index, resolves frames on demand
+// JPEG decoder — shared across all resolve callbacks
 // ---------------------------------------------------------------------------
 
-class McapFrameStore {
+class JpegDecoder {
  public:
-  McapFrameStore() : tj_(tjInitDecompress()) {}
-  ~McapFrameStore() {
+  JpegDecoder() : tj_(tjInitDecompress()) {}
+  ~JpegDecoder() {
     if (tj_) {
       tjDestroy(tj_);
     }
   }
 
-  McapFrameStore(const McapFrameStore&) = delete;
-  McapFrameStore& operator=(const McapFrameStore&) = delete;
+  JpegDecoder(const JpegDecoder&) = delete;
+  JpegDecoder& operator=(const JpegDecoder&) = delete;
 
-  bool open(const std::string& path) {
-    close();
-
-    auto status = reader_.open(path);
-    if (!status.ok()) {
-      return false;
-    }
-
-    status = reader_.readSummary(mcap::ReadSummaryMethod::AllowFallbackScan);
-    if (!status.ok()) {
-      reader_.close();
-      return false;
-    }
-
-    const auto& channels = reader_.channels();
-    for (auto& [chan_id, chan_ptr] : channels) {
-      if (!chan_ptr) {
-        continue;
-      }
-      if (chan_ptr->topic == kTargetTopic) {
-        channel_id_ = chan_id;
-        break;
-      }
-    }
-    if (channel_id_ == 0) {
-      reader_.close();
-      return false;
-    }
-
-    // Record timestamps only — image data is resolved lazily on demand
-    auto view = reader_.readMessages([](const mcap::Status&) {}, topicOpts());
-    for (auto it = view.begin(); it != view.end(); ++it) {
-      timestamps_.push_back(static_cast<int64_t>(it->message.logTime));
-    }
-
-    return !timestamps_.empty();
-  }
-
-  void close() {
-    timestamps_.clear();
-    cache_ = ProximityCache<int64_t, QImage>(kCacheCapacity);
-    channel_id_ = 0;
-    reader_.close();
-  }
-
-  size_t frameCount() const {
-    return timestamps_.size();
-  }
-  int64_t timestamp(size_t index) const {
-    return timestamps_[index];
-  }
-
-  QImage resolve(size_t index) {
-    int64_t ts = timestamps_[index];
-    if (auto* cached = cache_.get(ts)) {
-      return *cached;
-    }
-
-    mcap::ReadMessageOptions opts;
-    opts.startTime = static_cast<mcap::Timestamp>(ts);
-    opts.endTime = opts.startTime + 1;
-    opts.topicFilter = topicFilter();
-
-    auto view = reader_.readMessages([](const mcap::Status&) {}, opts);
-    for (auto it = view.begin(); it != view.end(); ++it) {
-      auto& msg = it->message;
-      if (msg.channelId != channel_id_) {
-        continue;
-      }
-
-      QImage img = decodeJpegFromCdr(reinterpret_cast<const uint8_t*>(msg.data), msg.dataSize);
-      if (!img.isNull()) {
-        cache_.put(ts, img);
-      }
-      return img;
-    }
-    return {};
-  }
-
- private:
-  static constexpr const char* kTargetTopic = "/camera/color/image_raw/compressed";
-  static constexpr size_t kCacheCapacity = 10;
-
-  static std::function<bool(std::string_view)> topicFilter() {
-    return [](std::string_view topic) { return topic == kTargetTopic; };
-  }
-
-  mcap::ReadMessageOptions topicOpts() {
-    mcap::ReadMessageOptions opts;
-    opts.topicFilter = topicFilter();
-    return opts;
-  }
-
-  static void skipCdrString(nanocdr::Decoder& dec) {
-    uint32_t len;
-    dec.decode(len);
-    dec.jump(len);
-  }
-
-  QImage decodeJpegFromCdr(const uint8_t* raw, size_t size) {
+  QImage decodeFromCdr(const uint8_t* raw, size_t size) const {
     if (size < 16 || !tj_) {
       return {};
     }
@@ -260,12 +128,98 @@ class McapFrameStore {
     return img;
   }
 
+ private:
+  static void skipCdrString(nanocdr::Decoder& dec) {
+    uint32_t len;
+    dec.decode(len);
+    dec.jump(len);
+  }
+
   tjhandle tj_ = nullptr;
-  mcap::McapReader reader_;
-  uint16_t channel_id_ = 0;
-  std::vector<int64_t> timestamps_;
-  ProximityCache<int64_t, QImage> cache_{kCacheCapacity};
 };
+
+// ---------------------------------------------------------------------------
+// buildImageSeries — opens an MCAP file and builds a LazyMediaSeries<QImage>
+//
+// This is what a DataSource + MessageParser would produce together:
+//   DataSource: opens file, iterates messages, provides re-read capability
+//   MessageParser: knows how to decode CompressedImage from CDR + JPEG
+//
+// The returned series holds only timestamps + closures. No image data in memory.
+// Each closure captures shared_ptr<McapReader> and shared_ptr<JpegDecoder>.
+// ---------------------------------------------------------------------------
+
+struct McapImageSource {
+  LazyMediaSeries<QImage> series;
+  std::shared_ptr<mcap::McapReader> reader;
+  std::shared_ptr<JpegDecoder> decoder;
+};
+
+McapImageSource buildImageSeries(const std::string& path) {
+  static constexpr const char* kTargetTopic = "/camera/color/image_raw/compressed";
+
+  auto reader = std::make_shared<mcap::McapReader>();
+  auto status = reader->open(path);
+  if (!status.ok()) {
+    return {};
+  }
+
+  status = reader->readSummary(mcap::ReadSummaryMethod::AllowFallbackScan);
+  if (!status.ok()) {
+    reader->close();
+    return {};
+  }
+
+  // Find the target channel
+  uint16_t channel_id = 0;
+  for (auto& [chan_id, chan_ptr] : reader->channels()) {
+    if (chan_ptr && chan_ptr->topic == kTargetTopic) {
+      channel_id = chan_id;
+      break;
+    }
+  }
+  if (channel_id == 0) {
+    reader->close();
+    return {};
+  }
+
+  auto decoder = std::make_shared<JpegDecoder>();
+
+  // Build the lazy series: walk all messages, record timestamp + resolve callback
+  McapImageSource source;
+  source.reader = reader;
+  source.decoder = decoder;
+
+  auto topic_filter = [](std::string_view topic) { return topic == kTargetTopic; };
+  mcap::ReadMessageOptions opts;
+  opts.topicFilter = topic_filter;
+
+  auto view = reader->readMessages([](const mcap::Status&) {}, opts);
+  for (auto it = view.begin(); it != view.end(); ++it) {
+    int64_t ts = static_cast<int64_t>(it->message.logTime);
+
+    // Each callback captures only lightweight shared_ptrs + scalars.
+    // No image data copied. The callback re-reads from the MCAP file on demand.
+    source.series.addEntry(ts, [reader, decoder, ts, channel_id]() -> QImage {
+      mcap::ReadMessageOptions seek_opts;
+      seek_opts.startTime = static_cast<mcap::Timestamp>(ts);
+      seek_opts.endTime = seek_opts.startTime + 1;
+      seek_opts.topicFilter = [](std::string_view topic) { return topic == kTargetTopic; };
+
+      auto seek_view = reader->readMessages([](const mcap::Status&) {}, seek_opts);
+      for (auto seek_it = seek_view.begin(); seek_it != seek_view.end(); ++seek_it) {
+        if (seek_it->message.channelId != channel_id) {
+          continue;
+        }
+        return decoder->decodeFromCdr(
+            reinterpret_cast<const uint8_t*>(seek_it->message.data), seek_it->message.dataSize);
+      }
+      return {};
+    });
+  }
+
+  return source;
+}
 
 // ---------------------------------------------------------------------------
 // McapPlayerWindow
@@ -324,14 +278,14 @@ class McapPlayerWindow : public QMainWindow {
     }
 
     setCursor(Qt::WaitCursor);
-    bool ok = store_.open(path.toStdString());
+    source_ = buildImageSeries(path.toStdString());
     setCursor(Qt::ArrowCursor);
 
-    if (!ok) {
+    if (source_.series.empty()) {
       return;
     }
 
-    slider_->setRange(0, static_cast<int>(store_.frameCount() - 1));
+    slider_->setRange(0, static_cast<int>(source_.series.size() - 1));
     slider_->setValue(0);
     slider_->setEnabled(true);
     play_button_->setEnabled(true);
@@ -355,7 +309,7 @@ class McapPlayerWindow : public QMainWindow {
 
   void onTimerTick() {
     size_t next = static_cast<size_t>(slider_->value()) + 1;
-    if (next >= store_.frameCount()) {
+    if (next >= source_.series.size()) {
       stopPlayback();
       return;
     }
@@ -372,19 +326,20 @@ class McapPlayerWindow : public QMainWindow {
   }
 
   void showFrame(size_t index) {
-    if (index >= store_.frameCount()) {
+    auto* entry = source_.series.at(index);
+    if (!entry) {
       return;
     }
 
-    QImage img = store_.resolve(index);
+    QImage img = entry->resolve();
     if (!img.isNull()) {
       video_widget_->setFrame(img);
     }
 
-    time_label_->setText(QString("%1 / %2").arg(index + 1).arg(store_.frameCount()));
+    time_label_->setText(QString("%1 / %2").arg(index + 1).arg(source_.series.size()));
   }
 
-  McapFrameStore store_;
+  McapImageSource source_;
   VideoWidget* video_widget_ = nullptr;
   QSlider* slider_ = nullptr;
   QPushButton* load_button_ = nullptr;

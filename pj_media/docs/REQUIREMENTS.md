@@ -112,17 +112,25 @@ cameras.
   handles pointing into the buffer support the same resolve interface as
   file-backed handles. Resuming returns to live mode.
 
-### 4.4 Frame Store Interface
+### 4.4 Lazy Media Series
 
-A single interface used by viewers to obtain decoded frames:
+The core data structure for media is `LazyMediaSeries<T>` — a sorted vector
+of `{timestamp, resolve_callback}` pairs. No decoded data and no raw blobs
+are stored in memory; each callback captures the minimal state needed to
+seek back to the source and decode on demand (e.g., a shared_ptr to a file
+reader + a message offset).
 
-- `resolve(channel, timestamp)` returns decoded pixels for the frame at or
-  nearest-before the requested timestamp.
-- The backend behind the interface is either a ring buffer (streaming) or a
-  file-backed lazy reader (dataset import). The viewer does not distinguish
-  between them.
+- `resolve_callback()` returns decoded data (pixels, points, etc.) when
+  invoked. The callback is created at ingest time by composing the
+  DataSource's re-read capability with the MessageParser's decode logic.
+- `latestAt(timestamp)` finds the entry at or nearest-before the requested
+  timestamp (binary search on sorted entries).
+- The backend behind the callback is either a file-backed lazy reader
+  (dataset import) or a ring buffer reference (streaming). The viewer does
+  not distinguish between them.
 - For per-frame codecs (JPEG, PNG), decode cost dominates over I/O. The lazy
   model saves memory by not decoding until the frame is actually needed.
+  Frame caching has limited value for sequential playback patterns.
 - The viewer must support zoom (mouse wheel) and pan (mouse drag) on the
   rendered frame. With GPU rendering this is essentially free via a view
   transform matrix in the vertex shader.
@@ -144,21 +152,31 @@ Media channels share the global timeline with pj_datastore:
 ### 4.6 DataSource and Parser Integration
 
 A single DataSource plugin can produce both time-series data (written to
-pj_datastore) and media data (written to the frame store):
+pj_datastore) and media data (written to a LazyMediaSeries):
 
 - The DataSource/MessageParser decoupling from pj_plugins applies to media:
   the DataSource handles transport (open file, connect to stream); the parser
   handles format-specific decoding.
-- For media, the parser produces lazy handles rather than eagerly decoded
-  pixel data. This differs from the time-series path where parsers write
-  scalar values directly.
+- For media topics, the parser does NOT eagerly decode data. Instead, the host
+  stores `{timestamp, resolve_callback}` in a LazyMediaSeries. The callback
+  is created by composing the DataSource's re-read capability (shared_ptr to
+  the file reader) with the parser's decode logic.
+- The parser protocol needs two new optional vtable entries (guarded by
+  struct_size for backward compatibility):
+  - `index_media(ts, payload)` → fast metadata extraction at ingest time
+  - `decode_media(ts, payload)` → full decode, called on demand by the viewer
+- Media parsers declare themselves via `"media_class": "image"` (or
+  `"pointcloud"`, etc.) in their manifest JSON. The host routes media-class
+  parsers through the lazy path instead of the scalar path.
+- Media data is stored outside pj_datastore's columnar engine. No new
+  primitive types or blob columns are needed.
 - Open design question: video decoding is inherently stateful (decoder state
   spans frames within a GOP). The current MessageParser contract is stateless
   across messages. Whether to extend MessageParser with stateful capabilities
   or introduce a new mechanism is deferred to architecture design.
 - A single parse invocation may produce both scalar fields (written to
-  pj_datastore) and media handles (written to frame store) from the same
-  message. The parse contract must support mixed output.
+  pj_datastore) and media handles (written to a LazyMediaSeries) from the
+  same message. The parse contract must support mixed output.
 
 ## 5. Non-Functional Requirements
 
@@ -176,14 +194,15 @@ pj_datastore) and media data (written to the frame store):
 
 ## 6. Module Contract
 
-- Viewers interact through the frame store interface — they never touch
+- Viewers call `entry->resolve()` to obtain decoded data — they never touch
   backend internals (file readers, buffer pointers, codec state).
-- DataSource plugins write media handles through a media write host, parallel
-  to the existing pj_datastore write host for time-series.
+- DataSource plugins produce LazyMediaSeries entries via the host. The host
+  composes the DataSource's re-read callback with the parser's decode logic
+  to create the resolve closure.
 - Channel identifiers are strings (topic names), consistent with pj_datastore
   topic naming.
-- The frame store does not own or manage the global timeline. It reads the
-  current time from the same source as pj_datastore consumers.
+- The LazyMediaSeries does not own or manage the global timeline. It reads
+  the current time from the same source as pj_datastore consumers.
 
 ## 7. Deferred / Out of Scope
 
