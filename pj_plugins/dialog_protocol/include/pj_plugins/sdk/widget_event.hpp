@@ -94,6 +94,27 @@ class WidgetEvent {
     return getInt("item_double_clicked_index");
   }
 
+  /// Code editor: code changed
+  std::optional<std::string> codeChanged() const {
+    return getString("code_changed");
+  }
+
+  /// Drag-and-drop: field curves dropped on a widget
+  std::optional<std::vector<std::string>> curvesDropped() const {
+    auto it = data_.find("curves_dropped");
+    if (it == data_.end() || !it->is_array()) {
+      return std::nullopt;
+    }
+    std::vector<std::string> result;
+    result.reserve(it->size());
+    for (const auto& item : *it) {
+      if (item.is_string()) {
+        result.push_back(item.get<std::string>());
+      }
+    }
+    return result;
+  }
+
   /// Check if a key exists in the event data
   bool has(std::string_view key) const {
     return data_.contains(std::string(key));

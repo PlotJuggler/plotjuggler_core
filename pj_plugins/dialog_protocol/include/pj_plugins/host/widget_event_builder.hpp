@@ -94,6 +94,20 @@ struct WidgetEventBuilder {
     j["item_double_clicked_index"] = index;
     return j.dump();
   }
+
+  /// Code editor: code changed
+  [[nodiscard]] static std::string codeChanged(std::string_view code) {
+    nlohmann::json j;
+    j["code_changed"] = code;
+    return j.dump();
+  }
+
+  /// Drag-and-drop: field curves dropped on a widget
+  [[nodiscard]] static std::string curvesDropped(const std::vector<std::string>& labels) {
+    nlohmann::json j;
+    j["curves_dropped"] = labels;
+    return j.dump();
+  }
 };
 
 }  // namespace PJ
