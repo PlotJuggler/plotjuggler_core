@@ -38,12 +38,10 @@ class LazyMediaSeries {
     entries_.push_back({timestamp, std::move(resolve_fn)});
   }
 
-  /// Find the entry at or before the given timestamp (nearest-before).
   const Entry* latestAt(int64_t ts) const {
     if (entries_.empty()) {
       return nullptr;
     }
-    // entries_ is sorted by timestamp (insertion order from MCAP)
     auto it = std::upper_bound(
         entries_.begin(), entries_.end(), ts, [](int64_t t, const Entry& e) { return t < e.timestamp; });
     if (it == entries_.begin()) {
@@ -52,7 +50,6 @@ class LazyMediaSeries {
     return &*(--it);
   }
 
-  /// Direct index access (for slider / sequential playback).
   const Entry* at(size_t index) const {
     return index < entries_.size() ? &entries_[index] : nullptr;
   }
@@ -79,23 +76,178 @@ class LazyMediaSeries {
   std::vector<Entry> entries_;
 };
 
-// ---------------------------------------------------------------------------
-// JPEG decoder — shared across all resolve callbacks
-// ---------------------------------------------------------------------------
+// ===========================================================================
+// DataSource: McapDataSource
+//
+// Encapsulates MCAP file access. Mirrors the DataSource plugin role:
+//   - open/close lifecycle
+//   - topic discovery
+//   - message iteration (for indexing)
+//   - re-read a specific message by timestamp (for resolve callbacks)
+// ===========================================================================
 
-class JpegDecoder {
+class McapDataSource {
  public:
-  JpegDecoder() : tj_(tjInitDecompress()) {}
-  ~JpegDecoder() {
+  struct TopicInfo {
+    uint16_t channel_id;
+    std::string topic;
+    std::string encoding;
+    std::string schema_name;
+  };
+
+  struct RawMessage {
+    int64_t timestamp;
+    const uint8_t* data;
+    size_t size;
+  };
+
+  bool open(const std::string& path) {
+    close();
+    reader_ = std::make_shared<mcap::McapReader>();
+
+    auto status = reader_->open(path);
+    if (!status.ok()) {
+      reader_.reset();
+      return false;
+    }
+
+    status = reader_->readSummary(mcap::ReadSummaryMethod::AllowFallbackScan);
+    if (!status.ok()) {
+      reader_->close();
+      reader_.reset();
+      return false;
+    }
+
+    // Discover topics
+    for (auto& [chan_id, chan_ptr] : reader_->channels()) {
+      if (!chan_ptr) {
+        continue;
+      }
+      TopicInfo info;
+      info.channel_id = chan_id;
+      info.topic = chan_ptr->topic;
+      info.encoding = chan_ptr->messageEncoding;
+      // Look up schema name
+      auto schema_it = reader_->schemas().find(chan_ptr->schemaId);
+      if (schema_it != reader_->schemas().end() && schema_it->second) {
+        info.schema_name = schema_it->second->name;
+      }
+      topics_.push_back(std::move(info));
+    }
+
+    return true;
+  }
+
+  void close() {
+    topics_.clear();
+    if (reader_) {
+      reader_->close();
+      reader_.reset();
+    }
+  }
+
+  const std::vector<TopicInfo>& topics() const {
+    return topics_;
+  }
+
+  /// Iterate all messages for a topic, calling visitor(timestamp, raw_data, size) for each.
+  /// Used during indexing — the visitor does NOT decode, just records timestamps.
+  template <typename Visitor>
+  void forEachMessage(uint16_t channel_id, Visitor&& visitor) const {
+    if (!reader_) {
+      return;
+    }
+
+    const auto* topic_info = findTopic(channel_id);
+    if (!topic_info) {
+      return;
+    }
+
+    mcap::ReadMessageOptions opts;
+    opts.topicFilter = [&](std::string_view t) { return t == topic_info->topic; };
+
+    auto view = reader_->readMessages([](const mcap::Status&) {}, opts);
+    for (auto it = view.begin(); it != view.end(); ++it) {
+      if (it->message.channelId == channel_id) {
+        visitor(
+            static_cast<int64_t>(it->message.logTime), reinterpret_cast<const uint8_t*>(it->message.data),
+            it->message.dataSize);
+      }
+    }
+  }
+
+  /// Re-read a single message at the given timestamp for the given channel.
+  /// This is what resolve callbacks use to fetch raw bytes on demand.
+  std::optional<std::vector<uint8_t>> readMessageAt(uint16_t channel_id, int64_t timestamp) const {
+    if (!reader_) {
+      return std::nullopt;
+    }
+
+    const auto* topic_info = findTopic(channel_id);
+    if (!topic_info) {
+      return std::nullopt;
+    }
+
+    mcap::ReadMessageOptions opts;
+    opts.startTime = static_cast<mcap::Timestamp>(timestamp);
+    opts.endTime = opts.startTime + 1;
+    opts.topicFilter = [&](std::string_view t) { return t == topic_info->topic; };
+
+    auto view = reader_->readMessages([](const mcap::Status&) {}, opts);
+    for (auto it = view.begin(); it != view.end(); ++it) {
+      if (it->message.channelId == channel_id) {
+        auto* data = reinterpret_cast<const uint8_t*>(it->message.data);
+        return std::vector<uint8_t>(data, data + it->message.dataSize);
+      }
+    }
+    return std::nullopt;
+  }
+
+  /// Get the shared reader pointer (for capture in callbacks).
+  std::shared_ptr<mcap::McapReader> sharedReader() const {
+    return reader_;
+  }
+
+ private:
+  const TopicInfo* findTopic(uint16_t channel_id) const {
+    for (auto& t : topics_) {
+      if (t.channel_id == channel_id) {
+        return &t;
+      }
+    }
+    return nullptr;
+  }
+
+  std::shared_ptr<mcap::McapReader> reader_;
+  std::vector<TopicInfo> topics_;
+};
+
+// ===========================================================================
+// MessageParser: CompressedImageParser
+//
+// Mirrors the MessageParser plugin role:
+//   - decodeMedia(raw_bytes) → QImage  (the expensive on-demand decode)
+//
+// In the real plugin system this would be a shared library with:
+//   manifest: {"name":"CompressedImage","encoding":"cdr","media_class":"image"}
+//   index_media(): parse CDR header, extract width/height from JPEG header
+//   decode_media(): full CDR parse + turbojpeg decode
+// ===========================================================================
+
+class CompressedImageParser {
+ public:
+  CompressedImageParser() : tj_(tjInitDecompress()) {}
+  ~CompressedImageParser() {
     if (tj_) {
       tjDestroy(tj_);
     }
   }
 
-  JpegDecoder(const JpegDecoder&) = delete;
-  JpegDecoder& operator=(const JpegDecoder&) = delete;
+  CompressedImageParser(const CompressedImageParser&) = delete;
+  CompressedImageParser& operator=(const CompressedImageParser&) = delete;
 
-  QImage decodeFromCdr(const uint8_t* raw, size_t size) const {
+  /// Full decode: CDR envelope → JPEG bytes → RGB pixels.
+  QImage decodeMedia(const uint8_t* raw, size_t size) const {
     if (size < 16 || !tj_) {
       return {};
     }
@@ -138,87 +290,64 @@ class JpegDecoder {
   tjhandle tj_ = nullptr;
 };
 
-// ---------------------------------------------------------------------------
-// buildImageSeries — opens an MCAP file and builds a LazyMediaSeries<QImage>
+// ===========================================================================
+// Host: buildLazyImageSeries
 //
-// This is what a DataSource + MessageParser would produce together:
-//   DataSource: opens file, iterates messages, provides re-read capability
-//   MessageParser: knows how to decode CompressedImage from CDR + JPEG
+// Mirrors what the host does when a DataSource pushes messages through a
+// media-class parser binding:
+//   1. Iterate messages from the DataSource (indexing phase)
+//   2. For each message, create a resolve callback that composes
+//      DataSource::readMessageAt() with Parser::decodeMedia()
+//   3. Store {timestamp, callback} in a LazyMediaSeries
 //
-// The returned series holds only timestamps + closures. No image data in memory.
-// Each closure captures shared_ptr<McapReader> and shared_ptr<JpegDecoder>.
-// ---------------------------------------------------------------------------
+// The result holds only timestamps + lightweight closures. No image data
+// in memory. The DataSource and Parser stay alive via shared_ptr.
+// ===========================================================================
 
-struct McapImageSource {
+struct MediaSource {
   LazyMediaSeries<QImage> series;
-  std::shared_ptr<mcap::McapReader> reader;
-  std::shared_ptr<JpegDecoder> decoder;
+  std::shared_ptr<McapDataSource> data_source;
+  std::shared_ptr<CompressedImageParser> parser;
 };
 
-McapImageSource buildImageSeries(const std::string& path) {
-  static constexpr const char* kTargetTopic = "/camera/color/image_raw/compressed";
-
-  auto reader = std::make_shared<mcap::McapReader>();
-  auto status = reader->open(path);
-  if (!status.ok()) {
-    return {};
-  }
-
-  status = reader->readSummary(mcap::ReadSummaryMethod::AllowFallbackScan);
-  if (!status.ok()) {
-    reader->close();
+MediaSource buildLazyImageSeries(const std::string& path, const std::string& target_topic) {
+  auto source = std::make_shared<McapDataSource>();
+  if (!source->open(path)) {
     return {};
   }
 
   // Find the target channel
   uint16_t channel_id = 0;
-  for (auto& [chan_id, chan_ptr] : reader->channels()) {
-    if (chan_ptr && chan_ptr->topic == kTargetTopic) {
-      channel_id = chan_id;
+  for (auto& topic : source->topics()) {
+    if (topic.topic == target_topic) {
+      channel_id = topic.channel_id;
       break;
     }
   }
   if (channel_id == 0) {
-    reader->close();
     return {};
   }
 
-  auto decoder = std::make_shared<JpegDecoder>();
+  auto parser = std::make_shared<CompressedImageParser>();
 
-  // Build the lazy series: walk all messages, record timestamp + resolve callback
-  McapImageSource source;
-  source.reader = reader;
-  source.decoder = decoder;
+  MediaSource result;
+  result.data_source = source;
+  result.parser = parser;
 
-  auto topic_filter = [](std::string_view topic) { return topic == kTargetTopic; };
-  mcap::ReadMessageOptions opts;
-  opts.topicFilter = topic_filter;
-
-  auto view = reader->readMessages([](const mcap::Status&) {}, opts);
-  for (auto it = view.begin(); it != view.end(); ++it) {
-    int64_t ts = static_cast<int64_t>(it->message.logTime);
-
-    // Each callback captures only lightweight shared_ptrs + scalars.
-    // No image data copied. The callback re-reads from the MCAP file on demand.
-    source.series.addEntry(ts, [reader, decoder, ts, channel_id]() -> QImage {
-      mcap::ReadMessageOptions seek_opts;
-      seek_opts.startTime = static_cast<mcap::Timestamp>(ts);
-      seek_opts.endTime = seek_opts.startTime + 1;
-      seek_opts.topicFilter = [](std::string_view topic) { return topic == kTargetTopic; };
-
-      auto seek_view = reader->readMessages([](const mcap::Status&) {}, seek_opts);
-      for (auto seek_it = seek_view.begin(); seek_it != seek_view.end(); ++seek_it) {
-        if (seek_it->message.channelId != channel_id) {
-          continue;
-        }
-        return decoder->decodeFromCdr(
-            reinterpret_cast<const uint8_t*>(seek_it->message.data), seek_it->message.dataSize);
+  // Index: walk all messages, record timestamp + resolve callback
+  source->forEachMessage(channel_id, [&](int64_t ts, const uint8_t*, size_t) {
+    // Callback captures shared_ptrs (lightweight) + scalars.
+    // On invocation: re-reads raw bytes from MCAP, then decodes.
+    result.series.addEntry(ts, [source, parser, channel_id, ts]() -> QImage {
+      auto raw = source->readMessageAt(channel_id, ts);
+      if (!raw) {
+        return {};
       }
-      return {};
+      return parser->decodeMedia(raw->data(), raw->size());
     });
-  }
+  });
 
-  return source;
+  return result;
 }
 
 // ---------------------------------------------------------------------------
@@ -278,7 +407,7 @@ class McapPlayerWindow : public QMainWindow {
     }
 
     setCursor(Qt::WaitCursor);
-    source_ = buildImageSeries(path.toStdString());
+    source_ = buildLazyImageSeries(path.toStdString(), "/camera/color/image_raw/compressed");
     setCursor(Qt::ArrowCursor);
 
     if (source_.series.empty()) {
@@ -339,7 +468,7 @@ class McapPlayerWindow : public QMainWindow {
     time_label_->setText(QString("%1 / %2").arg(index + 1).arg(source_.series.size()));
   }
 
-  McapImageSource source_;
+  MediaSource source_;
   VideoWidget* video_widget_ = nullptr;
   QSlider* slider_ = nullptr;
   QPushButton* load_button_ = nullptr;
