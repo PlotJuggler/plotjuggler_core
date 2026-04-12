@@ -6,13 +6,23 @@ find_package(PkgConfig QUIET)
 if(PkgConfig_FOUND)
   pkg_check_modules(TURBOJPEG IMPORTED_TARGET libturbojpeg)
   pkg_check_modules(LIBPNG IMPORTED_TARGET libpng)
+  pkg_check_modules(LIBAVCODEC IMPORTED_TARGET libavcodec)
+  pkg_check_modules(LIBAVFORMAT IMPORTED_TARGET libavformat)
+  pkg_check_modules(LIBAVUTIL IMPORTED_TARGET libavutil)
+  pkg_check_modules(LIBSWSCALE IMPORTED_TARGET libswscale)
 endif()
 
-add_library(pj_media_core STATIC
+set(PJ_MEDIA_CORE_SOURCES
   src/image_decoder.cpp
   src/codec_pipeline.cpp
   src/codecs.cpp
 )
+
+if(LIBAVCODEC_FOUND)
+  list(APPEND PJ_MEDIA_CORE_SOURCES src/ffmpeg_decoder.cpp)
+endif()
+
+add_library(pj_media_core STATIC ${PJ_MEDIA_CORE_SOURCES})
 target_include_directories(pj_media_core PUBLIC include)
 target_compile_features(pj_media_core PUBLIC cxx_std_20)
 target_compile_options(pj_media_core PRIVATE
@@ -22,6 +32,14 @@ target_link_libraries(pj_media_core
   PUBLIC pj_base pj_datastore
   PRIVATE PkgConfig::TURBOJPEG PkgConfig::LIBPNG
 )
+
+if(LIBAVCODEC_FOUND)
+  target_link_libraries(pj_media_core PRIVATE
+    PkgConfig::LIBAVCODEC PkgConfig::LIBAVUTIL PkgConfig::LIBSWSCALE
+  )
+  target_compile_definitions(pj_media_core PUBLIC PJ_HAS_FFMPEG)
+  message(STATUS "pj_media_core: FFmpeg found → building FfmpegDecoder")
+endif()
 
 # ---------------------------------------------------------------------------
 # Tests
