@@ -67,6 +67,7 @@ class ThumbnailCache {
 
   std::thread thread_;
   std::atomic<bool> running_{false};
+  void* tj_decompress_ = nullptr;  // tjhandle, cached for reuse across lookups
 
   static constexpr int kMaxWidth = 1920;
   static constexpr int kJpegQuality = 85;

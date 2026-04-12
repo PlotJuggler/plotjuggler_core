@@ -111,7 +111,6 @@ class FfmpegBackend : public VideoBackend {
   // Pre-decoded JPEG thumbnail cache for instant scrub feedback.
   // Built on a background thread at open() time, 1 frame per second.
   ThumbnailCache thumbnail_cache_;
-  std::string file_path_;  // needed for cache rebuild
 };
 
 }  // namespace PJ

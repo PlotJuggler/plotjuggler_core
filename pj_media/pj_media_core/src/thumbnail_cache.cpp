@@ -13,10 +13,13 @@ extern "C" {
 
 namespace PJ {
 
-ThumbnailCache::ThumbnailCache() = default;
+ThumbnailCache::ThumbnailCache() : tj_decompress_(tjInitDecompress()) {}
 
 ThumbnailCache::~ThumbnailCache() {
   stop();
+  if (tj_decompress_ != nullptr) {
+    tjDestroy(tj_decompress_);
+  }
 }
 
 void ThumbnailCache::buildAsync(const std::string& video_path, double duration_sec) {
@@ -48,8 +51,7 @@ std::optional<DecodedFrame> ThumbnailCache::lookup(double seconds) const {
 
   // Decompress JPEG directly to YUV420P — same format as live decode.
   // No color space conversion needed; GPU shader handles YUV→RGB.
-  tjhandle tj = tjInitDecompress();
-  if (tj == nullptr) {
+  if (tj_decompress_ == nullptr) {
     return std::nullopt;
   }
 
@@ -60,8 +62,8 @@ std::optional<DecodedFrame> ThumbnailCache::lookup(double seconds) const {
   auto pixels = std::make_shared<std::vector<uint8_t>>(static_cast<size_t>(y_size + 2 * uv_size));
 
   int ret = tjDecompressToYUV2(
-      tj, it->jpeg_data.data(), static_cast<unsigned long>(it->jpeg_data.size()), pixels->data(), w, 1, h, 0);
-  tjDestroy(tj);
+      tj_decompress_, it->jpeg_data.data(), static_cast<unsigned long>(it->jpeg_data.size()), pixels->data(), w, 1, h,
+      0);
 
   if (ret != 0) {
     return std::nullopt;

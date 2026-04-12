@@ -86,7 +86,6 @@ bool FfmpegBackend::open(const std::string& path) {
   running_.store(true);
   paused_.store(true);
   position_sec_.store(0.0);
-  file_path_ = path;
   thread_ = std::thread(&FfmpegBackend::decodeThread, this);
 
   thumbnail_cache_.buildAsync(path, duration_sec_);
