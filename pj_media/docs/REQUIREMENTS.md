@@ -261,7 +261,10 @@ same input file or stream. This is the expected pattern for multimodal
 formats such as MCAP (scalars + images), LeRobot (Parquet + MP4), and
 ROS 2 bags.
 
-**Two ingest modes for media**, matching the existing scalar plugin model:
+**Two ingest modes for media**, matching the existing scalar plugin model.
+**V1 ships with direct ingest only**; delegated ingest requires parser
+ABI v2 (two-host `parse()` signature — see Prerequisites) and is a
+subsequent milestone:
 
 - **Direct ingest**: the DataSource plugin calls
   `object_write_host.register_topic()` itself and then pushes entries
@@ -308,7 +311,7 @@ host from a single parse call. No double decode.
 | Topic metadata (`media_class`, `encoding`, `schema`) | DataSource at registration time |
 | Frame reassembly from sub-frame packets | DataSource |
 | Raw-bytes push (`push_owned` / `push_lazy`) | Parser (delegated) or DataSource (direct) |
-| Video keyframe indexing | `pj_media_core::VideoDemuxer` (file-backed sidechannel) or `pj_media::VideoDecoder` (streaming, incremental) |
+| Video keyframe indexing | `pj_media_core::MediaIndexRegistry` (file-backed: DataSource publishes at open) or `pj_media_core::VideoDecoder` (streaming: incremental NAL inspection) |
 | Retention budget / eviction trigger | Application (budget) + ObjectStore (enforcement) |
 
 **Frame granularity**: following `datatypes_2D.md §4b` (and matching
@@ -326,10 +329,13 @@ built from one of two sources:
 
 - **File-backed sources**: the DataSource plugin (which must already
   scan the file to discover entries) pre-computes the keyframe list at
-  open time and publishes it via a `pj_media_core::MediaIndexRegistry`
-  keyed by topic name. pj_media's `VideoDecoder` looks up the index
-  when it opens the topic. The registry is a pure pj_media-side
-  structure — no ObjectStore involvement.
+  open time and publishes it via
+  `object_write_host.publish_keyframe_index(topic, timestamps, count)`
+  — a C ABI slot on the object write host vtable. The host receives
+  the timestamp array and populates `pj_media_core::MediaIndexRegistry`
+  internally, keyed by `ObjectTopicId`. The DataSource never touches
+  pj_media_core directly. pj_media's `VideoDecoder` looks up the index
+  when it opens the topic.
 - **Streaming sources**: the `VideoDecoder` builds the keyframe index
   incrementally as entries arrive, NAL-parsing each new entry on the
   decoder thread. One-time inspection per entry; amortized over live
@@ -361,12 +367,15 @@ gate host wiring on a parser-level flag.
    `push_owned`.
 4. **For video topics on file-backed sources only**: pre-compute a
    keyframe timestamp list at open time (via NAL scan, MP4 `stss` atom,
-   etc.) and publish it to `pj_media_core::MediaIndexRegistry` keyed by
-   topic name. This is a pj_media-side sidechannel, unrelated to
-   ObjectStore. Streaming video sources skip this — pj_media's
-   `VideoDecoder` builds the keyframe index incrementally as entries
-   arrive. Non-video media topics (self-contained JPEG/PNG, point
-   clouds, scene primitives) do not need any keyframe information.
+   etc.) and publish it via
+   `object_write_host.publish_keyframe_index(topic, timestamps, count)`.
+   The host forwards the list to pj_media's internal
+   `MediaIndexRegistry`, keyed by `ObjectTopicId`. The DataSource
+   plugin does not link `pj_media_core` — communication is through the
+   C ABI write host only. Streaming video sources skip this —
+   pj_media's `VideoDecoder` builds the keyframe index incrementally
+   as entries arrive. Non-video media topics (self-contained JPEG/PNG,
+   point clouds, scene primitives) do not need any keyframe information.
 5. Publish optional rate hints (`preferred_fps`, `natural_range_ns`) so
    the application clock can pace playback appropriately.
 
@@ -597,9 +606,10 @@ direction:
   helpers, NAL parsers, keyframe detection, frame slot, playback
   controller, and the compositor logic. Depends on `pj_base`,
   `pj_datastore`, FFmpeg, turbojpeg, libpng. **No Qt dependency**.
-  DataSource plugins (which must not link Qt) can link this library
-  directly for format-specific helpers — e.g., a LeRobot DataSource
-  reusing the MP4 PTS lookup code.
+  DataSource plugins do NOT link this library — plugins depend only
+  on `pj_base` (see `pj_plugins/docs/ARCHITECTURE.md`). Format-specific
+  helpers (NAL scanning, PTS lookup) belong inside the DataSource
+  plugin itself or in lightweight headers within `pj_base`.
 
 - **`pj_media_qt`** — Qt widget library built on top of `pj_media_core`.
   Contains `QRhiWidget`-based viewers, GLSL shaders, widget-level

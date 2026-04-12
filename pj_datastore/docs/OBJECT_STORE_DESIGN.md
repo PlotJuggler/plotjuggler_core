@@ -466,6 +466,22 @@ typedef struct PJ_object_write_host_vtable_s {
       int64_t time_window_ns,
       size_t max_memory_bytes);
 
+  // --- Keyframe index (video topics only) ---
+
+  /// Publish a pre-computed keyframe timestamp list for a video topic.
+  /// `timestamps` is a sorted array of `count` nanosecond timestamps.
+  /// The host copies the array internally and forwards it to
+  /// pj_media's `MediaIndexRegistry`. Non-video topics ignore this.
+  /// DataSource plugins call this at file-open time after scanning
+  /// the container (NAL start codes, MP4 stss atom, etc.). Streaming
+  /// sources skip this — pj_media's VideoDecoder builds the index
+  /// incrementally. See `pj_media/docs/ARCHITECTURE.md §6`.
+  void (*publish_keyframe_index)(
+      void* ctx,
+      PJ_object_topic_handle_t topic,
+      const int64_t* timestamps,
+      size_t count);
+
 } PJ_object_write_host_vtable_t;
 ```
 
