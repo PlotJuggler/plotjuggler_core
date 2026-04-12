@@ -15,7 +15,8 @@ then video, then streaming.
 | M9 + M10 | `59ab9e3` | VideoBackend abstraction + MpvBackend (libmpv) + VideoViewerWidget + mp4_video_viewer demo. API doc comments on all public headers |
 | cleanup | `6a592b7` | Scrub throttle 60 Hz, VideoViewerWidget returns VideoBackend* (not MpvBackend*) |
 | review fixes | `d90807d` | ARCHITECTURE.md updated for mpv/VideoBackend v1 strategy. PNG decode added to ImageDecoder |
-| M11 | *pending* | Dual-store test: ObjectStore (images) + DataEngine (IMU scalars) from same MCAP. Color + depth image topics validated |
+| M11 | `7866fa8` | Dual-store test: ObjectStore + DataEngine from same MCAP. Multi-channel demo (color + depth) |
+| arch update | *pending* | CodecPipeline concept: envelope, decode, visualization as composable codec stages |
 
 ### Build notes
 

@@ -254,11 +254,77 @@ based on the direction-aware rule (§3.2).
 
 ---
 
-## 4. Decoder Classes
+## 4. Codec Pipeline
 
-Decoders are built-in C++ classes in `pj_media_core`. They are NOT
-plugins — codec state is per-viewer, per-layer, and adding new codecs
-requires a pj_media code change.
+Each ObjectStore topic produces raw bytes in a wire format. To reach
+display-ready pixels, those bytes pass through a **codec pipeline** —
+an ordered chain of stateless transforms configured per-layer at
+widget setup time.
+
+Every link in the chain is a codec. Some decode bytes→bytes (envelope
+stripping), some decode bytes→pixels (image decompression), some
+transform pixels→pixels (visualization mapping). The pipeline doesn't
+distinguish these — they're all codecs applied in sequence.
+
+### Examples
+
+```
+ROS2 CompressedImage:    CdrStripper → JpegDecoder → [identity]
+ROS2 CompressedDepth:    CdrStripper → DepthPngDecoder → DepthColormap
+Foxglove CompressedImage: JsonExtractor → JpegDecoder → [identity]
+Raw segmentation mask:   [identity] → PaletteMapper
+MP4 video:               VideoBackend (libmpv handles internally)
+```
+
+### Design
+
+```cpp
+class CodecStage {
+ public:
+  virtual ~CodecStage() = default;
+  virtual Expected<DecodedFrame> decode(const uint8_t* data, size_t size) = 0;
+};
+```
+
+A `CodecPipeline` is a `vector<unique_ptr<CodecStage>>`. Each stage
+consumes raw bytes and either:
+- Returns a `DecodedFrame` with `PixelFormat` set → terminal stage,
+  pipeline stops.
+- Returns a `DecodedFrame` where `pixels` contains intermediate
+  bytes → next stage consumes `pixels->data()` and `pixels->size()`.
+
+The last stage must produce display-ready pixels (RGB/RGBA). The
+`PlaybackController` builds the pipeline once per layer at setup,
+based on the topic's `metadata_json` (encoding, schema, media_class).
+
+### Codec inventory
+
+**Envelope codecs** (bytes → bytes):
+
+| Codec | Input | Output |
+|-------|-------|--------|
+| `CdrStripper` | CDR-wrapped message | Payload bytes (after header + string fields) |
+| `JsonExtractor` | JSON message with base64 `data` field | Raw image bytes |
+| `CompressedDepthStripper` | ROS2 compressedDepth | PNG payload (strips 12-byte header) |
+
+**Image codecs** (bytes → pixels):
+
+| Codec | Input | Output |
+|-------|-------|--------|
+| `JpegDecoder` | JPEG bytes | RGB888 pixels |
+| `PngDecoder` | PNG bytes | RGB888 or RGBA8888 or Mono16 pixels |
+| `RawDecoder` | Raw pixel buffer + dimensions | Typed DecodedFrame |
+
+**Visualization codecs** (pixels → display pixels):
+
+| Codec | Input | Output |
+|-------|-------|--------|
+| `DepthColormap` | Mono16 depth values | RGB888 (grayscale, jet, turbo — configurable) |
+| `SegmentationPalette` | Mono8 class IDs | RGB888 (color per class) |
+| `Identity` | Any RGB/RGBA | Passthrough (no-op) |
+
+These are all built-in classes in `pj_media_core`, not plugins.
+Adding a new codec requires a code change — same rule as before.
 
 ### 4.1 Video: VideoBackend abstraction
 
@@ -289,19 +355,12 @@ native API. The application-level `TimelineCursor` (§9) uses
 nanoseconds; the conversion happens at the boundary between
 `PlaybackController` and `VideoBackend`.
 
-### 4.2 ImageDecoder
+### 4.2 Image codecs
 
-Stateless. One instance per image layer. Multiple instances in one
-widget are fine (they share no state).
-
-Dispatches based on the image encoding (from topic `metadata_json`):
-
-| Encoding | Library | Notes |
-|----------|---------|-------|
-| JPEG | turbojpeg | `tjDecompress2` → RGB888. < 10 ms for typical frames; caching decoded output is not worth the memory |
-| PNG | libpng | Standard decode path |
-| Raw pixels | memcpy | mono8, rgb8, rgba8, bgr8, bgra8 — copy into `DecodedFrame` with format tag |
-| Depth (mono16) | custom | 16-bit depth → colormap in the compositor (§8) |
+`JpegDecoder`, `PngDecoder`, and `RawDecoder` are `CodecStage`
+implementations. They are stateless — multiple instances per widget
+are fine. `ImageDecoder` (the current class) bundles JPEG + PNG + raw
+dispatch as a convenience; internally each is a separate codec stage.
 
 No decoded-frame cache. On-the-fly decode is fast enough for stills
 that caching wastes more memory than it saves time (§R4.2).
