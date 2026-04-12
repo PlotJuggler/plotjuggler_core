@@ -33,7 +33,10 @@ Pure C++ library. Contains everything that does not touch Qt:
 |-----------|-----------|------|
 | `FrameSlot` | `frame_slot.h` | Single-slot latest-wins mailbox (§3) |
 | `PlaybackController` | `playback_controller.h` | Per-widget orchestrator: owns decoders, worker thread(s), FrameSlot (§5) |
-| `VideoBackend` | `video_backend.h` | Abstract video playback interface; v1 uses libmpv, future: custom FFmpeg (§4) |
+| `VideoBackend` | `video_backend.h` | Abstract video playback interface (§4) |
+| `FfmpegBackend` | `ffmpeg_backend.h` | FFmpeg-based `VideoBackend`: seek, scrub, play with CancelToken, forward threshold, decodeSkip, thumbnail cache (§4.1) |
+| `FfmpegDecoder` | `ffmpeg_decoder.h` | FFmpeg AVCodecContext wrapper: HW-accel probing, outputs YUV420P (§R4.7 compliant) |
+| `ThumbnailCache` | `thumbnail_cache.h` | JPEG-compressed frame cache: background pre-decode at open, auto-scale to 1920px, YUV420P output (§4.1) |
 | `ImageDecoder` | `image_decoder.h` | turbojpeg / libpng / raw-pixel dispatch (§4) |
 | `SceneDecoder` | `scene_decoder.h` | CDR / Protobuf deserializer for annotations and 2D primitives (§4) |
 | `MediaIndexRegistry` | `media_index_registry.h` | Per-topic keyframe timestamp index sidechannel (§6) |
@@ -52,11 +55,12 @@ Qt widget library built on top of `pj_media_core`:
 
 | Component | Header(s) | Role |
 |-----------|-----------|------|
-| `MediaViewerWidget` | `media_viewer_widget.h` | `QRhiWidget` subclass: GPU rendering for images, zoom/pan, shader pipeline (§7) |
+| `MediaViewerWidget` | `media_viewer_widget.h` | `QRhiWidget` subclass: GPU rendering via BT.709 YUV->RGB fragment shader (3 R8 textures for YUV420P), zoom/pan, backward-compatible QImage/RGB path (§7) |
 | `VideoViewerWidget` | `video_viewer_widget.h` | `QOpenGLWidget` that owns a `VideoBackend`; mpv renders into its FBO (§4.1) |
 | `MpvBackend` | `mpv_backend.h` | libmpv `VideoBackend` implementation (v1 video backend) |
 | `MediaViewerFactory` | `media_viewer_factory.h` | Creates the right viewer type from topic `metadata_json` |
 | Texture shaders | `shaders/texture.{vert,frag}` | RGBA texture display with view transform matrix |
+| YUV shaders | `shaders/yuv_to_rgb.{vert,frag}` | BT.709 YUV420P->RGB conversion via 3 R8 textures |
 
 The Qt layer is thin — it owns the GPU surface and polls the
 `PlaybackController`'s `FrameSlot` at render rate. All decode logic,
@@ -334,20 +338,48 @@ seeking, and HW acceleration internally. The widget layer calls
 `open()`, `seek()`, `setPaused()`, and `renderFrame()` without
 knowing which backend is active.
 
-**V1 backend: libmpv (`MpvBackend`).**  mpv handles all codec,
-container, HW-accel, keyframe seeking, and frame caching internally.
-This means §6 (`MediaIndexRegistry`) and the keyframe-seek algorithm
-described there are **not used for video in v1** — mpv manages its
-own keyframe index. The `VideoViewerWidget` (a `QOpenGLWidget`)
-owns a `MpvBackend` and renders via mpv's OpenGL FBO API.
+**Two backends are implemented:**
 
-**Future backend: custom FFmpeg pipeline.**  If profiling shows mpv's
-overhead is too high, a direct FFmpeg `AVCodecContext` wrapper can
-be implemented as a second `VideoBackend`. That backend would use
-`MediaIndexRegistry` for keyframe seeking, `CancelToken` for
-cooperative cancellation, and `FrameSlot` for frame delivery — the
-full pipeline described in §3 and §6. The `VideoBackend` abstraction
-ensures this swap does not change the widget or controller.
+**`MpvBackend`** (libmpv): mpv handles all codec, container,
+HW-accel, keyframe seeking, and frame caching internally. The
+`VideoViewerWidget` (a `QOpenGLWidget`) owns a `MpvBackend` and
+renders via mpv's OpenGL FBO API.
+
+**`FfmpegBackend`** (FFmpeg AVCodecContext): custom decode pipeline
+with full scrub control. Uses `FfmpegDecoder` for decode,
+`CancelToken` for cooperative cancellation, and `FrameSlot` for
+frame delivery via `processEvents()` (no Qt event queue). Key
+features:
+
+- **Forward threshold** (`kForwardThreshold=100`): when the target
+  is within 100 frames of the current position, continues decoding
+  forward instead of seeking. Avoids costly seek+flush for small
+  forward jumps during scrub.
+- **decodeSkip optimization**: skips HW transfer + sws_scale for
+  intermediate frames during seek-to-target. Only the final target
+  frame gets full decode.
+- **Direction-aware partial filter**: uses `scrub_backward_` flag
+  to suppress partial publications during backward scrub (prevents
+  forward jumps). Forward scrub publishes partials normally.
+- **Seek throttle**: 33ms (30 Hz) with duplicate elimination.
+- **Min decode time**: 60ms minimum before cancellation check,
+  preventing thrashing on fast scrub.
+- **B-frame PTS fix**: uses `AVFrame::pts` (presentation timestamp)
+  instead of packet PTS, which is incorrect for B-frame reordering.
+- **Target refinement**: within the same GOP during backward scrub,
+  publishes the keyframe immediately for instant feedback, then
+  decodes to the exact target and replaces it.
+- **ThumbnailCache**: background thread pre-decodes 1 frame/second
+  at file open time. Stores as JPEG at quality 85 (~90KB/frame
+  1080p, ~133KB/frame 4K->1920). Auto-scales to max 1920px width
+  for 4K content. YUV420P throughout (JPEG stores YUV, decompresses
+  to YUV, same BT.709 shader). Provides instant backward scrub
+  feedback via cached thumbnails before the full-resolution decode
+  completes.
+- **YUV420P output** (§R4.7 compliant): FfmpegDecoder outputs
+  YUV420P planes directly. No CPU-side RGB conversion. The
+  MediaViewerWidget renders via BT.709 fragment shader with 3 R8
+  textures. 75% GPU memory reduction vs RGBA8.
 
 **Design note**: `VideoBackend` uses `double seconds` for seek and
 position rather than `int64_t` nanoseconds. This matches libmpv's
@@ -523,19 +555,22 @@ and 4.
 `MediaViewerWidget` subclasses `QRhiWidget` (Qt 6.8+), which abstracts
 over Vulkan, Metal, D3D11, and OpenGL at runtime. The widget:
 
-1. Creates GPU textures for YUV planes (Y, U, V for YUV420P; Y+UV for
-   NV12; Y+UV for P010 with 10-bit depth).
+1. Creates 3 R8 GPU textures for YUV420P planes: Y (full resolution),
+   U (half resolution), V (half resolution). This is 75% less GPU
+   memory than a single RGBA8 texture.
 2. On each render tick, polls `FrameSlot::take()`.
 3. If a new frame arrived: uploads plane data to GPU textures via
    `QRhiResourceUpdateBatch`.
-4. Draws a full-screen quad with the YUV-to-RGB fragment shader.
+4. Draws a full-screen quad with the BT.709 YUV-to-RGB fragment shader.
+5. A backward-compatible QImage (RGB) path is kept for image viewers
+   that produce RGB output directly.
 
 ### 7.2 YUV-to-RGB shaders
 
-Fragment shader performs BT.601 or BT.709 color conversion:
+Fragment shader performs BT.709 color conversion using 3 R8 texture
+samplers:
 
 ```glsl
-// Simplified — actual shader handles NV12/P010/YUV420P variants
 vec3 yuv = vec3(
     texture(y_plane, uv).r,
     texture(u_plane, uv).r - 0.5,
@@ -544,9 +579,9 @@ vec3 yuv = vec3(
 fragColor = vec4(bt709_matrix * yuv, 1.0);
 ```
 
-The color matrix is selected based on the video's color space metadata
-(from FFmpeg's `AVFrame::colorspace`). Default is BT.709 for HD
-content, BT.601 for SD.
+BT.709 is used for all content. Both live-decoded frames and cached
+thumbnails pass through the same shader, eliminating color mismatches
+between the two paths.
 
 ### 7.3 Zoom and pan
 
@@ -780,12 +815,12 @@ What to take from each reference prototype and what to leave behind.
 | Direction-aware cancel-store | **PORT** | `PlaybackController` | Port the request-level direction tracking from `FrameProvider::bg_loop`. Replace frame-index comparison with timestamp comparison. See `~/ws_plotjuggler/video_player_lab/ARCHITECTURE.md §3.6` for the exact rule |
 | `VideoDecoder::flush()` at EOF | **PORT** | `VideoDecoder` | 3 lines: send NULL packet, drain buffered frames. Currently missing in the parallel pj_media effort |
 | `ENOMEM` recovery | **PORT** | `VideoDecoder` | On `AVERROR(ENOMEM)`: `avcodec_flush_buffers` + retry once. Hit during scrub testing |
-| `FrameCache` (JPEG cache) | **DO NOT PORT** | — | pj_media's image subsystem doesn't need it (on-the-fly JPEG decode is fast enough). Video decoded-frame caching, if needed, will use a proximity-based strategy specific to pj_media's `VideoDecoder` |
+| `FrameCache` (JPEG cache) | **PORTED** as `ThumbnailCache` | `pj_media_core/thumbnail_cache.h` | Background thread pre-decodes 1 frame/sec at open. JPEG quality 85, auto-scale to 1920px for 4K. YUV420P throughout. Used by FfmpegBackend for instant backward scrub |
 | `FrameConverter` | **DO NOT PORT** | — | Equivalent HW→SW transfer exists in pj_media's `VideoDecoder` |
 | `Mp4DataSource` | **DO NOT PORT** | — | pj_media handles MP4 via `FFmpegVideoSource`. The prototype's demuxer is narrower |
 | `PlaybackClock` | **DO NOT PORT** | — | Replaced by pj_media's `TimelineCursor` subscription model |
 | `VideoWidget` (QRhiWidget) | **DO NOT PORT** | — | pj_media already has `MediaViewerWidget` with the same QRhi + shader approach plus additional features (pixel inspector) |
-| Keyframe pre-decode at open | **CONDITIONAL** | — | Only if a product decision requires a scrub-preview thumbnail strip. Port as opt-in `KeyframeThumbnails`, not baked into open(). See `~/ws_plotjuggler/video_player_lab/ARCHITECTURE.md §3.7` |
+| Keyframe pre-decode at open | **PORTED** as `ThumbnailCache` | `pj_media_core/thumbnail_cache.h` | Implemented: background thread pre-decodes 1 frame/sec at open time, used for instant backward scrub feedback |
 
 ### From `~/ws_plotjuggler/pj_media/` (parallel effort)
 

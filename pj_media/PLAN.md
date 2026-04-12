@@ -18,8 +18,19 @@ then video, then streaming.
 | M11 | `7866fa8` | Dual-store test: ObjectStore + DataEngine from same MCAP. Multi-channel demo (color + depth) |
 | CodecPipeline | `10f86b3` | CodecPipeline + codecs + split pj_media_qt libs |
 | QRhi fix | `dd101e7` | Multi-instance QRhiWidget init (bootstrap widget + lifecycle) |
+| M13 | `43248a1` | Streaming: 4 tests (retention window, memory cap, pause/scrub, concurrent) + simulated_stream demo |
 | simplify | `31a8ef7` | Codex + agent review — rename pipelines, remove dead files |
-| M13 | *pending* | Streaming: 4 tests (retention window, memory cap, pause/scrub, concurrent) + simulated_stream demo |
+| FFmpeg backend | `5510b3d` | FfmpegDecoder: AVCodecContext wrapper with HW-accel probing, CancelToken, YUV420P output. Tests with real MP4 |
+| FFmpeg backend v2 | `d49b8df` | FfmpegBackend: dual-backend mp4_video_viewer demo (mpv + ffmpeg) |
+| scrub overhaul | `eaea822` | FfmpegBackend scrub: forward threshold (100 frames), decodeSkip, direction-aware partial filter, seek throttle 30 Hz, min decode time 60ms, B-frame PTS fix, processEvents delivery, CancelToken wired to decoder |
+| YUV GPU pipeline | `2660f03` | FfmpegDecoder outputs YUV420P (no CPU RGB conversion). MediaViewerWidget: BT.709 YUV->RGB fragment shader, 3 R8 textures. 75% GPU memory reduction vs RGBA8. Backward-compatible QImage path kept |
+| thumbnail cache | `d67cdb8` | ThumbnailCache: background thread pre-decodes 1 frame/sec at open. Auto-scales to max 1920px for 4K. JPEG quality 85 (~90KB/frame 1080p). YUV420P throughout. Instant backward scrub feedback |
+| scrub refinement | `bb23e16` | Target refinement within same GOP for backward scrub. Keyframe-then-refine strategy eliminates forward jumps |
+| integration tests | `b7b6490` | 23 integration tests: play, forward/backward scrub at 480p/1080p/4K/1920p-B-frames, pause/unpause, bidirectional, close safety, responsiveness, settle behavior |
+
+### Known limitations
+
+- **4K backward scrub density**: still limited by GOP size. With typical 2-second GOPs, backward scrub at 4K shows cached thumbnails (1920px) between keyframes. Acceptable for interactive use.
 
 ### Build notes
 
@@ -43,6 +54,8 @@ All in `pj_media/testdata/`:
 | `test_video.mcap` | 1.6 MB | Foxglove CompressedVideo, 30 Hz, 150 msgs |
 | `test_480p.mp4` | 1.6 MB | H.264 480p |
 | `test_1080p.mp4` | 7.8 MB | H.264 1080p |
+| `test_1920_bframes.mp4` | ~10 MB | H.264 1920p with B-frames (reorder buffer) |
+| `test_4k.mp4` | ~25 MB | H.264 4K (3840x2160) |
 | `potato.mcap` | 7.5 GB | ROS2 CompressedImage 30 Hz + depth + IMU, ~5 min (**gitignored**) |
 
 ---
@@ -453,8 +466,9 @@ pj_media/
 
 | Dependency | Source | Used by |
 |------------|--------|---------|
-| turbojpeg | system pkg or conan | pj_media_core (ImageDecoder) |
+| turbojpeg | system pkg or conan | pj_media_core (ImageDecoder, ThumbnailCache) |
 | libmpv | system pkg (`pkg_check_modules`) | pj_media_qt (MpvBackend) |
+| FFmpeg (libavcodec, libavformat, libavutil, libswscale) | system pkg | pj_media_core (FfmpegDecoder, FfmpegBackend) |
 
 ### .gitignore additions
 

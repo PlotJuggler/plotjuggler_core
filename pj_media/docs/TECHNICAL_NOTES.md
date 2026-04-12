@@ -39,7 +39,10 @@ the bridge between a custom decode pipeline and Qt's rendering:
 `QRhiWidget` with custom shaders is the primary render path:
 
 - QRhi abstracts over Vulkan, Metal, D3D11, OpenGL
-- Upload RGBA8 texture per frame, display via fullscreen-triangle shader
+- **YUV420P texture support**: 3 R8 textures (Y full-res, U half-res, V half-res)
+  uploaded per frame. BT.709 YUV->RGB conversion in fragment shader. 75% less
+  GPU memory than a single RGBA8 texture (1.5 bytes/pixel vs 4 bytes/pixel).
+- Backward-compatible QImage (RGB) path kept for image viewers
 - Zoom (mouse wheel) and pan (mouse drag) via view transform matrix in
   vertex shader — zero CPU-side pixel processing
 - Optional zero-copy: import HW-decoded GPU surfaces directly as QRhi
@@ -122,14 +125,18 @@ Qt handles conversion in the renderer.
 
 VVC/H.266 has near-zero hardware support — not targeted.
 
-### No B-Frames Policy
+### B-Frame Support
 
-Matches both Foxglove and Rerun conventions:
+While Foxglove and Rerun conventions recommend no B-frames, the
+FfmpegBackend fully supports B-frame streams:
 
-- Only I-frames (keyframes) and P-frames (delta frames)
-- Presentation order equals decode order — no reorder buffer needed
-- No separate DTS/PTS tracking required
-- Simplifies seeking: decode forward from keyframe without sorting
+- **PTS from AVFrame**: uses `AVFrame::pts` (presentation order) not
+  packet DTS (decode order). This is critical for correct timestamp
+  reporting with B-frame reordering.
+- Test coverage: `test_1920_bframes.mp4` exercises B-frame handling
+  in both forward and backward scrub.
+- For MCAP-stored video, I+P only (no B-frames) is still recommended
+  for simpler seeking.
 
 ### Annex B NAL Units
 
@@ -199,6 +206,84 @@ to QRhi texture. This is acceptable for typical robotics resolutions.
 4. Decode forward from keyframe to target frame, discarding intermediate
    frames
 5. Return the target frame
+
+### FfmpegBackend Scrub Optimizations
+
+The FfmpegBackend implements several optimizations beyond the basic
+seek algorithm:
+
+- **Forward threshold** (`kForwardThreshold=100`): when the target is
+  within 100 frames of the current decode position, the backend
+  continues decoding forward instead of seeking. This avoids the
+  costly seek+flush+decode-from-keyframe cycle for small forward
+  jumps during interactive scrub.
+
+- **decodeSkip**: intermediate frames between the keyframe and the
+  target are decoded without HW transfer or sws_scale. Only the
+  final target frame gets full decode with pixel conversion. This
+  reduces per-frame cost during forward decode significantly.
+
+- **Min decode time** (60ms): after starting a decode, the backend
+  will not check for cancellation until at least 60ms have elapsed.
+  This prevents thrashing on fast scrub where every frame would be
+  cancelled before producing a result.
+
+- **Seek throttle** (33ms / 30 Hz): seek requests are rate-limited
+  with duplicate elimination. Multiple seek requests within the
+  throttle window are collapsed to the most recent target.
+
+- **B-frame PTS fix**: uses `AVFrame::pts` (presentation timestamp
+  from the decoder output) instead of the packet PTS. Packet PTS
+  is decode-order for B-frame streams, which causes incorrect
+  timestamp reporting.
+
+- **Direction-aware partial filter**: the `scrub_backward_` flag
+  suppresses partial publications during backward scrub. Forward
+  scrub publishes partials for smooth feedback. During backward
+  scrub, only the keyframe (instant feedback) and the final target
+  (completion) are published.
+
+- **Target refinement**: for backward scrub within the same GOP,
+  the keyframe is published immediately for instant backward visual
+  feedback, then intermediate frames are decoded via decodeSkip,
+  and the exact target replaces the keyframe. This eliminates
+  visible forward jumps.
+
+- **processEvents() delivery**: frame delivery uses
+  `QCoreApplication::processEvents()` instead of Qt event queue
+  signals. This ensures frames are delivered synchronously without
+  event queue latency.
+
+- **CancelToken integration**: the CancelToken is wired through to
+  the decoder layer, allowing cooperative cancellation at natural
+  checkpoints (between `avcodec_receive_frame` calls).
+
+### ThumbnailCache
+
+The ThumbnailCache provides instant backward scrub feedback by
+pre-decoding frames at file open time:
+
+- **Background pre-decode**: a dedicated thread decodes 1 frame per
+  second of video duration at open time. For a 60-second video, this
+  produces ~60 cached thumbnails.
+
+- **Auto-scale**: frames wider than 1920px (e.g., 4K) are scaled to
+  1920px width before caching. This bounds memory usage while keeping
+  sufficient quality for scrub preview.
+
+- **JPEG compression**: cached frames are stored as JPEG at quality
+  85. Typical sizes: ~90KB/frame for 1080p, ~133KB/frame for
+  4K-scaled-to-1920. A 60-second 1080p video uses ~5.4MB of cache.
+
+- **YUV420P throughout**: JPEG stores in YUV natively. Decompression
+  outputs YUV420P directly (via `tjDecompressToYUV2`). The same
+  BT.709 shader renders both cached and live frames, eliminating
+  color mismatches between the two paths.
+
+- **Usage pattern**: during backward scrub, the FfmpegBackend first
+  checks the ThumbnailCache for a frame near the target timestamp.
+  If found, it is delivered immediately as the "keyframe" feedback,
+  then the full-resolution decode replaces it.
 
 ### GOP-Aware Buffer Eviction
 
