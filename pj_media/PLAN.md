@@ -14,7 +14,8 @@ then video, then streaming.
 | M8 + M15 | `0dd0160` | MCAP→ObjectStore integration (4 tests) + pj_media_qt with QRhiWidget (MediaViewerWidget: GPU rendering, zoom/pan, pre-compiled shaders) + demo binary. M15 merged into M8 |
 | M9 + M10 | `59ab9e3` | VideoBackend abstraction + MpvBackend (libmpv) + VideoViewerWidget + mp4_video_viewer demo. API doc comments on all public headers |
 | cleanup | `6a592b7` | Scrub throttle 60 Hz, VideoViewerWidget returns VideoBackend* (not MpvBackend*) |
-| review fixes | *pending* | ARCHITECTURE.md updated for mpv/VideoBackend v1 strategy. PNG decode added to ImageDecoder |
+| review fixes | `d90807d` | ARCHITECTURE.md updated for mpv/VideoBackend v1 strategy. PNG decode added to ImageDecoder |
+| M11 | *pending* | Dual-store test: ObjectStore (images) + DataEngine (IMU scalars) from same MCAP. Color + depth image topics validated |
 
 ### Build notes
 

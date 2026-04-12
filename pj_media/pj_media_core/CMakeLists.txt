@@ -53,4 +53,14 @@ if(PJ_BUILD_TESTS)
   add_test(NAME mcap_integration_test COMMAND mcap_integration_test
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
   )
+
+  # Dual-store test: ObjectStore + DataEngine from same MCAP (M11)
+  add_executable(dual_store_test tests/dual_store_test.cpp)
+  target_link_libraries(dual_store_test PRIVATE
+    pj_media_core pj_datastore mcap::mcap GTest::gtest_main
+  )
+  target_compile_options(dual_store_test PRIVATE ${PJ_WARNING_FLAGS} ${PJ_SANITIZER_FLAGS})
+  add_test(NAME dual_store_test COMMAND dual_store_test
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+  )
 endif()
