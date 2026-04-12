@@ -4,10 +4,12 @@
 #include <condition_variable>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <string>
 #include <thread>
 #include <vector>
 
+#include "pj_media_core/cancel_token.h"
 #include "pj_media_core/ffmpeg_decoder.h"
 #include "pj_media_core/video_backend.h"
 
@@ -58,7 +60,8 @@ class FfmpegBackend : public VideoBackend {
   };
 
   void decodeThread();
-  void decodeAndDeliver(int64_t target_pts);
+  void decodeAndDeliver(int64_t target_pts, bool allow_partial, int64_t current_kf);
+  void publishFrame(const DecodedFrame& frame);
   int64_t findKeyframeBefore(int64_t pts) const;
 
   AVFormatContext* fmt_ctx_ = nullptr;
@@ -68,6 +71,7 @@ class FfmpegBackend : public VideoBackend {
 
   std::unique_ptr<FfmpegDecoder> decoder_;
   std::vector<FrameIndex> frame_index_;
+  int64_t frame_interval_us_ = 33333;  // microseconds per frame (~30fps default)
 
   // BG thread
   std::thread thread_;
@@ -80,11 +84,24 @@ class FfmpegBackend : public VideoBackend {
   int64_t requested_pts_ = -1;
   bool has_request_ = false;
   bool seek_pending_ = false;
+  CancelTokenPtr cancel_token_;
+  int64_t last_request_pts_ = -1;     // for direction-aware cancel-store
+  int64_t last_decoded_pts_ = -1;     // decoder's current position (for forward threshold)
+  double last_published_pos_ = -1.0;  // last position published — for direction-based partial filter
+  bool scrub_backward_ = false;       // true when user is scrubbing backward (target < previous target)
 
   // Current state
   std::atomic<double> position_sec_{0.0};
 
-  // Callbacks
+  // Pending state for processEvents() delivery (latest-wins, like FrameSlot).
+  // Decode thread writes under pending_mutex_; processEvents() reads and
+  // fires callbacks on the caller's thread. No Qt event queue involved.
+  std::mutex pending_mutex_;
+  std::optional<double> pending_position_;
+  bool pending_file_loaded_ = false;
+  DecodedFrame pending_frame_;
+
+  // Callbacks (fired from processEvents on caller's thread, not decode thread)
   PositionCallback on_position_;
   DurationCallback on_duration_;
   FileLoadedCallback on_file_loaded_;

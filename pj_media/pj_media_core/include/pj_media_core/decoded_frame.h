@@ -24,6 +24,7 @@ struct DecodedFrame {
   int width = 0;
   int height = 0;
   PixelFormat format = PixelFormat::kRGB888;
+  int64_t pts = -1;  // presentation timestamp from decoder (stream time_base units)
 
   [[nodiscard]] bool isNull() const noexcept {
     return pixels == nullptr || pixels->empty();

@@ -92,6 +92,18 @@ if(PJ_BUILD_TESTS)
     add_test(NAME ffmpeg_decoder_test COMMAND ffmpeg_decoder_test
       WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
     )
+
+    # FfmpegBackend integration tests (play, scrub, seek)
+    add_executable(ffmpeg_backend_test tests/ffmpeg_backend_test.cpp)
+    target_link_libraries(ffmpeg_backend_test PRIVATE
+      pj_media_core pj_datastore
+      PkgConfig::LIBAVCODEC PkgConfig::LIBAVFORMAT PkgConfig::LIBAVUTIL PkgConfig::LIBSWSCALE
+      GTest::gtest_main
+    )
+    target_compile_options(ffmpeg_backend_test PRIVATE ${PJ_WARNING_FLAGS} ${PJ_SANITIZER_FLAGS})
+    add_test(NAME ffmpeg_backend_test COMMAND ffmpeg_backend_test
+      WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    )
   endif()
 
   # Dual-store test: ObjectStore + DataEngine from same MCAP (M11)

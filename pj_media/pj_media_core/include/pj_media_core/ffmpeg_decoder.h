@@ -41,6 +41,12 @@ class FfmpegDecoder {
   /// Checks cancel token between send and receive.
   Expected<DecodedFrame> decode(const uint8_t* data, size_t size, int64_t pts, const CancelTokenPtr& cancel = nullptr);
 
+  /// Send packet and receive frame, but skip HW transfer and sws_scale.
+  /// Returns only the PTS of the decoded frame (or -1 on EAGAIN/error).
+  /// Use this for intermediate frames during seek-forward where we need
+  /// to advance the decoder but don't need pixels.
+  int64_t decodeSkip(const uint8_t* data, size_t size, int64_t pts);
+
   /// Flush decoder state — mandatory after seek.
   void flush();
 

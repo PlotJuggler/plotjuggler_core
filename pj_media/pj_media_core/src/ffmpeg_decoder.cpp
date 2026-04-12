@@ -82,6 +82,15 @@ bool FfmpegDecoder::open(const AVCodecParameters* params) {
 
   codec_ctx_->thread_count = 4;
 
+  if (hw_device_ctx_ != nullptr) {
+    fprintf(
+        stderr, "[FfmpegDecoder] HW accel: %s\n",
+        av_hwdevice_get_type_name(
+            reinterpret_cast<AVHWDeviceContext*>(reinterpret_cast<AVBufferRef*>(hw_device_ctx_)->data)->type));
+  } else {
+    fprintf(stderr, "[FfmpegDecoder] HW accel: none (software decode)\n");
+  }
+
   if (avcodec_open2(codec_ctx_, codec, nullptr) < 0) {
     avcodec_free_context(&codec_ctx_);
     if (hw_device_ctx_ != nullptr) {
@@ -132,8 +141,34 @@ Expected<DecodedFrame> FfmpegDecoder::decode(
   }
 
   auto result = avFrameToDecodedFrame(frame);
+  result.pts = frame->pts;
   av_frame_free(&frame);
   return result;
+}
+
+int64_t FfmpegDecoder::decodeSkip(const uint8_t* data, size_t size, int64_t pts) {
+  if (codec_ctx_ == nullptr) {
+    return -1;
+  }
+
+  AVPacket* pkt = av_packet_alloc();
+  pkt->data = const_cast<uint8_t*>(data);
+  pkt->size = static_cast<int>(size);
+  pkt->pts = pts;
+  pkt->dts = pts;
+
+  int ret = avcodec_send_packet(codec_ctx_, pkt);
+  av_packet_free(&pkt);
+
+  if (ret < 0 && ret != AVERROR(EAGAIN)) {
+    return -1;
+  }
+
+  AVFrame* frame = av_frame_alloc();
+  ret = avcodec_receive_frame(codec_ctx_, frame);
+  int64_t result_pts = (ret >= 0) ? frame->pts : -1;
+  av_frame_free(&frame);
+  return result_pts;
 }
 
 void FfmpegDecoder::flush() {

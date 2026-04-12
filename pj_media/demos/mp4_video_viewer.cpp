@@ -106,18 +106,38 @@ class VideoPlayerWindow : public QMainWindow {
     connect(play_button_, &QPushButton::clicked, this, &VideoPlayerWindow::onPlayPause);
     connect(slider_, &QSlider::sliderMoved, this, &VideoPlayerWindow::onSliderMoved);
     connect(slider_, &QSlider::sliderPressed, this, [this]() { slider_dragging_ = true; });
-    connect(slider_, &QSlider::sliderReleased, this, [this]() { slider_dragging_ = false; });
-    connect(throttle_timer_, &QTimer::timeout, this, [this]() {
+    connect(slider_, &QSlider::sliderReleased, this, [this]() {
+      slider_dragging_ = false;
+      // Always fire the final seek on release — throttle may have suppressed it
       activeBackend()->seek(pending_seek_);
+      last_seek_fired_ = pending_seek_;
+    });
+    connect(throttle_timer_, &QTimer::timeout, this, [this]() {
+      if (pending_seek_ != last_seek_fired_) {
+        qDebug() << "SEEK(throttled)" << QString::number(pending_seek_, 'f', 2);
+        activeBackend()->seek(pending_seek_);
+        last_seek_fired_ = pending_seek_;
+      }
       throttle_.restart();
     });
 
-    // FFmpeg backend callbacks (mpv callbacks are wired via signals above)
+    // Backend callbacks — fired from processEvents() on the main thread,
+    // not from the decode thread. No Qt event queue in the path.
     if (backend_) {
       backend_->setPositionCallback([this](double s) { onPositionChanged(s); });
       backend_->setDurationCallback([this](double s) { duration_ = s; });
       backend_->setFileLoadedCallback([this]() { onFileLoaded(); });
     }
+
+    // Poll backend events at ~60 Hz (same pattern as mpv's processEvents).
+    auto* poll_timer = new QTimer(this);
+    connect(poll_timer, &QTimer::timeout, this, [this]() {
+      auto* b = activeBackend();
+      if (b != nullptr) {
+        b->processEvents();
+      }
+    });
+    poll_timer->start(16);
   }
 
   void loadFile(const QString& path) {
@@ -148,7 +168,9 @@ class VideoPlayerWindow : public QMainWindow {
     pending_seek_ = seconds;
 
     if (throttle_.elapsed() >= kMinSeekIntervalMs) {
+      qDebug() << "SEEK" << QString::number(seconds, 'f', 2) << "dt:" << throttle_.elapsed() << "ms";
       activeBackend()->seek(seconds);
+      last_seek_fired_ = seconds;
       throttle_.restart();
     } else if (!throttle_timer_->isActive()) {
       throttle_timer_->start(kMinSeekIntervalMs - static_cast<int>(throttle_.elapsed()));
@@ -169,6 +191,11 @@ class VideoPlayerWindow : public QMainWindow {
   }
 
   void onPositionChanged(double s) {
+    double delta = s - last_pos_;
+    const char* dir = delta > 0.01 ? "FWD" : (delta < -0.01 ? "BWD" : "=");
+    qDebug() << dir << "pos:" << QString::number(s, 'f', 3) << "delta:" << QString::number(delta, 'f', 3)
+             << (slider_dragging_ ? "(dragging)" : "");
+    last_pos_ = s;
     if (!slider_dragging_) {
       int val = duration_ > 0 ? static_cast<int>(s / duration_ * 10000) : 0;
       slider_->blockSignals(true);
@@ -184,7 +211,7 @@ class VideoPlayerWindow : public QMainWindow {
     activeBackend()->setPaused(true);
   }
 
-  static constexpr int kMinSeekIntervalMs = 16;
+  static constexpr int kMinSeekIntervalMs = 33;  // 30 Hz — give decoder time to produce frames
 
   bool use_ffmpeg_ = false;
   std::unique_ptr<PJ::VideoBackend> backend_;
@@ -204,6 +231,8 @@ class VideoPlayerWindow : public QMainWindow {
   QElapsedTimer throttle_;
   double duration_ = 0.0;
   double pending_seek_ = 0.0;
+  double last_seek_fired_ = -1.0;
+  double last_pos_ = 0.0;
   bool slider_dragging_ = false;
 };
 
