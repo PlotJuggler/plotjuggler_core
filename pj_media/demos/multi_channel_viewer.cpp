@@ -1,5 +1,3 @@
-#include <turbojpeg.h>
-
 #include <QApplication>
 #include <QElapsedTimer>
 #include <QFileDialog>
@@ -12,7 +10,6 @@
 #include <QTimer>
 #include <QVBoxLayout>
 #include <cstdint>
-#include <cstring>
 #include <memory>
 #include <string>
 #include <unordered_map>
@@ -20,44 +17,20 @@
 
 #include "image_widget.hpp"
 #include "pj_datastore/object_store.hpp"
-#include "pj_media_core/image_decoder.h"
+#include "pj_media_core/codec_pipeline.h"
+#include "pj_media_core/codecs.h"
 
 #define MCAP_IMPLEMENTATION
 #include <mcap/reader.hpp>
 
 // ---------------------------------------------------------------------------
-// JPEG extraction from CDR envelope
-// ---------------------------------------------------------------------------
-
-namespace {
-
-const uint8_t* findJpegInCdr(const uint8_t* raw, size_t size, size_t* out_len) {
-  for (size_t i = 0; i + 2 < size; ++i) {
-    if (raw[i] == 0xFF && raw[i + 1] == 0xD8 && raw[i + 2] == 0xFF) {
-      if (i >= 4) {
-        uint32_t data_len = 0;
-        std::memcpy(&data_len, raw + i - 4, 4);
-        if (data_len > 0 && i + data_len <= size) {
-          *out_len = data_len;
-          return raw + i;
-        }
-      }
-      *out_len = size - i;
-      return raw + i;
-    }
-  }
-  return nullptr;
-}
-
-}  // namespace
-
-// ---------------------------------------------------------------------------
-// Channel info
+// Channel info — each channel has its own codec pipeline
 // ---------------------------------------------------------------------------
 
 struct ChannelView {
   PJ::ObjectTopicId topic_id{};
   std::string topic_name;
+  std::unique_ptr<PJ::CodecPipeline> pipeline;
   ImageWidget* widget = nullptr;
   size_t entry_count = 0;
 };
@@ -120,14 +93,13 @@ class MultiChannelWindow : public QMainWindow {
   void loadFile(const QString& path) {
     setCursor(Qt::WaitCursor);
 
-    // Clear previous
     for (auto& ch : channels_) {
       delete ch.widget;
     }
     channels_.clear();
+    image_chan_map_.clear();
     store_ = std::make_unique<PJ::ObjectStore>();
 
-    // Open MCAP
     auto reader = std::make_shared<mcap::McapReader>();
     if (!reader->open(path.toStdString()).ok()) {
       setCursor(Qt::ArrowCursor);
@@ -140,13 +112,13 @@ class MultiChannelWindow : public QMainWindow {
       return;
     }
 
-    // Find image topics by topic name
+    // Discover image topics and assign codec pipelines
     for (const auto& [chan_id, chan_ptr] : reader->channels()) {
       if (chan_ptr == nullptr) {
         continue;
       }
-      bool is_image = chan_ptr->topic.find("image") != std::string::npos;
-      if (!is_image) {
+      bool has_image = chan_ptr->topic.find("image") != std::string::npos;
+      if (!has_image) {
         continue;
       }
 
@@ -158,21 +130,25 @@ class MultiChannelWindow : public QMainWindow {
       ChannelView ch;
       ch.topic_id = *id_or;
       ch.topic_name = chan_ptr->topic;
+
+      // Pick codec pipeline based on topic name
+      bool is_depth =
+          chan_ptr->topic.find("depth") != std::string::npos || chan_ptr->topic.find("Depth") != std::string::npos;
+      if (is_depth) {
+        ch.pipeline = PJ::makeCdrDepthPipeline();
+      } else {
+        ch.pipeline = PJ::makeCdrJpegPipeline();
+      }
+
       ch.widget = new ImageWidget(splitter_);
       ch.widget->setMinimumSize(200, 150);
-
-      // Show topic name as label on the widget
-      auto short_name = QString::fromStdString(chan_ptr->topic).section('/', -2);
-      ch.widget->setStyleSheet("background-color: black; color: white;");
-      ch.widget->setText(short_name);
-
       splitter_->addWidget(ch.widget);
 
       image_chan_map_[chan_id] = channels_.size();
       channels_.push_back(std::move(ch));
     }
 
-    // Push lazy entries for all image channels
+    // Push lazy entries
     mcap::ReadMessageOptions opts;
     auto view = reader->readMessages([](const mcap::Status&) {}, opts);
 
@@ -187,23 +163,38 @@ class MultiChannelWindow : public QMainWindow {
       auto chan = it->message.channelId;
       auto topic_id = ch.topic_id;
 
+      // Push lazy entry that strips CDR at resolve time, storing only
+      // the media payload in ObjectStore (JPEG bytes or depth PNG).
+      // In the proper architecture, the DataSource/parser does this at
+      // ingest time — we do it here because v1 uses direct ingest.
       store_->pushLazy(topic_id, ts, [reader, chan, ts]() -> std::vector<uint8_t> {
         mcap::ReadMessageOptions read_opts;
         read_opts.startTime = static_cast<mcap::Timestamp>(ts);
         read_opts.endTime = read_opts.startTime + 1;
         auto v = reader->readMessages([](const mcap::Status&) {}, read_opts);
         for (auto vit = v.begin(); vit != v.end(); ++vit) {
-          if (vit->message.channelId == chan) {
-            const auto* d = reinterpret_cast<const uint8_t*>(vit->message.data);
-            return {d, d + vit->message.dataSize};
+          if (vit->message.channelId != chan) {
+            continue;
           }
+          const auto* raw = reinterpret_cast<const uint8_t*>(vit->message.data);
+          auto raw_size = vit->message.dataSize;
+
+          // Strip CDR envelope: find the media payload (JPEG SOI or PNG sig)
+          PJ::DecodedFrame input;
+          input.pixels = std::make_shared<std::vector<uint8_t>>(raw, raw + raw_size);
+          PJ::CdrImageStripper stripper;
+          auto result = stripper.decode(input);
+          if (result.has_value() && !result->isNull()) {
+            return std::move(*result->pixels);
+          }
+          // Fallback: return raw bytes
+          return {raw, raw + raw_size};
         }
         return {};
       });
       ++ch.entry_count;
     }
 
-    // Setup UI
     if (channels_.empty()) {
       setCursor(Qt::ArrowCursor);
       setWindowTitle("No image topics found");
@@ -228,7 +219,8 @@ class MultiChannelWindow : public QMainWindow {
 
     setWindowTitle(title_parts);
     setCursor(Qt::ArrowCursor);
-    showFrame(0);
+    // Defer first frame — widgets need time to initialize their GL contexts
+    QTimer::singleShot(200, this, [this]() { showFrame(0); });
   }
 
  private slots:
@@ -278,7 +270,7 @@ class MultiChannelWindow : public QMainWindow {
  private:
   void showFrame(size_t index) {
     for (auto& ch : channels_) {
-      if (index >= ch.entry_count) {
+      if (index >= ch.entry_count || ch.pipeline == nullptr) {
         continue;
       }
       auto entry = store_->at(ch.topic_id, index);
@@ -286,21 +278,20 @@ class MultiChannelWindow : public QMainWindow {
         continue;
       }
 
-      const auto& raw = *entry->data;
-      size_t jpeg_size = 0;
-      const uint8_t* jpeg_data = findJpegInCdr(raw.data(), raw.size(), &jpeg_size);
-
-      if (jpeg_data == nullptr) {
-        continue;
-      }
-
-      auto frame_or = decoder_.decodeJpeg(jpeg_data, jpeg_size);
+      // Run the codec pipeline: envelope strip → decode → visualization
+      auto frame_or = ch.pipeline->decode(entry->data->data(), entry->data->size());
       if (!frame_or.has_value()) {
         continue;
       }
 
       auto& frame = *frame_or;
-      QImage img(frame.pixels->data(), frame.width, frame.height, frame.width * 3, QImage::Format_RGB888);
+      if (frame.isNull() || frame.width == 0) {
+        continue;
+      }
+
+      int channels = (frame.format == PJ::PixelFormat::kRGBA8888) ? 4 : 3;
+      auto qt_fmt = (channels == 4) ? QImage::Format_RGBA8888 : QImage::Format_RGB888;
+      QImage img(frame.pixels->data(), frame.width, frame.height, frame.width * channels, qt_fmt);
       ch.widget->setFrame(img.copy());
     }
 
@@ -312,7 +303,6 @@ class MultiChannelWindow : public QMainWindow {
   std::unique_ptr<PJ::ObjectStore> store_;
   std::vector<ChannelView> channels_;
   std::unordered_map<uint16_t, size_t> image_chan_map_;
-  PJ::ImageDecoder decoder_;
 
   QSplitter* splitter_ = nullptr;
   QPushButton* load_button_ = nullptr;
@@ -327,6 +317,7 @@ class MultiChannelWindow : public QMainWindow {
 };
 
 int main(int argc, char* argv[]) {
+  QApplication::setAttribute(Qt::AA_ShareOpenGLContexts);
   QApplication app(argc, argv);
   MultiChannelWindow window;
   window.show();

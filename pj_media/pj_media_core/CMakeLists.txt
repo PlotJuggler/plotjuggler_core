@@ -10,6 +10,8 @@ endif()
 
 add_library(pj_media_core STATIC
   src/image_decoder.cpp
+  src/codec_pipeline.cpp
+  src/codecs.cpp
 )
 target_include_directories(pj_media_core PUBLIC include)
 target_compile_features(pj_media_core PUBLIC cxx_std_20)

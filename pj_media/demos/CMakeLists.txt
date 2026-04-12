@@ -24,6 +24,7 @@ if(TARGET pj_media_qt)
     pj_media_qt pj_media_core pj_datastore mcap::mcap PkgConfig::TURBOJPEG
   )
   # --- Qt demo: multi-channel viewer (color + depth side by side) ---
+  # Uses ImageWidget (QLabel) — QRhiWidget multi-instance has init issues (TODO)
   add_executable(multi_channel_viewer multi_channel_viewer.cpp image_widget.hpp)
   target_compile_features(multi_channel_viewer PRIVATE cxx_std_20)
   target_compile_options(multi_channel_viewer PRIVATE ${PJ_WARNING_FLAGS})
@@ -32,12 +33,11 @@ if(TARGET pj_media_qt)
   )
 
   # --- Qt demo: MP4 video player with libmpv ---
-  get_target_property(_pj_media_qt_defs pj_media_qt INTERFACE_COMPILE_DEFINITIONS)
-  if(_pj_media_qt_defs MATCHES "PJ_HAS_MPV")
+  if(TARGET pj_media_qt_video)
     add_executable(mp4_video_viewer mp4_video_viewer.cpp)
     target_compile_features(mp4_video_viewer PRIVATE cxx_std_20)
     target_compile_options(mp4_video_viewer PRIVATE ${PJ_WARNING_FLAGS})
-    target_link_libraries(mp4_video_viewer PRIVATE pj_media_qt)
+    target_link_libraries(mp4_video_viewer PRIVATE pj_media_qt_video)
   endif()
 elseif(PJ_BUILD_DIALOG_ENGINE_QT)
   find_package(Qt6 REQUIRED COMPONENTS Widgets)

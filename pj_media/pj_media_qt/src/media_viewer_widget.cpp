@@ -9,6 +9,7 @@ void pjMediaQtInitResources() {
 namespace PJ {
 
 MediaViewerWidget::MediaViewerWidget(QWidget* parent) : QRhiWidget(parent) {
+  setApi(Api::OpenGL);
   setFocusPolicy(Qt::StrongFocus);
   static bool resources_initialized = [] {
     pjMediaQtInitResources();
@@ -21,7 +22,9 @@ void MediaViewerWidget::setFrame(const QImage& img) {
   std::lock_guard lock(frame_mutex_);
   pending_frame_ = img;
   has_pending_ = true;
-  update();
+  if (initialized_) {
+    update();
+  }
 }
 
 void MediaViewerWidget::resetView() {
