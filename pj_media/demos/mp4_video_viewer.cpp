@@ -1,10 +1,12 @@
 #include <QApplication>
+#include <QElapsedTimer>
 #include <QFileDialog>
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QMainWindow>
 #include <QPushButton>
 #include <QSlider>
+#include <QTimer>
 #include <QVBoxLayout>
 
 #include "pj_media_qt/video_viewer_widget.h"
@@ -21,7 +23,7 @@ class VideoPlayerWindow : public QMainWindow {
     setCentralWidget(central);
     auto* layout = new QVBoxLayout(central);
 
-    load_button_ = new QPushButton("Load MP4", this);
+    load_button_ = new QPushButton("Load Video", this);
     layout->addWidget(load_button_);
 
     video_ = new PJ::VideoViewerWidget(this);
@@ -45,9 +47,21 @@ class VideoPlayerWindow : public QMainWindow {
     controls->addWidget(time_label_);
     layout->addLayout(controls);
 
+    // Scrub throttle: at most one seek per 16 ms (~60 Hz)
+    throttle_timer_ = new QTimer(this);
+    throttle_timer_->setSingleShot(true);
+    throttle_.start();
+
     connect(load_button_, &QPushButton::clicked, this, &VideoPlayerWindow::onLoad);
     connect(play_button_, &QPushButton::clicked, this, &VideoPlayerWindow::onPlayPause);
     connect(slider_, &QSlider::sliderMoved, this, &VideoPlayerWindow::onSliderMoved);
+    connect(slider_, &QSlider::sliderPressed, this, [this]() { slider_dragging_ = true; });
+    connect(slider_, &QSlider::sliderReleased, this, [this]() { slider_dragging_ = false; });
+
+    connect(throttle_timer_, &QTimer::timeout, this, [this]() {
+      seekTo(pending_seek_);
+      throttle_.restart();
+    });
 
     connect(video_, &PJ::VideoViewerWidget::positionChanged, this, [this](double s) {
       if (!slider_dragging_) {
@@ -66,9 +80,6 @@ class VideoPlayerWindow : public QMainWindow {
       play_button_->setEnabled(true);
       video_->backend()->setPaused(true);
     });
-
-    connect(slider_, &QSlider::sliderPressed, this, [this]() { slider_dragging_ = true; });
-    connect(slider_, &QSlider::sliderReleased, this, [this]() { slider_dragging_ = false; });
   }
 
   void loadFile(const QString& path) {
@@ -92,19 +103,36 @@ class VideoPlayerWindow : public QMainWindow {
   }
 
   void onSliderMoved(int value) {
-    if (duration_ > 0) {
-      double seconds = static_cast<double>(value) / 10000.0 * duration_;
-      video_->backend()->seek(seconds);
+    if (duration_ <= 0) {
+      return;
+    }
+    double seconds = static_cast<double>(value) / 10000.0 * duration_;
+    pending_seek_ = seconds;
+
+    if (throttle_.elapsed() >= kMinSeekIntervalMs) {
+      seekTo(seconds);
+      throttle_.restart();
+    } else if (!throttle_timer_->isActive()) {
+      throttle_timer_->start(kMinSeekIntervalMs - static_cast<int>(throttle_.elapsed()));
     }
   }
 
  private:
+  void seekTo(double seconds) {
+    video_->backend()->seek(seconds);
+  }
+
+  static constexpr int kMinSeekIntervalMs = 16;  // ~60 Hz
+
   PJ::VideoViewerWidget* video_ = nullptr;
   QPushButton* load_button_ = nullptr;
   QPushButton* play_button_ = nullptr;
   QSlider* slider_ = nullptr;
   QLabel* time_label_ = nullptr;
+  QTimer* throttle_timer_ = nullptr;
+  QElapsedTimer throttle_;
   double duration_ = 0.0;
+  double pending_seek_ = 0.0;
   bool slider_dragging_ = false;
 };
 

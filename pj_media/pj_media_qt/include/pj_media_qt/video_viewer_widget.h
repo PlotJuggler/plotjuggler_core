@@ -2,7 +2,6 @@
 
 #include <QMetaObject>
 #include <QOpenGLWidget>
-#include <QTimer>
 #include <memory>
 
 #include "pj_media_core/video_backend.h"
@@ -14,11 +13,11 @@ class MpvBackend;
 /// QOpenGLWidget that renders video via a VideoBackend (currently libmpv).
 ///
 /// The backend handles all decode, seek, caching, and HW-accel internally.
-/// This widget owns the backend and renders each frame into its default
-/// FBO. Position/duration changes are emitted as Qt signals.
+/// This widget owns the backend and renders each frame into its default FBO.
 ///
-/// The backend implementation is an internal detail — callers interact
-/// through the VideoBackend abstract interface returned by backend().
+/// Scrub throttling is the caller's responsibility (typically 60 Hz via
+/// QElapsedTimer in the host window). The widget itself repaints whenever
+/// the backend signals a new frame is ready.
 class VideoViewerWidget : public QOpenGLWidget {
   Q_OBJECT
 
