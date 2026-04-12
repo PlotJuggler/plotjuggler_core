@@ -323,8 +323,13 @@ void FfmpegBackend::decodeAndDeliver(int64_t target_pts, bool allow_partial, int
   DecodedFrame last_good;
   auto last_full_decode = Clock::now();
   auto decode_start = Clock::now();
-  static constexpr int kFullDecodeIntervalMs = 30;  // full decode every ~30ms for partials
-  static constexpr int kMinDecodeTimeMs = 60;       // don't check cancel for first 60ms
+  static constexpr int kFullDecodeIntervalMs = 30;
+  static constexpr int kMinDecodeTimeMs = 60;
+
+  // Backward scrub: publish ONLY completions (target reached).
+  // No partials, no keyframe — completions are always the exact target,
+  // guaranteeing monotonically decreasing positions.
+  // Forward scrub: publish periodic partials for smooth feedback.
 
   bool published = false;
   bool broke_early = false;
@@ -337,12 +342,13 @@ void FfmpegBackend::decodeAndDeliver(int64_t target_pts, bool allow_partial, int
       continue;
     }
 
-    // Decide: full decode (expensive, produces publishable frame) vs
-    // skip decode (fast, advances codec state only).
-    // Full decode when: near target (last few frames), or periodically for partial feedback.
     int64_t pts_per_frame = frame_interval_us_ / static_cast<int64_t>(time_base_ * 1'000'000);
     bool near_target = pkt->pts >= target_pts || (target_pts - pkt->pts) <= pts_per_frame * 5;
-    bool time_for_partial = (Clock::now() - last_full_decode) >= std::chrono::milliseconds(kFullDecodeIntervalMs);
+
+    // For forward scrub: periodic full decode for partials.
+    // For backward scrub: only near target (no intermediate partials).
+    bool time_for_partial =
+        !scrub_backward_ && (Clock::now() - last_full_decode) >= std::chrono::milliseconds(kFullDecodeIntervalMs);
     bool do_full_decode = near_target || time_for_partial;
 
     if (!do_full_decode) {
@@ -352,7 +358,6 @@ void FfmpegBackend::decodeAndDeliver(int64_t target_pts, bool allow_partial, int
         last_decoded_pts_ = decoded_pts;
       }
     } else {
-      // Don't pass cancel token during minimum decode time — decoder must not abort early
       bool cancel_allowed = (Clock::now() - decode_start) >= std::chrono::milliseconds(kMinDecodeTimeMs);
       auto effective_cancel = cancel_allowed ? cancel : nullptr;
       auto result = decoder_->decode(pkt->data, static_cast<size_t>(pkt->size), pkt->pts, effective_cancel);
@@ -360,16 +365,6 @@ void FfmpegBackend::decodeAndDeliver(int64_t target_pts, bool allow_partial, int
 
       if (!result.has_value()) {
         if (effective_cancel && effective_cancel->isCancelled()) {
-          if (allow_partial && !last_good.isNull()) {
-            double partial_pos = static_cast<double>(last_good.pts) * time_base_;
-            // Filter: only publish if partial moves in the scrub direction
-            bool ok = last_published_pos_ < 0 ||
-                      (scrub_backward_ ? partial_pos < last_published_pos_ : partial_pos > last_published_pos_);
-            if (ok) {
-              publishFrame(last_good);
-              published = true;
-            }
-          }
           broke_early = true;
           break;
         }
@@ -380,18 +375,26 @@ void FfmpegBackend::decodeAndDeliver(int64_t target_pts, bool allow_partial, int
         last_good = *result;
         last_decoded_pts_ = result->pts;
         last_full_decode = Clock::now();
+
         if (result->pts >= target_pts) {
+          // Completion: always publish (this is the exact target frame)
           publishFrame(*result);
           published = true;
           broke_early = true;
           break;
         }
+
+        // Forward scrub only: publish periodic partials for smooth feedback.
+        // Backward scrub: no partials — only completions are published,
+        // guaranteeing monotonically decreasing positions.
+        if (!scrub_backward_ && allow_partial) {
+          publishFrame(*result);
+          published = true;
+        }
       }
     }
 
-    // Cancellation checks — only after minimum decode time.
-    // This guarantees the decoder has time to complete at least one GOP
-    // before being interrupted, preventing backward scrub starvation.
+    // Cancellation checks — only after minimum decode time
     if (!running_.load()) {
       broke_early = true;
       break;
@@ -399,15 +402,6 @@ void FfmpegBackend::decodeAndDeliver(int64_t target_pts, bool allow_partial, int
     min_time_elapsed = (Clock::now() - decode_start) >= std::chrono::milliseconds(kMinDecodeTimeMs);
     if (min_time_elapsed) {
       if (cancel && cancel->isCancelled()) {
-        if (allow_partial && !last_good.isNull()) {
-          double partial_pos = static_cast<double>(last_good.pts) * time_base_;
-          bool ok = last_published_pos_ < 0 ||
-                    (scrub_backward_ ? partial_pos < last_published_pos_ : partial_pos > last_published_pos_);
-          if (ok) {
-            publishFrame(last_good);
-            published = true;
-          }
-        }
         broke_early = true;
         break;
       }
@@ -425,17 +419,6 @@ void FfmpegBackend::decodeAndDeliver(int64_t target_pts, bool allow_partial, int
             cancel = cancel_token_;
             decode_start = Clock::now();
           } else {
-            if (allow_partial && !last_good.isNull()) {
-              double partial_pos = static_cast<double>(last_good.pts) * time_base_;
-              double target_sec = static_cast<double>(target_pts) * time_base_;
-              bool scrub_backward = target_sec < last_published_pos_ && last_published_pos_ >= 0;
-              bool ok = last_published_pos_ < 0 ||
-                        (scrub_backward ? partial_pos < last_published_pos_ : partial_pos > last_published_pos_);
-              if (ok) {
-                publishFrame(last_good);
-                published = true;
-              }
-            }
             broke_early = true;
             break;
           }
