@@ -167,34 +167,32 @@ class MultiChannelWindow : public QMainWindow {
 
       auto& ch = channels_[map_it->second];
       auto ts = static_cast<PJ::Timestamp>(it->message.logTime);
-      auto chan = it->message.channelId;
-      auto topic_id = ch.topic_id;
+      auto chan_id = it->message.channelId;
 
       // Push lazy entry that strips CDR at resolve time, storing only
       // the media payload in ObjectStore (JPEG bytes or depth PNG).
       // In the proper architecture, the DataSource/parser does this at
-      // ingest time — we do it here because v1 uses direct ingest.
-      store_->pushLazy(topic_id, ts, [reader, chan, ts]() -> std::vector<uint8_t> {
+      // ingest time -- we do it here because v1 uses direct ingest.
+      store_->pushLazy(ch.topic_id, ts, [reader, chan_id, ts]() -> std::vector<uint8_t> {
         mcap::ReadMessageOptions read_opts;
         read_opts.startTime = static_cast<mcap::Timestamp>(ts);
         read_opts.endTime = read_opts.startTime + 1;
         auto v = reader->readMessages([](const mcap::Status&) {}, read_opts);
         for (auto vit = v.begin(); vit != v.end(); ++vit) {
-          if (vit->message.channelId != chan) {
+          if (vit->message.channelId != chan_id) {
             continue;
           }
           const auto* raw = reinterpret_cast<const uint8_t*>(vit->message.data);
           auto raw_size = vit->message.dataSize;
 
           // Strip CDR envelope: find the media payload (JPEG SOI or PNG sig)
-          PJ::DecodedFrame input;
-          input.pixels = std::make_shared<std::vector<uint8_t>>(raw, raw + raw_size);
+          PJ::DecodedFrame frame;
+          frame.pixels = std::make_shared<std::vector<uint8_t>>(raw, raw + raw_size);
           PJ::CdrImageStripper stripper;
-          auto result = stripper.decode(input);
+          auto result = stripper.decode(frame);
           if (result.has_value() && !result->isNull()) {
             return std::move(*result->pixels);
           }
-          // Fallback: return raw bytes
           return {raw, raw + raw_size};
         }
         return {};
@@ -292,14 +290,15 @@ class MultiChannelWindow : public QMainWindow {
         continue;
       }
 
-      auto& frame = *frame_or;
+      const auto& frame = *frame_or;
       if (frame.isNull() || frame.width == 0) {
         continue;
       }
 
-      int channels = (frame.format == PJ::PixelFormat::kRGBA8888) ? 4 : 3;
-      auto qt_fmt = (channels == 4) ? QImage::Format_RGBA8888 : QImage::Format_RGB888;
-      QImage img(frame.pixels->data(), frame.width, frame.height, frame.width * channels, qt_fmt);
+      bool has_alpha = (frame.format == PJ::PixelFormat::kRGBA8888);
+      int bpp = has_alpha ? 4 : 3;
+      auto qt_fmt = has_alpha ? QImage::Format_RGBA8888 : QImage::Format_RGB888;
+      QImage img(frame.pixels->data(), frame.width, frame.height, frame.width * bpp, qt_fmt);
       ch.widget->setFrame(img.copy());
     }
 

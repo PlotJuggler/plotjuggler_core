@@ -1,5 +1,3 @@
-#include <turbojpeg.h>
-
 #include <QApplication>
 #include <QElapsedTimer>
 #include <QFileDialog>
@@ -174,7 +172,6 @@ struct McapObjectStoreLoader {
 class ImageViewerWindow : public QMainWindow {
   Q_OBJECT
 
- public:
  public:
   void loadFile(const QString& path) {
     setCursor(Qt::WaitCursor);

@@ -13,11 +13,11 @@ namespace PJ {
 /// See ARCHITECTURE.md §3.3.
 class CancelToken {
  public:
-  [[nodiscard]] bool isCancelled() const {
+  [[nodiscard]] bool isCancelled() const noexcept {
     return flag_.load(std::memory_order_relaxed);
   }
 
-  void cancel() {
+  void cancel() noexcept {
     flag_.store(true, std::memory_order_relaxed);
   }
 

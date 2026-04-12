@@ -3,7 +3,6 @@
 #include <memory>
 
 #include "pj_media_core/codec_pipeline.h"
-#include "pj_media_core/decoded_frame.h"
 
 namespace PJ {
 

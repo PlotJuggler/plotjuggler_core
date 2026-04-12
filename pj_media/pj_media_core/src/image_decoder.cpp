@@ -38,7 +38,7 @@ Expected<DecodedFrame> ImageDecoder::decodeJpeg(const uint8_t* data, size_t size
     return unexpected("cancelled");
   }
 
-  auto pixels = std::make_shared<std::vector<uint8_t>>(static_cast<size_t>(width * height * 3));
+  auto pixels = std::make_shared<std::vector<uint8_t>>(static_cast<size_t>(width) * static_cast<size_t>(height) * 3);
   if (tjDecompress2(
           static_cast<tjhandle>(tj_handle_), const_cast<uint8_t*>(data), static_cast<unsigned long>(size),
           pixels->data(), width, width * 3, height, TJPF_RGB, TJFLAG_FASTUPSAMPLE | TJFLAG_FASTDCT) != 0) {
@@ -125,7 +125,7 @@ Expected<DecodedFrame> ImageDecoder::decodePng(const uint8_t* data, size_t size)
 
   bool has_alpha = (png_get_color_type(png, info) & PNG_COLOR_MASK_ALPHA) != 0;
   int channels = has_alpha ? 4 : 3;
-  auto row_bytes = static_cast<size_t>(width * channels);
+  auto row_bytes = static_cast<size_t>(width) * static_cast<size_t>(channels);
 
   auto pixels = std::make_shared<std::vector<uint8_t>>(static_cast<size_t>(height) * row_bytes);
   std::vector<png_bytep> row_ptrs(static_cast<size_t>(height));
@@ -170,7 +170,7 @@ Expected<DecodedFrame> ImageDecoder::decodeRaw(
       return unexpected("unsupported raw pixel format");
   }
 
-  auto expected_size = static_cast<size_t>(width * height * channels);
+  auto expected_size = static_cast<size_t>(width) * static_cast<size_t>(height) * static_cast<size_t>(channels);
   if (size < expected_size) {
     return unexpected("raw buffer too small");
   }

@@ -34,7 +34,7 @@ class CodecPipeline {
   /// Run all stages. The initial input is raw bytes from ObjectStore.
   Expected<DecodedFrame> decode(const uint8_t* data, size_t size) const;
 
-  [[nodiscard]] size_t stageCount() const {
+  [[nodiscard]] size_t stageCount() const noexcept {
     return stages_.size();
   }
 

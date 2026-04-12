@@ -1,6 +1,7 @@
 #include <turbojpeg.h>
 
 #include <QApplication>
+#include <QElapsedTimer>
 #include <QFileDialog>
 #include <QHBoxLayout>
 #include <QLabel>
@@ -393,10 +394,18 @@ class McapPlayerWindow : public QMainWindow {
     play_timer_ = new QTimer(this);
     play_timer_->setInterval(33);
 
+    throttle_timer_ = new QTimer(this);
+    throttle_timer_->setSingleShot(true);
+    throttle_.start();
+
     connect(load_button_, &QPushButton::clicked, this, &McapPlayerWindow::onLoad);
     connect(play_button_, &QPushButton::clicked, this, &McapPlayerWindow::onPlayPause);
     connect(slider_, &QSlider::valueChanged, this, &McapPlayerWindow::onSliderChanged);
     connect(play_timer_, &QTimer::timeout, this, &McapPlayerWindow::onTimerTick);
+    connect(throttle_timer_, &QTimer::timeout, this, [this]() {
+      showFrame(pending_index_);
+      throttle_.restart();
+    });
   }
 
  private slots:
@@ -432,7 +441,14 @@ class McapPlayerWindow : public QMainWindow {
 
   void onSliderChanged(int value) {
     if (!play_timer_->isActive()) {
-      showFrame(static_cast<size_t>(value));
+      pending_index_ = static_cast<size_t>(value);
+      if (throttle_.elapsed() >= kMinFrameIntervalMs) {
+        showFrame(pending_index_);
+        throttle_.restart();
+      } else if (!throttle_timer_->isActive()) {
+        // Schedule a deferred update so the final slider position is always shown
+        throttle_timer_->start(kMinFrameIntervalMs - static_cast<int>(throttle_.elapsed()));
+      }
     }
   }
 
@@ -468,6 +484,8 @@ class McapPlayerWindow : public QMainWindow {
     time_label_->setText(QString("%1 / %2").arg(index + 1).arg(source_.series.size()));
   }
 
+  static constexpr int kMinFrameIntervalMs = 16;  // ~60 Hz
+
   MediaSource source_;
   VideoWidget* video_widget_ = nullptr;
   QSlider* slider_ = nullptr;
@@ -475,6 +493,9 @@ class McapPlayerWindow : public QMainWindow {
   QPushButton* play_button_ = nullptr;
   QLabel* time_label_ = nullptr;
   QTimer* play_timer_ = nullptr;
+  QTimer* throttle_timer_ = nullptr;
+  QElapsedTimer throttle_;
+  size_t pending_index_ = 0;
 };
 
 // ---------------------------------------------------------------------------

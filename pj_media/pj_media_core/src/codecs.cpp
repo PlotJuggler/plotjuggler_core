@@ -5,7 +5,6 @@
 
 #include <algorithm>
 #include <array>
-#include <cmath>
 #include <cstring>
 #include <vector>
 
@@ -190,8 +189,8 @@ Expected<DecodedFrame> PngCodec::decode(const DecodedFrame& input) const {
     png_read_update_info(png, info);
   }
 
-  PixelFormat fmt = PixelFormat::kRGB888;
-  int channels = 3;
+  PixelFormat fmt;
+  int channels;
   if (is_mono16) {
     fmt = PixelFormat::kMono16;
     channels = 2;

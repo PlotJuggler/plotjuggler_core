@@ -25,7 +25,7 @@ struct DecodedFrame {
   int height = 0;
   PixelFormat format = PixelFormat::kRGB888;
 
-  [[nodiscard]] bool isNull() const {
+  [[nodiscard]] bool isNull() const noexcept {
     return pixels == nullptr || pixels->empty();
   }
 };

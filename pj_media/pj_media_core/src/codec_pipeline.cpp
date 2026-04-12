@@ -11,26 +11,21 @@ Expected<DecodedFrame> CodecPipeline::decode(const uint8_t* data, size_t size) c
     return unexpected("empty pipeline");
   }
 
-  // Wrap raw bytes into an initial DecodedFrame (no dimensions, no format)
-  DecodedFrame input;
-  input.pixels = std::make_shared<std::vector<uint8_t>>(data, data + size);
+  DecodedFrame current;
+  current.pixels = std::make_shared<std::vector<uint8_t>>(data, data + size);
 
-  Expected<DecodedFrame> result = stages_[0]->decode(input);
-  if (!result.has_value()) {
-    return result;
-  }
-
-  for (size_t i = 1; i < stages_.size(); ++i) {
-    if (result->isNull()) {
+  for (size_t i = 0; i < stages_.size(); ++i) {
+    if (i > 0 && current.isNull()) {
       return unexpected("intermediate stage produced null frame");
     }
-    result = stages_[i]->decode(*result);
+    auto result = stages_[i]->decode(current);
     if (!result.has_value()) {
       return result;
     }
+    current = std::move(*result);
   }
 
-  return result;
+  return current;
 }
 
 }  // namespace PJ
