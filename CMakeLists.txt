@@ -160,6 +160,7 @@ if(PJ_BUILD_DATASTORE)
   add_subdirectory(pj_datastore)
 endif()
 add_subdirectory(pj_plugins)
+add_subdirectory(pj_media/pj_media_core)
 
 if(PJ_BUILD_DIALOG_ENGINE_QT)
   add_subdirectory(pj_marketplace)
