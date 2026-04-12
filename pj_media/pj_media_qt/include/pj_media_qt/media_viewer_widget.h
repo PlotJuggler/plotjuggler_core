@@ -39,6 +39,7 @@ class MediaViewerWidget : public QRhiWidget {
  protected:
   void initialize(QRhiCommandBuffer* cb) override;
   void render(QRhiCommandBuffer* cb) override;
+  void releaseResources() override;
 
   void wheelEvent(QWheelEvent* e) override;
   void mousePressEvent(QMouseEvent* e) override;
@@ -49,7 +50,7 @@ class MediaViewerWidget : public QRhiWidget {
   [[nodiscard]] QMatrix4x4 buildViewTransform(QSize output_size) const;
   static QShader loadShader(const QString& path);
 
-  bool initialized_ = false;
+  QRhi* rhi_cached_ = nullptr;
   QRhiGraphicsPipeline* pipeline_ = nullptr;
   QRhiBuffer* uniform_buf_ = nullptr;
   QRhiTexture* texture_ = nullptr;

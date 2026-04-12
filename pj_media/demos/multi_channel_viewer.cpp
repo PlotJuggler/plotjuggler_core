@@ -15,10 +15,10 @@
 #include <unordered_map>
 #include <vector>
 
-#include "image_widget.hpp"
 #include "pj_datastore/object_store.hpp"
 #include "pj_media_core/codec_pipeline.h"
 #include "pj_media_core/codecs.h"
+#include "pj_media_qt/media_viewer_widget.h"
 
 #define MCAP_IMPLEMENTATION
 #include <mcap/reader.hpp>
@@ -31,7 +31,7 @@ struct ChannelView {
   PJ::ObjectTopicId topic_id{};
   std::string topic_name;
   std::unique_ptr<PJ::CodecPipeline> pipeline;
-  ImageWidget* widget = nullptr;
+  PJ::MediaViewerWidget* widget = nullptr;
   size_t entry_count = 0;
 };
 
@@ -56,6 +56,13 @@ class MultiChannelWindow : public QMainWindow {
 
     splitter_ = new QSplitter(Qt::Horizontal, this);
     main_layout->addWidget(splitter_, 1);
+
+    // Bootstrap: a hidden QRhiWidget forces Qt to set up the RHI
+    // backend for this window. Without this, dynamically added
+    // QRhiWidgets fail to initialize ("No QRhi").
+    auto* bootstrap = new PJ::MediaViewerWidget(splitter_);
+    bootstrap->setMaximumSize(0, 0);
+    splitter_->addWidget(bootstrap);
 
     auto* controls = new QHBoxLayout();
     play_button_ = new QPushButton("\u25B6", this);
@@ -140,7 +147,7 @@ class MultiChannelWindow : public QMainWindow {
         ch.pipeline = PJ::makeCdrJpegPipeline();
       }
 
-      ch.widget = new ImageWidget(splitter_);
+      ch.widget = new PJ::MediaViewerWidget(splitter_);
       ch.widget->setMinimumSize(200, 150);
       splitter_->addWidget(ch.widget);
 
@@ -219,8 +226,9 @@ class MultiChannelWindow : public QMainWindow {
 
     setWindowTitle(title_parts);
     setCursor(Qt::ArrowCursor);
-    // Defer first frame — widgets need time to initialize their GL contexts
-    QTimer::singleShot(200, this, [this]() { showFrame(0); });
+    showFrame(0);
+    play_timer_->start();
+    play_button_->setText("\u23F8");
   }
 
  private slots:

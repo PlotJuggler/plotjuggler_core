@@ -22,7 +22,11 @@ void MediaViewerWidget::setFrame(const QImage& img) {
   std::lock_guard lock(frame_mutex_);
   pending_frame_ = img;
   has_pending_ = true;
-  if (initialized_) {
+  // Only request repaint if the pipeline is initialized.
+  // Before init, calling update() floods Qt's render cycle
+  // with "No QRhi" errors and prevents initialization from completing.
+  // Qt will paint the widget naturally once the RHI backend is ready.
+  if (pipeline_ != nullptr) {
     update();
   }
 }
@@ -34,13 +38,36 @@ void MediaViewerWidget::resetView() {
   update();
 }
 
+void MediaViewerWidget::releaseResources() {
+  delete pipeline_;
+  pipeline_ = nullptr;
+  delete srb_;
+  srb_ = nullptr;
+  delete texture_;
+  texture_ = nullptr;
+  delete sampler_;
+  sampler_ = nullptr;
+  delete uniform_buf_;
+  uniform_buf_ = nullptr;
+  tex_width_ = 0;
+  tex_height_ = 0;
+}
+
 void MediaViewerWidget::initialize(QRhiCommandBuffer* /*cb*/) {
-  if (initialized_) {
+  auto* r = rhi();
+  if (r == nullptr) {
     return;
   }
 
-  auto* r = rhi();
-  if (r == nullptr) {
+  // Detect QRhi change (reparenting, window move, etc.) — all GPU
+  // resources belong to the old QRhi and must be recreated.
+  if (rhi_cached_ != r) {
+    releaseResources();
+    rhi_cached_ = r;
+  }
+
+  // Already initialized for this QRhi instance.
+  if (pipeline_ != nullptr) {
     return;
   }
 
@@ -80,7 +107,11 @@ void MediaViewerWidget::initialize(QRhiCommandBuffer* /*cb*/) {
     pipeline_ = nullptr;
     return;
   }
-  initialized_ = true;
+
+  // Pick up any frames that were queued before initialization completed.
+  if (has_pending_) {
+    update();
+  }
 }
 
 void MediaViewerWidget::render(QRhiCommandBuffer* cb) {
