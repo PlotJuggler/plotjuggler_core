@@ -161,6 +161,7 @@ if(PJ_BUILD_DATASTORE)
 endif()
 add_subdirectory(pj_plugins)
 add_subdirectory(pj_media/pj_media_core)
+add_subdirectory(pj_media/demos)
 
 if(PJ_BUILD_DIALOG_ENGINE_QT)
   add_subdirectory(pj_marketplace)
