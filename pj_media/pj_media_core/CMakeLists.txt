@@ -80,6 +80,20 @@ if(PJ_BUILD_TESTS)
   target_compile_options(streaming_test PRIVATE ${PJ_WARNING_FLAGS} ${PJ_SANITIZER_FLAGS})
   add_test(NAME streaming_test COMMAND streaming_test)
 
+  # FFmpeg decoder test (needs test video file)
+  if(LIBAVCODEC_FOUND AND LIBAVFORMAT_FOUND)
+    add_executable(ffmpeg_decoder_test tests/ffmpeg_decoder_test.cpp)
+    target_link_libraries(ffmpeg_decoder_test PRIVATE
+      pj_media_core pj_datastore
+      PkgConfig::LIBAVCODEC PkgConfig::LIBAVFORMAT PkgConfig::LIBAVUTIL PkgConfig::LIBSWSCALE
+      GTest::gtest_main
+    )
+    target_compile_options(ffmpeg_decoder_test PRIVATE ${PJ_WARNING_FLAGS} ${PJ_SANITIZER_FLAGS})
+    add_test(NAME ffmpeg_decoder_test COMMAND ffmpeg_decoder_test
+      WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    )
+  endif()
+
   # Dual-store test: ObjectStore + DataEngine from same MCAP (M11)
   add_executable(dual_store_test tests/dual_store_test.cpp)
   target_link_libraries(dual_store_test PRIVATE
