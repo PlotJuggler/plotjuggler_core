@@ -348,11 +348,9 @@ QMimeData* SeriesTreeModel::mimeData(const QModelIndexList& indexes) const {
       continue;
     }
 
-    const auto& topic = datasets_[ds_idx].topics[topic_idx];
-    const auto& field = topic.fields[row];
-    std::string qualified_name = topic.name + "/" + field.name;
+    const auto& field = datasets_[ds_idx].topics[topic_idx].fields[row];
     stream << static_cast<quint32>(field.topic_id) << static_cast<quint32>(field.col_index)
-           << QString::fromStdString(qualified_name);
+           << QString::fromStdString(field.name);
     ++count;
   }
 
