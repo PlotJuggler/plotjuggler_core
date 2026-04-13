@@ -31,8 +31,11 @@ Pure C++ library. Contains everything that does not touch Qt:
 
 | Component | Header(s) | Role |
 |-----------|-----------|------|
+| `MediaSource` | `media_source.h` | Abstract frame-delivery interface: `setTimestamp` + `takeFrame` (§5) |
+| `ImagePipelineSource` | `image_pipeline_source.h` | `MediaSource` for images: wraps CodecPipeline + ObjectStore, synchronous decode (§5.1) |
+| `FileVideoSource` | `file_video_source.h` | `MediaSource` for file-based video: wraps FfmpegBackend (§5.2) |
+| `StreamingVideoSource` | `streaming_video_source.h` | `MediaSource` for streaming video: wraps StreamingVideoDecoder + worker thread (§5.3) |
 | `FrameSlot` | `frame_slot.h` | Single-slot latest-wins mailbox (§3) |
-| `PlaybackController` | `playback_controller.h` | Per-widget orchestrator: owns decoders, worker thread(s), FrameSlot (§5) |
 | `VideoBackend` | `video_backend.h` | Abstract video playback interface (§4) |
 | `FfmpegBackend` | `ffmpeg_backend.h` | FFmpeg-based `VideoBackend`: seek, scrub, play with CancelToken, forward threshold, decodeSkip, thumbnail cache (§4.1) |
 | `FfmpegDecoder` | `ffmpeg_decoder.h` | FFmpeg AVCodecContext wrapper: HW-accel probing, outputs YUV420P (§R4.7 compliant) |
@@ -40,9 +43,9 @@ Pure C++ library. Contains everything that does not touch Qt:
 | `ThumbnailCache` | `thumbnail_cache.h` | JPEG-compressed frame cache: background pre-decode at open, auto-scale to 1920px, YUV420P output (§4.1) |
 | `H264 NAL utils` | `h264_utils.h` | Annex-B keyframe detection (`isH264Keyframe`), SPS/PPS extraction (`extractH264SpsPps`), codec param builder (`makeH264CodecParams`) |
 | `ImageDecoder` | `image_decoder.h` | turbojpeg / libpng / raw-pixel dispatch (§4) |
-| `SceneDecoder` | `scene_decoder.h` | CDR / Protobuf deserializer for annotations and 2D primitives (§4) |
+| `SceneDecoder` | `scene_decoder.h` | CDR / Protobuf deserializer for annotations and 2D primitives (§4) — deferred |
 | `MediaIndexRegistry` | `media_index_registry.h` | Per-topic keyframe timestamp index sidechannel (§6) |
-| `Compositor` | `compositor.h` | Multi-layer decode orchestration and blending (§8) |
+| `Compositor` | `compositor.h` | Multi-layer decode orchestration and blending (§8) — deferred |
 | `CancelToken` | `cancel_token.h` | Atomic flag polled by decoders between decode units |
 | `DecodedFrame` | `decoded_frame.h` | RAII wrapper for decoded pixel data (YUV planes or RGB buffer) |
 
@@ -57,15 +60,14 @@ Qt widget library built on top of `pj_media_core`:
 
 | Component | Header(s) | Role |
 |-----------|-----------|------|
-| `MediaViewerWidget` | `media_viewer_widget.h` | `QRhiWidget` subclass: GPU rendering via BT.709 YUV->RGB fragment shader (3 R8 textures for YUV420P), zoom/pan, backward-compatible QImage/RGB path (§7) |
-| `VideoViewerWidget` | `video_viewer_widget.h` | `QOpenGLWidget` that owns a `VideoBackend`; mpv renders into its FBO (§4.1) |
-| `MpvBackend` | `mpv_backend.h` | libmpv `VideoBackend` implementation (v1 video backend) |
-| `MediaViewerFactory` | `media_viewer_factory.h` | Creates the right viewer type from topic `metadata_json` |
+| `MediaViewerWidget` | `media_viewer_widget.h` | `QRhiWidget` subclass: GPU rendering via BT.709 YUV->RGB fragment shader (3 R8 textures for YUV420P), zoom/pan, RGB DecodedFrame path, backward-compatible QImage path. Integrates with `MediaSource` via `setMediaSource()` + `setTimestamp()` (§7) |
+| `VideoViewerWidget` | `video_viewer_widget.h` | **Deprecated.** `QOpenGLWidget` for mpv FBO rendering. Superseded by `MediaViewerWidget` + `FileVideoSource` |
+| `MpvBackend` | `mpv_backend.h` | **Deprecated.** libmpv `VideoBackend`. Superseded by `FfmpegBackend` + `FileVideoSource` |
 | Texture shaders | `shaders/texture.{vert,frag}` | RGBA texture display with view transform matrix |
 | YUV shaders | `shaders/yuv_to_rgb.{vert,frag}` | BT.709 YUV420P->RGB conversion via 3 R8 textures |
 
 The Qt layer is thin — it owns the GPU surface and polls the
-`PlaybackController`'s `FrameSlot` at render rate. All decode logic,
+`MediaSource`'s `takeFrame()` at render rate. All decode logic,
 threading, and cancellation live in `pj_media_core`.
 
 ---
@@ -96,48 +98,42 @@ subsequent milestone.
 ### Read path (display — pj_media's domain)
 
 ```
-TimelineCursor ──timestamp──► PlaybackController
-                                   │
-                    ┌──────────────┼──────────────┐
-                    ▼              ▼               ▼
-              ObjectStore    ObjectStore      ObjectStore
-              latestAt()     latestAt()       latestAt()
-              (layer 0)      (layer 1)        (layer N)
-                    │              │               │
-                    ▼              ▼               ▼
-              VideoDecoder   SceneDecoder    ImageDecoder
-                    │              │               │
-                    └──────┬───────┘───────────────┘
-                           ▼
-                      Compositor
-                           │
-                           ▼
-                      FrameSlot  ◄──── single slot per widget
-                           │
-                    ───poll at ~60 Hz───
-                           │
-                           ▼
-                   MediaViewerWidget (QRhiWidget)
-                           │
-                           ▼
-                      GPU display
+Main thread                            MediaSource (internal)
+     │                                      │
+     ├─ widget->setTimestamp(ts_ns)          │
+     │       │                              │
+     │       └─► source->setTimestamp(ts)    │
+     │               │                      │
+     │               ├─ [ImagePipeline]  store->latestAt(ts) → pipeline->decode()
+     │               ├─ [FileVideo]      backend_.seek(seconds)  ──► decode thread
+     │               └─ [StreamingVideo] post to worker  ──► decoder_.decodeAt(ts)
+     │                                      │
+     ├─ widget->render()                    │
+     │       │                              │
+     │       └─► source->takeFrame()        │
+     │               │                      │
+     │               └─► DecodedFrame (YUV420P or RGB)
+     │                        │
+     │                  upload to GPU textures
+     │                        │
+     │                   draw quad (BT.709 shader)
+     │                        │
+     └──────────────────► GPU display
 ```
 
-On each render tick:
+On each application tick:
 
-1. `PlaybackController` receives the current timestamp from
-   `TimelineCursor`.
-2. For each active layer: call `ObjectStore::latestAt(topic, ts)` to
-   get an owning byte handle.
-3. Each layer's decoder decodes its bytes independently.
-4. `Compositor` combines per-layer outputs per the widget's layer
-   configuration.
-5. The composited frame is written to the widget's `FrameSlot`.
-6. The UI thread's render timer polls `FrameSlot::take()` and uploads
-   the frame to the GPU.
+1. The main thread calls `widget->setTimestamp(ts_ns)`, which forwards
+   to the attached `MediaSource`. The source either decodes immediately
+   (images) or posts a request to its internal worker (video).
+2. The main thread triggers a repaint (calls `widget->update()`).
+3. In `render()`, the widget calls `source->takeFrame()` to get the
+   latest decoded frame. If a new frame is available, it uploads pixel
+   data to GPU textures and draws.
 
-Steps 2-5 run on the `PlaybackController`'s worker thread(s).
-Step 6 runs on the Qt main thread.
+The main thread drives both steps — there is no `TimelineCursor`
+subscription or callback model. This matches how PlotJuggler's
+existing plot widgets are driven.
 
 ---
 
@@ -225,10 +221,10 @@ The rule, proven in
   show frames moving in the wrong direction.
 - **Same position or first request**: suppress.
 
-Implementation: `PlaybackController` tracks `last_request_ts_` and
-sets a `suppress_partial_publication_` flag on the active decode
-before each new request. The decoder checks this flag in its cancel
-path.
+Implementation: `FfmpegBackend` tracks `last_request_ts_` and sets
+a `scrub_backward_` flag on the active decode before each new request.
+The decoder checks this flag in its cancel path.
+`StreamingVideoSource` uses a simpler latest-wins model (no partials).
 
 ### 3.3 CancelToken
 
@@ -255,8 +251,8 @@ Decoders poll `token->isCancelled()` at natural check points:
 - `SceneDecoder`: between primitives in a batch message.
 
 A new request flips the previous token. The decoder returns early, and
-the `PlaybackController` decides whether to publish the partial result
-based on the direction-aware rule (§3.2).
+the decoder (or its owning `MediaSource`) decides whether to publish
+the partial result based on the direction-aware rule (§3.2).
 
 ---
 
@@ -300,8 +296,9 @@ consumes raw bytes and either:
   bytes → next stage consumes `pixels->data()` and `pixels->size()`.
 
 The last stage must produce display-ready pixels (RGB/RGBA). The
-`PlaybackController` builds the pipeline once per layer at setup,
-based on the topic's `metadata_json` (encoding, schema, media_class).
+`ImagePipelineSource` receives the pipeline at construction time,
+configured based on the topic's `metadata_json` (encoding, schema,
+media_class).
 
 ### Codec inventory
 
@@ -379,20 +376,22 @@ features:
   MediaViewerWidget renders via BT.709 fragment shader with 3 R8
   textures. 75% GPU memory reduction vs RGBA8.
 
-**`MpvBackend`** (fallback, file-based): libmpv handles all codec,
-container, HW-accel, keyframe seeking, and frame caching internally.
-The `VideoViewerWidget` (a `QOpenGLWidget`) owns a `MpvBackend` and
-renders via mpv's OpenGL FBO API. Simpler than FfmpegBackend but
-offers no custom scrub control.
+**`MpvBackend`** (**deprecated**): libmpv handles all codec, container,
+HW-accel, keyframe seeking, and frame caching internally. The
+`VideoViewerWidget` (a `QOpenGLWidget`) owns a `MpvBackend` and
+renders via mpv's OpenGL FBO API. Superseded by `FfmpegBackend` +
+`FileVideoSource`, which provides better scrub control and integrates
+with the `MediaSource` interface. Source files remain in the tree but
+are unused by demos.
 
 **`StreamingVideoDecoder`** (streaming / ObjectStore-based): decodes
-H.264 VideoFrame entries from ObjectStore. Described in §4.4.
+H.264 VideoFrame entries from ObjectStore. Described in §4.4. Wrapped
+by `StreamingVideoSource` (§5.3) for `MediaSource` integration.
 
 **Design note**: `VideoBackend` uses `double seconds` for seek and
-position rather than `int64_t` nanoseconds. This matches libmpv's
-native API. The application-level `TimelineCursor` (§9) uses
-nanoseconds; the conversion happens at the boundary between
-`PlaybackController` and `VideoBackend`.
+position rather than `int64_t` nanoseconds. This matches FFmpeg's
+`time_base` conventions. The nanosecond↔seconds conversion happens
+at the `FileVideoSource` boundary (§5.2).
 
 ### 4.2 Image codecs
 
@@ -487,8 +486,9 @@ Which component to use depends on the data source:
 
 **File-based video does not go through ObjectStore** — the file itself is
 the random-access store. ObjectStore adds value only for streaming, where
-it provides the retention buffer. PlaybackController (§5) dispatches to
-the right decoder based on the topic's `media_class` metadata.
+it provides the retention buffer. The application constructs the right
+`MediaSource` implementation (§5) based on the topic's `media_class`
+metadata.
 
 **Multi-modal datasets** (video + scalars from the same recording): the
 DataSource plugin populates both stores — `DataEngine` for plottable
@@ -499,68 +499,129 @@ each episode is a separate dataset with its own time range.
 
 ---
 
-## 5. PlaybackController
+## 5. MediaSource
 
-The per-widget orchestrator. One `PlaybackController` per
-`MediaViewerWidget`. Owns:
+The uniform frame-delivery interface between decoder backends and
+`MediaViewerWidget`.
 
-- One decoder instance per active layer (§R4.6).
-- The widget's single `FrameSlot`.
-- One or more worker threads for decode.
-- The `Compositor` instance.
-- `CancelToken` management.
-- Scrub direction tracking (`last_request_ts_`).
+```cpp
+class MediaSource {
+ public:
+  virtual ~MediaSource() = default;
+  virtual void setTimestamp(int64_t ts_ns) = 0;
+  virtual std::optional<DecodedFrame> takeFrame() = 0;
+};
+```
 
-### 5.1 Lifecycle
+**Design rationale**: `PlaybackController` was a monolithic orchestrator
+that would have owned decoders, worker threads, FrameSlot, compositor,
+and CancelToken management. This conflicted with `FfmpegBackend`, which
+is already a self-contained subsystem (owns its thread, seek throttle,
+thumbnail cache, cancellation). `MediaSource` is a thin adapter that
+lets each decoder path manage its own complexity at the right granularity.
 
-**Construction**: receives references to `ObjectStore`,
-`TimelineCursor`, and the list of layer descriptors (topic +
-decoder type per layer). Instantiates decoders, starts worker
-thread(s).
+**Contract**:
 
-**Destruction**: cancels in-flight decodes, joins worker threads,
-releases ObjectStore handles. Must complete before `ObjectStore`
-or `TimelineCursor` are destroyed.
+- `setTimestamp(ts_ns)` is called by the main thread when the global
+  time changes. May decode synchronously or post to an internal worker.
+- `takeFrame()` is called by the main thread at render rate. Returns
+  the latest decoded frame, or nullopt if nothing new since last call.
+- No `cancel()` in the public interface — each implementation manages
+  cancellation internally when a new `setTimestamp` arrives.
+- The widget calls `update()` after `setTimestamp()` to trigger repaint.
 
-### 5.2 Request processing
+### 5.1 ImagePipelineSource
 
-When `TimelineCursor` advances to a new timestamp:
+Wraps `CodecPipeline` + `ObjectStore`. Decodes synchronously in
+`setTimestamp()` — JPEG at 1080p is <10ms, adequate for 30fps scrub.
 
-1. `PlaybackController` compares `new_ts` to `last_request_ts_`
-   to determine scrub direction.
-2. Cancels the previous `CancelToken`.
-3. Creates a new `CancelToken` for this request.
-4. Sets `suppress_partial_publication_` based on direction (§3.2).
-5. Posts the request to the worker thread(s).
+```cpp
+class ImagePipelineSource : public MediaSource {
+ public:
+  ImagePipelineSource(ObjectStore* store, ObjectTopicId topic,
+                      std::unique_ptr<CodecPipeline> pipeline);
+  void setTimestamp(int64_t ts_ns) override;
+  std::optional<DecodedFrame> takeFrame() override;
+};
+```
 
-The worker thread:
+Internals: `setTimestamp` calls `store->latestAt(topic, ts)` →
+`pipeline->decode(data, size)` → stores result in an internal buffer.
+`takeFrame` returns the buffer and clears it (nullopt on second call).
 
-1. For each layer: calls `ObjectStore::latestAt(topic, ts)` to get
-   the owning byte handle.
-2. Passes each handle to the layer's decoder.
-3. Collects decoded outputs; passes them to the `Compositor`.
-4. Writes the composited result to the `FrameSlot`.
+No worker thread, no CancelToken, no FrameSlot. The simplest
+implementation.
 
-### 5.3 Worker thread model
+### 5.2 FileVideoSource
 
-**V1 architecture: single worker thread per widget.** One thread
-drives all per-layer decoders sequentially per render tick, then
-composites and writes to the `FrameSlot`. This is simple and adequate
-for typical workloads (video + annotation overlay + optional depth).
+Wraps `FfmpegBackend`. The backend stays self-contained — it owns its
+decode thread, seek throttle, ThumbnailCache, direction-aware partials,
+and CancelToken management. `FileVideoSource` is a thin adapter.
 
-The three contractual guarantees from §R4.6 hold trivially under this
-model: decoders don't share state (sequential on the same thread),
-one FrameSlot per widget, and stale frames cannot reach the display
-(latest-wins slot semantics).
+```cpp
+class FileVideoSource : public MediaSource {
+ public:
+  static Expected<std::unique_ptr<FileVideoSource>> open(const std::string& path);
 
-**Future possibility: per-layer worker threads.** If profiling shows
-that a heavy video decode blocks lightweight overlay decodes, per-layer
-parallelism could improve responsiveness. This is NOT part of the v1
-architecture because it requires designing a compositor barrier
-(ensuring all layers are decoded for the same timestamp before
-compositing) and a generation model (preventing stale per-layer
-results from leaking into the composite). These mechanisms are not
-yet specified.
+  void setTimestamp(int64_t ts_ns) override;
+  std::optional<DecodedFrame> takeFrame() override;
+
+  // Additional API beyond MediaSource (for slider/transport UI):
+  double duration() const;
+  double position() const;
+  void setPaused(bool paused);
+  bool isPaused() const;
+  void stepForward();
+  void stepBackward();
+  void setPositionCallback(VideoBackend::PositionCallback cb);
+  void setDurationCallback(VideoBackend::DurationCallback cb);
+  void setFileLoadedCallback(VideoBackend::FileLoadedCallback cb);
+};
+```
+
+Internals: `setTimestamp` converts nanoseconds to seconds and calls
+`backend_.seek(seconds)`. `takeFrame` calls `backend_.processEvents()`
+(which fires the internal frame callback, storing the latest frame
+under a mutex) and returns the stored frame.
+
+The nanosecond↔seconds conversion happens at this boundary. All
+internal pj_media timestamps are nanoseconds; `FfmpegBackend` uses
+seconds (matching libmpv and FFmpeg `time_base` conventions).
+
+### 5.3 StreamingVideoSource
+
+Wraps `StreamingVideoDecoder` + owns a worker thread + FrameSlot.
+`StreamingVideoDecoder::decodeAt()` is synchronous and can be expensive
+(seek + decode forward from keyframe), so it runs on a dedicated worker.
+
+```cpp
+class StreamingVideoSource : public MediaSource {
+ public:
+  StreamingVideoSource(ObjectStore* store, ObjectTopicId topic);
+  ~StreamingVideoSource();
+
+  void setTimestamp(int64_t ts_ns) override;
+  std::optional<DecodedFrame> takeFrame() override;
+  bool isInitialized() const;
+};
+```
+
+Internals:
+- `setTimestamp` posts a request to the worker thread (protected by
+  mutex + condition variable). If a previous decode is in flight, it
+  is not explicitly cancelled — `StreamingVideoDecoder::decodeAt()` is
+  synchronous, so the worker finishes the current decode and immediately
+  picks up the latest request (latest-wins).
+- The worker calls `decoder_.decodeAt(ts)` and stores the result in
+  an internal `FrameSlot`.
+- `takeFrame` polls the `FrameSlot` and returns the latest frame.
+
+### 5.4 Multi-layer (future)
+
+When compositing is needed, a `CompositeMediaSource` can own multiple
+`MediaSource` instances, call `takeFrame()` on each, composite on CPU,
+and present the blended result. Same interface, same widget code. This
+is deferred until annotation test data is available.
 
 ---
 
@@ -724,16 +785,16 @@ configured at widget construction time. Layer types:
 
 ### 8.2 Compositing pipeline
 
-On each render tick, the `PlaybackController`'s worker thread:
+When compositing is implemented, a `CompositeMediaSource` (§5.4) would
+own one `MediaSource` per layer. On each tick:
 
-1. Queries `ObjectStore::latestAt(topic, ts)` for each layer.
-2. Decodes each layer independently via its decoder.
-3. Passes all decoded outputs to the `Compositor`.
-4. The `Compositor` applies layer ordering and blending:
+1. Calls `takeFrame()` on each layer's `MediaSource`.
+2. Collects decoded outputs.
+3. Applies layer ordering and blending:
    - Base layer rendered first.
    - Overlays rasterized on top (annotations as vector primitives,
      depth/segmentation as alpha-blended pixel buffers).
-5. The composited `CompositeFrame` is written to the `FrameSlot`.
+4. Returns the composited frame via its own `takeFrame()`.
 
 ### 8.3 At-or-before semantics
 
@@ -756,28 +817,20 @@ timestamp matching.
 
 ## 9. Clock Integration
 
-### 9.1 TimelineCursor
+### 9.1 Main-thread-driven timestamps
 
-`TimelineCursor` is a small read-only interface declared in `pj_base`.
-The application owns it; widgets subscribe to it via a callback or
-observer pattern.
+There is no `TimelineCursor` subscription or callback model. The
+application's main thread drives timestamps directly:
 
 ```cpp
-// In pj_base — exact signatures TBD
-class TimelineCursor {
- public:
-  using TimestampCallback = std::function<void(int64_t ns)>;
-
-  void subscribe(TimestampCallback cb);
-  void unsubscribe(/* handle */);
-
-  int64_t currentTimestamp() const;
-};
+// Application main loop / timer tick:
+widget->setTimestamp(current_time_ns);  // forwards to MediaSource
+widget->update();                       // triggers repaint
 ```
 
-Widgets only subscribe, never drive. The application advances the
-cursor — from a slider, from a playback timer, from an external
-sync source.
+This matches how PlotJuggler's existing plot widgets are driven — the
+main thread iterates over widgets and tells each one to update. Media
+widgets are passive; they never drive the clock.
 
 ### 9.2 Rate hints
 
@@ -795,19 +848,19 @@ default playback pace. The user may override.
 The application manages the live/scrub mode transition (§R4.3).
 From pj_media's perspective:
 
-- **Live mode**: `TimelineCursor` advances at the live edge. The
-  `PlaybackController` requests the newest timestamp on each tick.
+- **Live mode**: the main thread calls
+  `widget->setTimestamp(timeRange().second)` on each tick.
   Each `ObjectStore::latestAt` returns the most recent entry.
 
-- **Scrub mode**: `TimelineCursor` is driven by user interaction
-  (slider drag). The `PlaybackController` requests the user-selected
-  timestamp. The buffer is frozen — no pushes, no eviction.
+- **Scrub mode**: the main thread calls
+  `widget->setTimestamp(slider_value_ns)` driven by user interaction.
+  The buffer is frozen — no pushes, no eviction.
 
-The `PlaybackController` does not know or care which mode is active.
-It reacts identically: receive timestamp → query store → decode →
-composite → slot. The mode distinction is entirely in whether the
-cursor advances automatically or manually, and whether the DataSource
-is actively pushing.
+The `MediaSource` does not know or care which mode is active. It
+reacts identically: receive timestamp → decode → deliver frame. The
+mode distinction is entirely in whether the timestamp advances
+automatically or manually, and whether the DataSource is actively
+pushing.
 
 ---
 
@@ -817,8 +870,9 @@ is actively pushing.
 
 | Thread | Responsibilities | Lock discipline |
 |--------|-----------------|-----------------|
-| **Qt main thread** | UI events, `QTimer` render tick, `FrameSlot::take()`, GPU upload, widget lifecycle | Never blocks on decode. Never holds ObjectStore locks longer than a `latestAt` call |
-| **PlaybackController worker** (1 per widget) | `ObjectStore::latestAt` queries, decoder invocation, compositing, `FrameSlot::store()` | Acquires ObjectStore shared locks (released immediately after handle copy). Holds decoder-internal state exclusively |
+| **Qt main thread** | UI events, `widget->setTimestamp()`, `widget->render()` → `source->takeFrame()`, GPU upload | Never blocks on decode (except `ImagePipelineSource` which decodes synchronously in `setTimestamp`, <10ms). For `FileVideoSource`, `takeFrame()` calls `processEvents()` which is main-thread safe |
+| **FfmpegBackend decode thread** (1 per `FileVideoSource`) | Seek, decode, direction-aware partials, ThumbnailCache | Internal to FfmpegBackend. Publishes frames via `pending_frame_` under `pending_mutex_`. Main thread reads via `processEvents()` |
+| **StreamingVideoSource worker** (1 per `StreamingVideoSource`) | `StreamingVideoDecoder::decodeAt()`, `FrameSlot::store()` | Acquires ObjectStore shared locks (released immediately after handle copy). Holds decoder-internal state exclusively |
 | **DataSource poll thread** (1 per app, existing) | `DataSource::poll()` → `ObjectStore::pushOwned/pushLazy` | Acquires ObjectStore exclusive locks per push. Never touches decoders |
 
 ### 10.2 Lock inventory
@@ -843,8 +897,12 @@ acquired and released independently — never held simultaneously:
    releases. This happens after the ObjectStore lock is released.
 3. Worker acquires `FrameSlot::mutex_` → stores frame → releases.
 
-The main thread only ever acquires `FrameSlot::mutex_` (via `take()`).
-It never touches ObjectStore or MediaIndexRegistry directly.
+The main thread acquires `FrameSlot::mutex_` (via `take()`) for
+`StreamingVideoSource`. For `ImagePipelineSource`, the main thread
+acquires `ObjectSeries::mutex` (shared, via `latestAt()`) directly
+in `setTimestamp()` — this is brief (<1us) and acceptable.
+For `FileVideoSource`, the main thread calls `processEvents()` which
+swaps pending state under `pending_mutex_` — also brief.
 
 ### 10.4 Contention analysis
 
@@ -868,10 +926,9 @@ across the worker→UI thread boundary (§R5). The error flow:
    or similar. If a decoder fails (corrupt data, unsupported codec,
    HW-accel error), the worker catches the failure at the thread
    boundary.
-2. **Last-error state**: the `PlaybackController` stores the error in
-   a thread-safe last-error field (atomic or mutex-protected). The
-   `FrameSlot` is NOT written to on error — the widget continues
-   displaying the last good frame.
+2. **Last-error state**: the `MediaSource` implementation stores the
+   error internally. `takeFrame()` returns `nullopt` on error — the
+   widget continues displaying the last good frame.
 3. **UI thread**: on its next poll, the widget checks the last-error
    state. If set, it renders a visible error indicator (e.g., "decode
    failed" overlay or a no-signal background) on the affected layer.
@@ -907,13 +964,13 @@ What to take from each reference prototype and what to leave behind.
 | Component | Action | Target in pj_media | Notes |
 |-----------|--------|-------------------|-------|
 | `FrameSlot` | **PORT** | `pj_media_core/frame_slot.h` | Copy the ~60-line implementation. Change identity from `size_t index` to `int64_t timestamp_ns`. The mechanism is identical |
-| Direction-aware cancel-store | **PORT** | `PlaybackController` | Port the request-level direction tracking from `FrameProvider::bg_loop`. Replace frame-index comparison with timestamp comparison. See `~/ws_plotjuggler/video_player_lab/ARCHITECTURE.md §3.6` for the exact rule |
+| Direction-aware cancel-store | **PORTED** | `FfmpegBackend` | Direction tracking lives inside FfmpegBackend's decode thread. StreamingVideoSource uses latest-wins request model instead |
 | `VideoDecoder::flush()` at EOF | **PORT** | `VideoDecoder` | 3 lines: send NULL packet, drain buffered frames. Currently missing in the parallel pj_media effort |
 | `ENOMEM` recovery | **PORT** | `VideoDecoder` | On `AVERROR(ENOMEM)`: `avcodec_flush_buffers` + retry once. Hit during scrub testing |
 | `FrameCache` (JPEG cache) | **PORTED** as `ThumbnailCache` | `pj_media_core/thumbnail_cache.h` | Background thread pre-decodes 1 frame/sec at open. JPEG quality 85, auto-scale to 1920px for 4K. YUV420P throughout. Used by FfmpegBackend for instant backward scrub |
 | `FrameConverter` | **DO NOT PORT** | — | Equivalent HW→SW transfer exists in pj_media's `VideoDecoder` |
 | `Mp4DataSource` | **DO NOT PORT** | — | pj_media handles MP4 via `FFmpegVideoSource`. The prototype's demuxer is narrower |
-| `PlaybackClock` | **DO NOT PORT** | — | Replaced by pj_media's `TimelineCursor` subscription model |
+| `PlaybackClock` | **DO NOT PORT** | — | Replaced by main-thread-driven `setTimestamp()` model |
 | `VideoWidget` (QRhiWidget) | **DO NOT PORT** | — | pj_media already has `MediaViewerWidget` with the same QRhi + shader approach plus additional features (pixel inspector) |
 | Keyframe pre-decode at open | **PORTED** as `ThumbnailCache` | `pj_media_core/thumbnail_cache.h` | Implemented: background thread pre-decodes 1 frame/sec at open time, used for instant backward scrub feedback |
 
@@ -926,7 +983,7 @@ What to take from each reference prototype and what to leave behind.
 | `FrameSlot` (already ported from video_player_lab) | **USE AS-IS** | — | Already present in the parallel effort |
 | ImageSource + BufferStrategy | **ADAPT** | `ImageDecoder` | The per-topic buffer strategy is more complex than needed for pj_media_core's stateless `ImageDecoder`. Take the turbojpeg/libpng dispatch; leave the caching strategy |
 | PayloadDescriptor bytecode VM | **EVALUATE** | — | Clever but complex. Evaluate whether the simpler approach (metadata_json + decoder dispatch) suffices before porting |
-| TimelineBridge | **DO NOT PORT** | — | Replaced by `TimelineCursor` in pj_base |
+| TimelineBridge | **DO NOT PORT** | — | Replaced by main-thread-driven `setTimestamp()` model |
 | Timestamp µs vs ns dichotomy | **FIX** | — | pj_media uses ns everywhere. The parallel effort's video engine used µs internally. All internal timestamps must be int64_t nanoseconds |
 
 ### From `plotjuggler_core/pj_media/mcap_player/`
@@ -943,14 +1000,15 @@ What to take from each reference prototype and what to leave behind.
 These invariants are load-bearing. Violating any of them reintroduces
 bugs that were already proven unfixable by patching.
 
-1. **No Qt signals for frame delivery.** The FrameSlot mailbox is the
-   only path from decoder to display. Adding a signal escape hatch
-   reintroduces stale-frame interleaving. (Proof:
+1. **No Qt signals for frame delivery.** The `MediaSource::takeFrame()`
+   pull model is the only path from decoder to display. Adding a signal
+   escape hatch reintroduces stale-frame interleaving. (Proof:
    `video_player_lab/ARCHITECTURE.md §3.2-3.3`)
 
-2. **One FrameSlot per widget, never per layer.** Compositing happens
-   before the slot, not after. The UI thread sees exactly one
-   composited frame per poll.
+2. **One MediaSource per widget.** The widget polls exactly one source
+   for frames. When multi-layer compositing is added, a
+   `CompositeMediaSource` composites internally and presents a single
+   frame via the same interface.
 
 3. **Backward scrub suppresses partial publications.** Forward partials
    are fine; backward partials show frames moving in the wrong

@@ -495,47 +495,64 @@ backends:
 
 ---
 
-## 9. Open Design Questions
+## 9. Resolved Design Questions
 
-These questions are identified but intentionally unresolved. They will be
-addressed during architecture design.
+These questions were identified early and resolved during architecture design.
 
 ### MessageParser Extension vs New Plugin Family
 
-The current MessageParser contract is stateless across messages: each
-`parse()` call is independent. Video decoding is inherently stateful — the
-decoder must process all frames from the last keyframe to produce the
-current frame.
-
-Options:
-
-- Extend MessageParser with an optional stateful mode for video
-- Introduce a new plugin family (e.g., MediaParser) with a stateful contract
-- Keep MessageParser stateless but have the frame store manage decoder state
-  internally, with the parser only responsible for extracting raw bytes
+**Resolved:** Keep MessageParser stateless. Parsers are codec-agnostic
+envelope peelers (CDR, Protobuf, JSON). All video decoder state lives in
+pj_media's decoder classes (`FfmpegDecoder`, `StreamingVideoDecoder`),
+never in any plugin. See ARCHITECTURE.md §4 and REQUIREMENTS.md §4.4.
 
 ### Mixed Scalar + Media Output from a Single Parse Call
 
-An MCAP file may contain both scalar time-series topics and image/video
-topics. A single DataSource plugin handles the file. When the DataSource
-dispatches a message to a parser:
-
-- Scalar fields go to pj_datastore via the existing write host
-- Media handles go to the frame store via a media write host
-
-The parse contract must support producing both output types from a single
-invocation. Whether this requires a combined write host or two separate hosts
-passed to the parser is a design decision.
+**Resolved:** Two-host `parse()` signature. The parser receives both a
+scalar write host (`PJ_parser_write_host_t`) and an object write host
+(`PJ_object_write_host_t`). Either may be NULL. This requires parser
+ABI v2, which is an outstanding prerequisite (see REQUIREMENTS.md
+Prerequisites). V1 uses direct ingest only.
 
 ### Metadata Availability: Eager vs Lazy
 
-- Image messages carry width, height, and encoding inline — metadata is
-  always available eagerly at ingest time.
-- VideoFrame messages encode dimensions in the bitstream (SPS for H.264,
-  Sequence Header for AV1). Extracting metadata requires parsing the
-  bitstream.
-- Trade-off: parsing the first keyframe eagerly (once per channel) gives
-  better UX (viewer knows dimensions before the first frame request) but adds
-  ingest cost. Deferring to first resolve keeps ingest fast.
-- Suggested resolution: parse the first keyframe eagerly (one parse per
-  channel, not per frame), defer for subsequent keyframes.
+**Resolved:** Parse the first keyframe eagerly (one parse per channel,
+not per frame). `StreamingVideoDecoder` extracts SPS/PPS from the first
+keyframe via `extractH264SpsPps()` and initializes the decoder. For
+file-backed sources, `FfmpegBackend` gets dimensions from
+`AVCodecParameters` at open time. No lazy metadata deferral.
+
+---
+
+## 10. MediaSource Pattern
+
+The `MediaSource` interface is the uniform frame-delivery contract
+between decoder backends and `MediaViewerWidget`. It replaces the
+originally-planned `PlaybackController` (which would have been a
+monolithic orchestrator conflicting with `FfmpegBackend`'s
+self-contained threading).
+
+**Interface:**
+```cpp
+class MediaSource {
+ public:
+  virtual ~MediaSource() = default;
+  virtual void setTimestamp(int64_t ts_ns) = 0;
+  virtual std::optional<DecodedFrame> takeFrame() = 0;
+};
+```
+
+**Key properties:**
+- `setTimestamp()` is called by the main thread when the global time
+  changes. It may decode synchronously (images) or post to an internal
+  worker thread (video).
+- `takeFrame()` is called by the main thread at render rate. Returns
+  the latest decoded frame, or nullopt if nothing new.
+- No `cancel()` in the public interface — each implementation manages
+  cancellation internally.
+- The widget calls `update()` after `setTimestamp()` to trigger a repaint.
+
+**Three implementations:**
+- `ImagePipelineSource` — synchronous decode via CodecPipeline.
+- `FileVideoSource` — wraps FfmpegBackend (self-contained threading).
+- `StreamingVideoSource` — wraps StreamingVideoDecoder + worker thread.

@@ -16,6 +16,7 @@ set(PJ_MEDIA_CORE_SOURCES
   src/image_decoder.cpp
   src/codec_pipeline.cpp
   src/codecs.cpp
+  src/image_pipeline_source.cpp
 )
 
 if(LIBAVCODEC_FOUND AND LIBAVFORMAT_FOUND)

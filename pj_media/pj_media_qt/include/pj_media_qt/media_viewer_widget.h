@@ -14,13 +14,21 @@
 
 namespace PJ {
 
+class MediaSource;
+
 /// GPU-accelerated image/video viewer using QRhiWidget.
 ///
-/// Supports two input modes:
-/// - **YUV420P** (via DecodedFrame): 3-plane textures + BT.709 shader.
-///   Used by FfmpegBackend and ThumbnailCache. No CPU color conversion.
-/// - **RGB** (via QImage): single RGBA texture, shader passthrough.
-///   Used by ImageDecoder (JPEG/PNG stills).
+/// Two usage modes:
+///
+/// 1. **MediaSource mode** (preferred): call setMediaSource() once, then
+///    setTimestamp() on each application tick. The widget polls the source
+///    in render() via takeFrame().
+///
+/// 2. **Manual mode** (backward compat): call setFrame() directly with
+///    decoded pixels. Used when no MediaSource is attached.
+///
+/// Supports YUV420P (3-plane BT.709 shader), RGB888/RGBA8888 DecodedFrame,
+/// and QImage inputs.
 ///
 /// Zoom (mouse wheel, cursor-anchored) and pan (mouse drag) via a view
 /// transform matrix in the vertex shader. See REQUIREMENTS.md §4.7.
@@ -32,7 +40,15 @@ class MediaViewerWidget : public QRhiWidget {
  public:
   explicit MediaViewerWidget(QWidget* parent = nullptr);
 
-  /// Set a decoded video frame (YUV420P preferred). Thread-safe.
+  /// Attach a MediaSource. The widget does NOT take ownership.
+  /// Call setTimestamp() to drive the source; render() polls takeFrame().
+  void setMediaSource(MediaSource* source);
+
+  /// Forward a timestamp to the attached MediaSource.
+  /// No-op if no source is attached.
+  void setTimestamp(int64_t ts_ns);
+
+  /// Set a decoded video frame (YUV420P or RGB). Thread-safe.
   void setFrame(const DecodedFrame& frame);
 
   /// Set an RGB image (backward compat for image viewers). Thread-safe.
@@ -70,10 +86,13 @@ class MediaViewerWidget : public QRhiWidget {
   QRhiTexture* tex_u_ = nullptr;
   QRhiTexture* tex_v_ = nullptr;
 
+  // MediaSource (not owned)
+  MediaSource* media_source_ = nullptr;
+
   // Pending frame (set from any thread, uploaded on render tick)
   std::mutex frame_mutex_;
-  DecodedFrame pending_decoded_;  // YUV420P frame
-  QImage pending_qimage_;         // RGB fallback
+  DecodedFrame pending_decoded_;  // YUV420P or RGB frame
+  QImage pending_qimage_;         // QImage fallback
   bool has_pending_ = false;
   bool pending_is_yuv_ = false;
 

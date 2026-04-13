@@ -39,26 +39,50 @@ then video, then streaming.
 
 **High priority:**
 
-1. **PlaybackController** — unified per-widget orchestrator. Dispatches
-   to StreamingVideoDecoder (video from ObjectStore) or CodecPipeline
-   (images). Owns worker thread, FrameSlot, mode switching (live ↔ scrub).
+1. **MediaSource abstraction** — thin interface (`setTimestamp` + `takeFrame`)
+   with three implementations: `FileVideoSource` (wraps FfmpegBackend),
+   `StreamingVideoSource` (wraps StreamingVideoDecoder + worker thread),
+   `ImagePipelineSource` (wraps CodecPipeline + ObjectStore, synchronous).
+   MediaViewerWidget gets `setMediaSource()` and `setTimestamp()`.
+   Replaces the previously-planned PlaybackController (see design note below).
 2. **pj_plugins integration** — wire ObjectStore write host to DataSource
    plugins for MCAP/ROS2 video and image ingest.
-3. **TimelineCursor in pj_base** — shared interface for global timeline
-   synchronization between DataEngine (scalars) and ObjectStore (media).
 
 **Medium priority:**
 
-4. **CodecPipeline for images** — wire CdrStripper + JpegCodec into
-   PlaybackController for MCAP CompressedImage topics.
-5. **MediaIndexRegistry** — centralized keyframe index for file-backed
+3. **MediaIndexRegistry** — centralized keyframe index for file-backed
    CompressedVideo topics (C ABI `publish_keyframe_index`).
 
 **Low priority (deferred):**
 
-6. Compositor (multi-layer overlay) — deferred until annotation test data.
-7. SceneDecoder (CDR/Protobuf annotations) — deferred.
-8. H.265/AV1 NAL utils — extend when needed.
+4. Compositor (multi-layer overlay) — deferred until annotation test data.
+5. SceneDecoder (CDR/Protobuf annotations) — deferred.
+6. H.265/AV1 NAL utils — extend when needed.
+
+**Deprecated:**
+
+- **MpvBackend / VideoViewerWidget** — superseded by FfmpegBackend +
+  FileVideoSource, which provides better scrub control. Source files
+  remain in the tree but are unused by demos.
+
+### Design note: MediaSource replaces PlaybackController
+
+The original plan called for a monolithic `PlaybackController` per widget
+that would own decoders, worker threads, FrameSlot, compositor, and
+CancelToken management. This conflicted with `FfmpegBackend`, which is
+already a self-contained subsystem (owns its own thread, seek throttle,
+thumbnail cache, cancellation). Wrapping it in PlaybackController would
+have meant two layers of threading and cancellation logic.
+
+Instead, `MediaSource` is a thin adapter interface matching how
+PlotJuggler's main thread drives widgets: the application calls
+`widget->setTimestamp(ts)`, and the widget polls `source->takeFrame()`
+at render rate. Each `MediaSource` implementation manages its own
+threading and cancellation internally. No forced uniformity.
+
+The `TimelineCursor` subscription model (ARCHITECTURE.md §9 old) is also
+superseded — the main thread drives timestamps directly, not via
+callbacks.
 
 ### Build notes
 

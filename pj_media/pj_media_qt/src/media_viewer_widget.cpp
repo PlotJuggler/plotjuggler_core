@@ -3,6 +3,8 @@
 #include <algorithm>
 #include <cstring>
 
+#include "pj_media_core/media_source.h"
+
 void pjMediaQtInitResources() {
   Q_INIT_RESOURCE(shaders);
 }
@@ -59,6 +61,16 @@ void MediaViewerWidget::resetView() {
   pan_x_ = 0.0f;
   pan_y_ = 0.0f;
   update();
+}
+
+void MediaViewerWidget::setMediaSource(MediaSource* source) {
+  media_source_ = source;
+}
+
+void MediaViewerWidget::setTimestamp(int64_t ts_ns) {
+  if (media_source_ != nullptr) {
+    media_source_->setTimestamp(ts_ns);
+  }
 }
 
 void MediaViewerWidget::releaseResources() {
@@ -161,6 +173,18 @@ void MediaViewerWidget::render(QRhiCommandBuffer* cb) {
   const QSize output_size = rt->pixelSize();
   QRhiResourceUpdateBatch* updates = r->nextResourceUpdateBatch();
 
+  // Poll MediaSource if attached
+  if (media_source_ != nullptr) {
+    auto frame = media_source_->takeFrame();
+    if (frame && !frame->isNull()) {
+      // Feed into the pending frame path (no lock needed — same thread)
+      pending_decoded_ = std::move(*frame);
+      pending_is_yuv_ = (pending_decoded_.format == PixelFormat::kYUV420P);
+      pending_qimage_ = QImage();
+      has_pending_ = true;
+    }
+  }
+
   {
     std::lock_guard lock(frame_mutex_);
     if (has_pending_) {
@@ -224,8 +248,68 @@ void MediaViewerWidget::render(QRhiCommandBuffer* cb) {
 
         frame_aspect_ = static_cast<float>(w) / static_cast<float>(h);
 
+      } else if (!pending_is_yuv_ && !pending_decoded_.isNull()) {
+        // RGB/RGBA DecodedFrame path: convert to RGBA8 and upload as single texture
+        int w = pending_decoded_.width;
+        int h = pending_decoded_.height;
+        const uint8_t* src = pending_decoded_.pixels->data();
+        size_t src_size = pending_decoded_.pixels->size();
+
+        // Convert to RGBA8888 for GPU upload
+        std::vector<uint8_t> rgba_buf;
+        const uint8_t* rgba_data = nullptr;
+        size_t rgba_size = 0;
+
+        if (pending_decoded_.format == PixelFormat::kRGBA8888 || pending_decoded_.format == PixelFormat::kBGRA8888) {
+          rgba_data = src;
+          rgba_size = src_size;
+        } else if (pending_decoded_.format == PixelFormat::kRGB888 || pending_decoded_.format == PixelFormat::kBGR888) {
+          // RGB→RGBA: insert alpha=255
+          rgba_buf.resize(static_cast<size_t>(w) * static_cast<size_t>(h) * 4);
+          int pixel_count = w * h;
+          for (int i = 0; i < pixel_count; ++i) {
+            rgba_buf[i * 4 + 0] = src[i * 3 + 0];
+            rgba_buf[i * 4 + 1] = src[i * 3 + 1];
+            rgba_buf[i * 4 + 2] = src[i * 3 + 2];
+            rgba_buf[i * 4 + 3] = 255;
+          }
+          rgba_data = rgba_buf.data();
+          rgba_size = rgba_buf.size();
+        }
+
+        if (rgba_data != nullptr) {
+          if (w != tex_width_ || h != tex_height_ || current_pixel_format_ != 2) {
+            tex_y_->destroy();
+            tex_y_->setFormat(QRhiTexture::RGBA8);
+            tex_y_->setPixelSize(QSize(w, h));
+            tex_y_->create();
+
+            srb_->destroy();
+            srb_->setBindings({
+                QRhiShaderResourceBinding::uniformBuffer(
+                    0, QRhiShaderResourceBinding::VertexStage | QRhiShaderResourceBinding::FragmentStage, uniform_buf_),
+                QRhiShaderResourceBinding::sampledTexture(
+                    1, QRhiShaderResourceBinding::FragmentStage, tex_y_, sampler_),
+                QRhiShaderResourceBinding::sampledTexture(
+                    2, QRhiShaderResourceBinding::FragmentStage, tex_u_, sampler_),
+                QRhiShaderResourceBinding::sampledTexture(
+                    3, QRhiShaderResourceBinding::FragmentStage, tex_v_, sampler_),
+            });
+            srb_->create();
+
+            tex_width_ = w;
+            tex_height_ = h;
+            current_pixel_format_ = 2;
+          }
+
+          QRhiTextureSubresourceUploadDescription sub_desc(rgba_data, static_cast<quint32>(rgba_size));
+          sub_desc.setSourceSize(QSize(w, h));
+          updates->uploadTexture(tex_y_, QRhiTextureUploadDescription({0, 0, sub_desc}));
+          frame_aspect_ = static_cast<float>(w) / static_cast<float>(h);
+        }
+
       } else if (!pending_qimage_.isNull()) {
-        // RGB path: upload single RGBA texture (backward compat)
+        // QImage path (backward compat)
         QImage img = pending_qimage_.convertToFormat(QImage::Format_RGBA8888);
         QSize img_size = img.size();
 
@@ -235,7 +319,6 @@ void MediaViewerWidget::render(QRhiCommandBuffer* cb) {
           tex_y_->setPixelSize(img_size);
           tex_y_->create();
 
-          // Rebuild SRB
           srb_->destroy();
           srb_->setBindings({
               QRhiShaderResourceBinding::uniformBuffer(
