@@ -553,6 +553,47 @@ class MediaSource {
 - The widget calls `update()` after `setTimestamp()` to trigger a repaint.
 
 **Three implementations:**
-- `ImagePipelineSource` — synchronous decode via CodecPipeline.
-- `FileVideoSource` — wraps FfmpegBackend (self-contained threading).
-- `StreamingVideoSource` — wraps StreamingVideoDecoder + worker thread.
+- `ImagePipelineSource` — synchronous decode via CodecPipeline. Done.
+- `FileVideoSource` — wraps FfmpegBackend (self-contained threading). Planned.
+- `StreamingVideoSource` — wraps StreamingVideoDecoder + worker thread. Planned.
+
+---
+
+## 11. Lessons Learned (Code Review Fixes)
+
+Bugs found during a 4-agent parallel code review (API design, silent
+failures, type design, Codex) and fixed via TDD.
+
+**YUV420P chroma plane sizing must use ceiling division.** For
+YUV420P, chroma planes are `ceil(w/2) x ceil(h/2)`, not `w/2 x h/2`.
+Truncating integer division causes buffer overflow on odd-dimension
+video (e.g. 1921x1081). Fixed by adding `expectedBufferSize()` to
+`decoded_frame.h` — a single source of truth for all YUV/NV12 buffer
+size calculations. Every allocation site must use this function.
+
+**`avFrameToDecodedFrame` must propagate errors, not return null
+frames as success.** When HW transfer or sws_getContext fails,
+returning `DecodedFrame{}` wraps a null frame in `Expected<T>` as a
+"success" — callers have no way to distinguish it from a real frame.
+Changed return type to `Expected<DecodedFrame>` with error strings.
+
+**MCAP's `schemas()` and `channels()` return by value.** Calling
+`reader.schemas().find(id)` creates an iterator into a temporary map
+that is destroyed at the semicolon. Classic dangling iterator UB —
+heap-use-after-free under ASAN. Fix: cache the map in a local variable
+before iterating.
+
+**ThumbnailCache must clear frames on reopen.** `buildAsync()` called
+`stop()` but never cleared `frames_` or `total_bytes_`. Building from
+a new file appended thumbnails after the old ones, violating the sort
+invariant and returning stale frames from the previous video.
+
+**Codec stages must validate input format and buffer size.** Pipeline
+stages like `SegmentationPalette` and `DepthToGrayscale` compute read
+lengths from `width*height` but never check `pixels->size()`. With
+malformed input, this is an out-of-bounds read.
+
+**RTLD_DEEPBIND is incompatible with AddressSanitizer.** `dlopen` with
+`RTLD_DEEPBIND` conflicts with ASAN's runtime interceptors. Fixed by
+defining `PJ_ASAN_ACTIVE` when sanitizers are enabled and skipping
+the flag in that case.

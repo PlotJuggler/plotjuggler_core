@@ -29,6 +29,12 @@ then video, then streaming.
 | integration tests | `b7b6490` | 23 integration tests: play, forward/backward scrub at 480p/1080p/4K/1920p-B-frames, pause/unpause, bidirectional, close safety, responsiveness, settle behavior |
 | M17+M18: streaming video | `0601835` | StreamingVideoDecoder: ObjectStore + FfmpegDecoder bridge. H.264 NAL utils (isH264Keyframe, extractH264SpsPps, makeH264CodecParams). Incremental keyframe index, forward-path optimization, same-timestamp cache, eviction-resilient live decode. video_stream_demo with live/scrub toggle, 500-frame buffer. 23 tests (5 h264_utils + 18 streaming_video_decoder) |
 | B-frame support | `b1cfbd6` | DTS-keyed ObjectStore storage for B-frame videos. Removed drain() from seek path (was O(n²) with B-frame reorder). Negative DTS fix via std::optional sentinels. Startup burst for instant B-frame playback. 6 additional tests |
+| MediaSource abstraction | `f7a8a7a` | MediaSource interface (`setTimestamp` + `takeFrame`), ImagePipelineSource (synchronous CodecPipeline + ObjectStore), MediaViewerWidget integration (`setMediaSource`, `setTimestamp`), RGB/RGBA/BGR DecodedFrame upload path, `makeCdrJpegPipeline()` factory. Docs: ARCHITECTURE.md §5 rewritten, PlaybackController replaced, MpvBackend deprecated |
+| Demo migrations | `2fc91ea` | Image demos (simulated_stream, multi_channel_viewer, mcap_image_viewer) migrated to ImagePipelineSource + `setMediaSource()`. `expectedBufferSize()` + `isValid()` added to DecodedFrame. Odd-dimension YUV420P buffer overflow fixed in ffmpeg_decoder, thumbnail_cache, media_viewer_widget. 18 decoded_frame tests |
+| TDD review fixes | `a182b2b` | avFrameToDecodedFrame returns `Expected<DecodedFrame>` (C2). ThumbnailCache buildThread checks FFmpeg return values (C4). ThumbnailCache reopen clears stale frames (H1). EAGAIN retry in FfmpegDecoder (H2). StreamingVideoDecoder returns error on evicted mid-GOP entries (H3). ffmpeg_decoder_test updated to expect YUV420P. 6 thumbnail_cache tests |
+| Medium review fixes | `18bead3` | DepthToGrayscale + SegmentationPalette validate buffer size and format. ImagePipelineSource deduplicates same-timestamp requests. FfmpegDecoder header doc corrected to YUV420P |
+| Final review fixes | `699736b` | Widget UV plane sizing fixed to `(w+1)/2`. BGR/BGRA→RGBA channel swap. MCAP test dangling iterator fix (`schemas()` returns by value) |
+| ASAN infrastructure | `f616213` | Skip RTLD_DEEPBIND under ASAN via `PJ_ASAN_ACTIVE` define. 10 plugin tests fixed. ASAN results: 57/58 (was 45/58) |
 
 ### Known limitations
 
@@ -39,12 +45,13 @@ then video, then streaming.
 
 **High priority:**
 
-1. **MediaSource abstraction** — thin interface (`setTimestamp` + `takeFrame`)
-   with three implementations: `FileVideoSource` (wraps FfmpegBackend),
-   `StreamingVideoSource` (wraps StreamingVideoDecoder + worker thread),
-   `ImagePipelineSource` (wraps CodecPipeline + ObjectStore, synchronous).
-   MediaViewerWidget gets `setMediaSource()` and `setTimestamp()`.
-   Replaces the previously-planned PlaybackController (see design note below).
+1. **FileVideoSource + StreamingVideoSource** — remaining MediaSource
+   implementations. `FileVideoSource` wraps FfmpegBackend (file-based
+   MP4). `StreamingVideoSource` wraps StreamingVideoDecoder + worker
+   thread (ObjectStore-based H.264 streams). Migrate `mp4_video_viewer`
+   and `video_stream_demo` demos. (`MediaSource` interface,
+   `ImagePipelineSource`, widget integration, and image demo migrations
+   are already done — see completed milestones.)
 2. **pj_plugins integration** — wire ObjectStore write host to DataSource
    plugins for MCAP/ROS2 video and image ingest.
 
@@ -92,9 +99,9 @@ callbacks.
   Re-run `qsb --glsl 440 --hlsl 50 --msl 12` if shaders change.
 - `dialog_engine_test` works with Qt 6.8 but may not build during
   partial builds. Run full `cmake --build` to ensure all targets.
-- **Future**: compare system libmpv vs locally-built latest mpv
-  (git submodule) for performance. VideoBackend abstraction allows
-  swapping without widget changes.
+- **MpvBackend is deprecated.** FfmpegBackend + FileVideoSource is the
+  primary video path. MpvBackend/VideoViewerWidget source files remain
+  in the tree but are unused by demos.
 
 ## Test data
 
@@ -237,7 +244,7 @@ list_object_topics).
 
 First visual output: read JPEG images from an MCAP file, display
 them in a Qt widget with a timeline slider. Validates: ObjectStore
-read path, ImageDecoder, FrameSlot, PlaybackController, QRhiWidget.
+read path, ImageDecoder, MediaSource, QRhiWidget.
 
 ### M6: pj_media_core foundation types
 
@@ -284,28 +291,28 @@ raw pixel copy. Takes raw bytes, returns `DecodedFrame`.
 entries into ObjectStore via direct ingest (pushLazy with MCAP seek
 callbacks), display images in a Qt widget with a slider.
 
-This milestone creates the first `PlaybackController` (single worker
-thread) and `MediaViewerWidget` (QOpenGLWidget rendering decoded
-RGB images — simpler than QRhiWidget for the first milestone).
+This milestone creates the first `ImagePipelineSource` (synchronous
+decode via CodecPipeline) and `MediaViewerWidget` (QRhiWidget with
+BT.709 YUV→RGB shader and RGB DecodedFrame upload path).
 
 **Files**:
-- `pj_media/pj_media_core/include/pj_media_core/playback_controller.h`
-- `pj_media/pj_media_core/src/playback_controller.cpp`
+- `pj_media/pj_media_core/include/pj_media_core/media_source.h`
+- `pj_media/pj_media_core/include/pj_media_core/image_pipeline_source.h`
+- `pj_media/pj_media_core/src/image_pipeline_source.cpp`
 - `pj_media/pj_media_qt/include/pj_media_qt/media_viewer_widget.h`
 - `pj_media/pj_media_qt/src/media_viewer_widget.cpp`
 - `pj_media/pj_media_qt/CMakeLists.txt`
 - `pj_media/demos/mcap_image_viewer.cpp` (demo binary)
-- `pj_media/pj_media_core/tests/playback_controller_test.cpp`
+- `pj_media/pj_media_core/tests/decoded_frame_test.cpp`
 
 **Demo**: `mcap_image_viewer <test_images.mcap>` — opens the file,
 shows images, slider scrubs through the timeline.
 
 **Tests**:
-- PlaybackController: construct with ObjectStore + topic, request
-  timestamp, poll FrameSlot → returns decoded image frame. No Qt.
-- Direction-aware cancel-store: rapid forward requests → FrameSlot
-  receives frames. Rapid backward requests → no stale forward frames
-  leak through.
+- ImagePipelineSource: construct with ObjectStore + topic + pipeline,
+  setTimestamp → takeFrame returns decoded image frame. No Qt.
+- expectedBufferSize: covers all PixelFormats including odd-dimension
+  YUV420P. isValid checks size/format/dimension consistency.
 - Integration: load `test_images.mcap` → ObjectStore, verify
   `entryCount` matches expected (90), `latestAt` at midpoint returns
   bytes, ImageDecoder produces a frame with expected dimensions.
@@ -446,8 +453,8 @@ camera. The `MediaViewerWidget` displays the latest frame.
 - Pause (stop pushing) → `timeRange` is frozen, scrub through
   retained buffer → all frames accessible
 - Resume pushing → old frames evicted, new frames appear
-- Concurrent reader (PlaybackController polling `latestAt`) during
-  push → ASAN clean, no stale frames
+- Concurrent reader (MediaSource polling `latestAt`) during push →
+  ASAN clean, no stale frames
 
 ### M14: Live mode viewer
 
@@ -519,7 +526,7 @@ pj_media/
 | Dependency | Source | Used by |
 |------------|--------|---------|
 | turbojpeg | system pkg or conan | pj_media_core (ImageDecoder, ThumbnailCache) |
-| libmpv | system pkg (`pkg_check_modules`) | pj_media_qt (MpvBackend) |
+| libmpv | system pkg (`pkg_check_modules`) | pj_media_qt (MpvBackend) — **deprecated** |
 | FFmpeg (libavcodec, libavformat, libavutil, libswscale) | system pkg | pj_media_core (FfmpegDecoder, FfmpegBackend) |
 
 ### .gitignore additions
