@@ -101,6 +101,9 @@ if(PJ_BUILD_TESTS)
     add_test(NAME ffmpeg_decoder_test COMMAND ffmpeg_decoder_test
       WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
     )
+    set_tests_properties(ffmpeg_decoder_test PROPERTIES
+      ENVIRONMENT "LSAN_OPTIONS=suppressions=${CMAKE_CURRENT_SOURCE_DIR}/tests/lsan_suppressions.txt"
+    )
 
     # ThumbnailCache test (thread safety, reopen, invalid files)
     add_executable(thumbnail_cache_test tests/thumbnail_cache_test.cpp)
