@@ -27,7 +27,7 @@ extern "C" {
 #include <vector>
 
 #include "pj_datastore/object_store.hpp"
-#include "pj_media_core/streaming_video_decoder.h"
+#include "pj_media_core/streaming_video_source.h"
 #include "pj_media_qt/media_viewer_widget.h"
 
 namespace {
@@ -169,9 +169,9 @@ class VideoStreamWindow : public QMainWindow {
     retention_ns_ = 500 * demuxed_.frame_interval_us * 1000;
     store_->setRetentionBudget(topic_, {.time_window_ns = retention_ns_, .max_memory_bytes = 0});
 
-    // StreamingVideoDecoder
-    decoder_ = std::make_unique<PJ::StreamingVideoDecoder>();
-    decoder_->attach(store_.get(), topic_);
+    // StreamingVideoSource (MediaSource adapter with worker thread)
+    source_ = std::make_unique<PJ::StreamingVideoSource>(store_.get(), topic_);
+    viewer_->setMediaSource(source_.get());
 
     // Push timer: simulates real-time streaming at the video's frame rate
     push_timer_ = new QTimer(this);
@@ -214,8 +214,10 @@ class VideoStreamWindow : public QMainWindow {
            .metadata_json = R"({"media_class":"video","encoding":"h264"})"});
       topic_ = *topic_or;
       store_->setRetentionBudget(topic_, {.time_window_ns = retention_ns_, .max_memory_bytes = 0});
-      decoder_->reset();
-      decoder_->attach(store_.get(), topic_);
+      // Recreate the source for the new topic
+      viewer_->setMediaSource(nullptr);
+      source_ = std::make_unique<PJ::StreamingVideoSource>(store_.get(), topic_);
+      viewer_->setMediaSource(source_.get());
       pts_offset_ += demuxed_.packets.back().dts_ns + demuxed_.frame_interval_us * 1000;
     }
 
@@ -233,10 +235,8 @@ class VideoStreamWindow : public QMainWindow {
       }
 
       auto range = store_->timeRange(topic_);
-      auto result = decoder_->decodeAt(range.second);
-      if (result.has_value() && !result->isNull()) {
-        viewer_->setFrame(*result);
-      }
+      source_->setTimestamp(range.second);
+      viewer_->update();
 
       // Update slider range (disabled in live mode)
       slider_->blockSignals(true);
@@ -272,10 +272,8 @@ class VideoStreamWindow : public QMainWindow {
       return;
     }
 
-    auto result = decoder_->decodeAt(entry->timestamp);
-    if (result.has_value() && !result->isNull()) {
-      viewer_->setFrame(*result);
-    }
+    source_->setTimestamp(entry->timestamp);
+    viewer_->update();
 
     auto count = store_->entryCount(topic_);
     info_label_->setText(QString("Scrub %1/%2").arg(value + 1).arg(count));
@@ -285,7 +283,7 @@ class VideoStreamWindow : public QMainWindow {
   DemuxedVideo demuxed_;
   std::unique_ptr<PJ::ObjectStore> store_;
   PJ::ObjectTopicId topic_{};
-  std::unique_ptr<PJ::StreamingVideoDecoder> decoder_;
+  std::unique_ptr<PJ::StreamingVideoSource> source_;
 
   size_t push_index_ = 0;
   int64_t pts_offset_ = 0;

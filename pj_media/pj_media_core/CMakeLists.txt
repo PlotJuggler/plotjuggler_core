@@ -26,6 +26,8 @@ if(LIBAVCODEC_FOUND AND LIBAVFORMAT_FOUND)
     src/thumbnail_cache.cpp
     src/h264_utils.cpp
     src/streaming_video_decoder.cpp
+    src/file_video_source.cpp
+    src/streaming_video_source.cpp
   )
 endif()
 
@@ -134,6 +136,30 @@ if(PJ_BUILD_TESTS)
     )
     target_compile_options(streaming_video_decoder_test PRIVATE ${PJ_WARNING_FLAGS} ${PJ_SANITIZER_FLAGS})
     add_test(NAME streaming_video_decoder_test COMMAND streaming_video_decoder_test
+      WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    )
+
+    # StreamingVideoSource test (MediaSource adapter for StreamingVideoDecoder)
+    add_executable(streaming_video_source_test2 tests/streaming_video_source_test.cpp)
+    target_link_libraries(streaming_video_source_test2 PRIVATE
+      pj_media_core pj_datastore
+      PkgConfig::LIBAVCODEC PkgConfig::LIBAVFORMAT PkgConfig::LIBAVUTIL PkgConfig::LIBSWSCALE
+      GTest::gtest_main
+    )
+    target_compile_options(streaming_video_source_test2 PRIVATE ${PJ_WARNING_FLAGS} ${PJ_SANITIZER_FLAGS})
+    add_test(NAME streaming_video_source_test2 COMMAND streaming_video_source_test2
+      WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    )
+
+    # FileVideoSource test (MediaSource adapter for FfmpegBackend)
+    add_executable(file_video_source_test tests/file_video_source_test.cpp)
+    target_link_libraries(file_video_source_test PRIVATE
+      pj_media_core pj_datastore
+      PkgConfig::LIBAVCODEC PkgConfig::LIBAVFORMAT PkgConfig::LIBAVUTIL PkgConfig::LIBSWSCALE
+      GTest::gtest_main
+    )
+    target_compile_options(file_video_source_test PRIVATE ${PJ_WARNING_FLAGS} ${PJ_SANITIZER_FLAGS})
+    add_test(NAME file_video_source_test COMMAND file_video_source_test
       WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
     )
 
