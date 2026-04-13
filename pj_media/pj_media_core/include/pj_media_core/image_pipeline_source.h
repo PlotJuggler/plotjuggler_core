@@ -23,6 +23,7 @@ class ImagePipelineSource : public MediaSource {
   std::unique_ptr<CodecPipeline> pipeline_;
 
   std::optional<DecodedFrame> pending_frame_;
+  int64_t last_ts_ = INT64_MIN;
 };
 
 }  // namespace PJ

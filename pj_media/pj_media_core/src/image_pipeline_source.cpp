@@ -7,6 +7,11 @@ ImagePipelineSource::ImagePipelineSource(
     : store_(store), topic_(topic), pipeline_(std::move(pipeline)) {}
 
 void ImagePipelineSource::setTimestamp(int64_t ts_ns) {
+  if (ts_ns == last_ts_) {
+    return;  // same timestamp — reuse pending frame, skip redundant decode
+  }
+  last_ts_ = ts_ns;
+
   auto entry = store_->latestAt(topic_, ts_ns);
   if (!entry.has_value() || entry->data == nullptr || entry->data->empty()) {
     pending_frame_.reset();

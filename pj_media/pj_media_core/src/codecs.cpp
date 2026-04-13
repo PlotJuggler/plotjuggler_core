@@ -231,6 +231,9 @@ Expected<DecodedFrame> DepthToGrayscale::decode(const DecodedFrame& input) const
   }
 
   auto pixel_count = static_cast<size_t>(input.width) * static_cast<size_t>(input.height);
+  if (input.pixels->size() < pixel_count * 2) {
+    return unexpected("depth buffer too small for dimensions");
+  }
   const auto* src = reinterpret_cast<const uint16_t*>(input.pixels->data());
 
   uint16_t min_val = 65535;
@@ -272,6 +275,13 @@ Expected<DecodedFrame> DepthToGrayscale::decode(const DecodedFrame& input) const
 Expected<DecodedFrame> SegmentationPalette::decode(const DecodedFrame& input) const {
   if (input.isNull() || input.width == 0 || input.height == 0) {
     return unexpected("empty segmentation data");
+  }
+  if (input.format != PixelFormat::kMono8) {
+    return unexpected("expected mono8 input for segmentation palette");
+  }
+  auto pixel_count_check = static_cast<size_t>(input.width) * static_cast<size_t>(input.height);
+  if (input.pixels->size() < pixel_count_check) {
+    return unexpected("segmentation buffer too small for dimensions");
   }
 
   static const auto palette = []() {

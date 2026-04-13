@@ -36,7 +36,7 @@ class FfmpegDecoder {
   /// Tries VAAPI → CUDA → software fallback.
   bool open(const AVCodecParameters* params);
 
-  /// Decode a compressed packet into an RGB DecodedFrame.
+  /// Decode a compressed packet into a YUV420P DecodedFrame.
   /// Returns empty Expected on EAGAIN (need more packets) or error.
   /// Checks cancel token between send and receive.
   Expected<DecodedFrame> decode(const uint8_t* data, size_t size, int64_t pts, const CancelTokenPtr& cancel = nullptr);
