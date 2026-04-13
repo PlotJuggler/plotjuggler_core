@@ -27,6 +27,7 @@ then video, then streaming.
 | thumbnail cache | `d67cdb8` | ThumbnailCache: background thread pre-decodes 1 frame/sec at open. Auto-scales to max 1920px for 4K. JPEG quality 85 (~90KB/frame 1080p). YUV420P throughout. Instant backward scrub feedback |
 | scrub refinement | `bb23e16` | Target refinement within same GOP for backward scrub. Keyframe-then-refine strategy eliminates forward jumps |
 | integration tests | `b7b6490` | 23 integration tests: play, forward/backward scrub at 480p/1080p/4K/1920p-B-frames, pause/unpause, bidirectional, close safety, responsiveness, settle behavior |
+| M17: streaming video | pending | StreamingVideoDecoder: ObjectStore + FfmpegDecoder bridge. H.264 NAL utils, annex-B keyframe detection, incremental keyframe index, forward-path + same-timestamp cache, eviction-resilient live decode. 23 tests (5 h264_utils + 18 streaming_video_decoder). M18: video_stream_demo (live/scrub toggle, 500-frame buffer) |
 
 ### Known limitations
 

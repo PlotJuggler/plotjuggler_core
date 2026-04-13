@@ -345,6 +345,38 @@ Live mode skips the clock entirely — always show the latest frame, drop
 older ones. This is the fundamental behavioral split between file and
 streaming playback.
 
+### StreamingVideoDecoder: Lessons Learned
+
+**Keyframe index must track by timestamp, not count.** During steady-state
+streaming with retention, `ObjectStore::entryCount()` stays constant
+(push+evict). A count-based scan cursor (`if (count > last_scanned) scan`)
+silently stops indexing new keyframes. Track by timestamp instead:
+`indexAt(last_scanned_ts_) + 1` finds new entries regardless of count.
+
+**Same-timestamp caching is critical.** When the display polls at 60 Hz
+but frames arrive at 30 Hz, every other `decodeAt()` call requests the
+same timestamp. Without caching, this triggers a full keyframe→target
+seek+decode. For 1920p video with large GOPs, this causes visible
+stuttering. Solution: cache `last_frame_` and return it immediately when
+`target_ts == last_decoded_ts_`.
+
+**Forward decode must survive keyframe eviction.** In live mode, the
+original keyframe gets evicted while the decoder continues forward.
+The decoder state is still valid — it just needs new packets. The forward
+path must not require the keyframe index (`keyframe_timestamps_` may be
+empty) or the original keyframe entry (may be evicted). Only backward
+seeks require a keyframe still in the store.
+
+**SPS/PPS extradata required for VAAPI.** Opening `FfmpegDecoder` with
+just `codec_id = AV_CODEC_ID_H264` and no `extradata` causes VAAPI
+"Failed to sync surface" errors. The fix: extract SPS+PPS NAL units
+from the first keyframe and set them as `AVCodecParameters::extradata`
+via `extractH264SpsPps()`. This lets VAAPI properly size its surface pool.
+
+**ObjectStore indices shift after eviction.** A cached `last_decoded_index_`
+becomes stale after eviction removes entries from the front. Always
+re-derive the index via `indexAt(last_decoded_ts_)` instead of caching it.
+
 ### Zoom and Pan via GPU Transform
 
 With QRhiWidget rendering, zoom and pan require only a view transform matrix

@@ -36,7 +36,9 @@ Pure C++ library. Contains everything that does not touch Qt:
 | `VideoBackend` | `video_backend.h` | Abstract video playback interface (§4) |
 | `FfmpegBackend` | `ffmpeg_backend.h` | FFmpeg-based `VideoBackend`: seek, scrub, play with CancelToken, forward threshold, decodeSkip, thumbnail cache (§4.1) |
 | `FfmpegDecoder` | `ffmpeg_decoder.h` | FFmpeg AVCodecContext wrapper: HW-accel probing, outputs YUV420P (§R4.7 compliant) |
+| `StreamingVideoDecoder` | `streaming_video_decoder.h` | Decodes H.264 VideoFrame entries from ObjectStore via FfmpegDecoder (§4.4) |
 | `ThumbnailCache` | `thumbnail_cache.h` | JPEG-compressed frame cache: background pre-decode at open, auto-scale to 1920px, YUV420P output (§4.1) |
+| `H264 NAL utils` | `h264_utils.h` | Annex-B keyframe detection (`isH264Keyframe`), SPS/PPS extraction (`extractH264SpsPps`), codec param builder (`makeH264CodecParams`) |
 | `ImageDecoder` | `image_decoder.h` | turbojpeg / libpng / raw-pixel dispatch (§4) |
 | `SceneDecoder` | `scene_decoder.h` | CDR / Protobuf deserializer for annotations and 2D primitives (§4) |
 | `MediaIndexRegistry` | `media_index_registry.h` | Per-topic keyframe timestamp index sidechannel (§6) |
@@ -406,6 +408,66 @@ or Protobuf wire format into typed scene primitives and annotations
 Output is a `SceneFrame` — a collection of typed primitives ready for
 the compositor to rasterize or overlay.
 
+### 4.4 StreamingVideoDecoder
+
+Decodes H.264 VideoFrame entries stored in ObjectStore. Unlike
+`FfmpegBackend` (which reads from files via `AVFormatContext`),
+`StreamingVideoDecoder` reads encoded NAL units from ObjectStore
+entries — the path for streaming sources (ROS 2, RTSP, etc.) that
+push VideoFrame messages into ObjectStore at ingest time.
+
+**Not a `VideoBackend` subclass.** `VideoBackend` is file-oriented
+(`open(path)`, fixed `duration()`). The streaming case reads from
+ObjectStore, has dynamic duration (retention window), and no file path.
+`StreamingVideoDecoder` lives in `pj_media_core` with no Qt dependency.
+
+**API:**
+
+```cpp
+class StreamingVideoDecoder {
+ public:
+  void attach(ObjectStore* store, ObjectTopicId topic);
+  Expected<DecodedFrame> decodeAt(Timestamp ts);
+  void reset();
+  bool isInitialized() const;
+};
+```
+
+**Two-path decode strategy:**
+
+1. **Forward path** (live mode and forward scrub): when the target
+   timestamp is at or ahead of the last decoded position, the decoder
+   continues forward without flushing. Uses `FfmpegDecoder::decodeSkip()`
+   for intermediate frames and `decode()` only for the target.
+   This is O(1) per frame in live mode (one decode per call).
+
+2. **Seek path** (backward scrub, cross-GOP jump, first decode): finds
+   the nearest keyframe before the target in the keyframe index, flushes
+   the decoder, and decodes forward from the keyframe to the target.
+
+**Same-timestamp cache:** When the display polls faster than the push
+rate (e.g., 60 Hz display vs 30 Hz push), `decodeAt()` is called with
+the same timestamp twice. The cached `last_frame_` is returned
+immediately — no re-decode, no seek.
+
+**Keyframe index:** Built incrementally by NAL-inspecting each new
+entry via `isH264Keyframe()` (scans for IDR NAL type 5 in annex-B
+start codes). Tracked by `last_scanned_ts_` to handle the steady-state
+case where retention keeps `entryCount()` constant while entries
+are replaced. Evicted keyframe timestamps are pruned against
+`timeRange().first` on each update.
+
+**Decoder initialization:** Deferred until the first keyframe arrives
+(join-mid-stream support). `makeH264CodecParams()` extracts SPS/PPS
+from the keyframe's annex-B data and sets it as `AVCodecParameters::extradata`,
+enabling proper VAAPI/CUDA surface pool initialization.
+
+**Eviction resilience:** In live mode, the original keyframe may be
+evicted by retention while the decoder continues forward. The forward
+path does not require the keyframe — the decoder already has the
+correct codec state from previous sequential decodes. Only backward
+seeks require a keyframe still present in the store.
+
 ---
 
 ## 5. PlaybackController
@@ -516,11 +578,14 @@ links `pj_media_core` — communication is through the C ABI write host
 only. This is a one-time cost at file open, amortized over all
 subsequent seeks.
 
-**Streaming sources**: the `VideoDecoder` builds the index
-incrementally. On each new entry it NAL-parses the first few bytes to
-detect IDR frames and calls `appendKeyframe()`. This is per-entry
-overhead but is amortized over live playback — at 30 fps, one
-NAL-header check per frame is negligible.
+**Streaming sources**: the decoder builds the index incrementally.
+On each new entry it NAL-parses the first few bytes to detect IDR
+frames. `StreamingVideoDecoder` (§4.4) manages its own inline keyframe
+timestamp vector rather than using `MediaIndexRegistry` — this is
+simpler for the single-consumer case and avoids cross-component
+coupling. The per-entry cost is negligible: `isH264Keyframe()` scans
+for a 4-byte start code + 1-byte NAL type header, touching at most
+the first ~20 bytes of each entry regardless of frame size.
 
 ### Usage by VideoDecoder
 

@@ -2,6 +2,9 @@ find_package(mcap REQUIRED)
 find_package(PkgConfig QUIET)
 if(PkgConfig_FOUND)
   pkg_check_modules(TURBOJPEG IMPORTED_TARGET libturbojpeg)
+  pkg_check_modules(LIBAVCODEC IMPORTED_TARGET libavcodec)
+  pkg_check_modules(LIBAVFORMAT IMPORTED_TARGET libavformat)
+  pkg_check_modules(LIBAVUTIL IMPORTED_TARGET libavutil)
 endif()
 
 # --- CLI tool: extract a frame to PPM ---
@@ -46,6 +49,17 @@ if(TARGET pj_media_qt)
     target_compile_options(mp4_stream_buffer PRIVATE ${PJ_WARNING_FLAGS})
     target_link_libraries(mp4_stream_buffer PRIVATE
       pj_media_qt pj_media_core pj_datastore PkgConfig::MPV
+    )
+  endif()
+
+  # --- Qt demo: video stream (M18 — FFmpeg decode via ObjectStore) ---
+  if(LIBAVCODEC_FOUND AND LIBAVFORMAT_FOUND)
+    add_executable(video_stream_demo video_stream_demo.cpp)
+    target_compile_features(video_stream_demo PRIVATE cxx_std_20)
+    target_compile_options(video_stream_demo PRIVATE ${PJ_WARNING_FLAGS})
+    target_link_libraries(video_stream_demo PRIVATE
+      pj_media_qt pj_media_core pj_datastore
+      PkgConfig::LIBAVCODEC PkgConfig::LIBAVFORMAT PkgConfig::LIBAVUTIL
     )
   endif()
 
