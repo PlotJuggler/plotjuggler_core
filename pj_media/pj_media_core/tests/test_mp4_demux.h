@@ -19,7 +19,8 @@ namespace PJ::test {
 
 struct AnnexBPacket {
   std::vector<uint8_t> data;
-  Timestamp timestamp = 0;  // nanoseconds
+  Timestamp timestamp = 0;  // PTS in nanoseconds (presentation order)
+  Timestamp dts = 0;        // DTS in nanoseconds (decode order, always monotonic)
   bool keyframe = false;    // from demuxer's AV_PKT_FLAG_KEY
 };
 
@@ -66,12 +67,14 @@ inline std::vector<AnnexBPacket> extractAnnexBPackets(const std::string& path) {
 
     bool is_key = (pkt->flags & AV_PKT_FLAG_KEY) != 0;
     int64_t pts = pkt->pts;
+    int64_t pkt_dts = pkt->dts;
 
     if (av_bsf_send_packet(bsf_ctx, pkt) >= 0) {
       while (av_bsf_receive_packet(bsf_ctx, filtered) >= 0) {
         AnnexBPacket ap;
         ap.data.assign(filtered->data, filtered->data + filtered->size);
         ap.timestamp = static_cast<Timestamp>(static_cast<double>(pts) * time_base * 1'000'000'000.0);
+        ap.dts = static_cast<Timestamp>(static_cast<double>(pkt_dts) * time_base * 1'000'000'000.0);
         ap.keyframe = is_key;
         packets.push_back(std::move(ap));
         av_packet_unref(filtered);

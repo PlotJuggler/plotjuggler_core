@@ -34,7 +34,7 @@ namespace {
 
 struct PacketData {
   std::vector<uint8_t> data;
-  int64_t pts_ns = 0;
+  int64_t dts_ns = 0;  // decode timestamp (monotonic, used as ObjectStore key)
 };
 
 /// Pre-load all packets from an MP4 file, converting to annex-B format.
@@ -90,13 +90,13 @@ struct DemuxedVideo {
         continue;
       }
 
-      int64_t pts = pkt->pts;
+      int64_t pkt_dts = pkt->dts;
 
       if (av_bsf_send_packet(bsf_ctx, pkt) >= 0) {
         while (av_bsf_receive_packet(bsf_ctx, filtered) >= 0) {
           PacketData pd;
           pd.data.assign(filtered->data, filtered->data + filtered->size);
-          pd.pts_ns = static_cast<int64_t>(static_cast<double>(pts) * time_base * 1'000'000'000.0);
+          pd.dts_ns = static_cast<int64_t>(static_cast<double>(pkt_dts) * time_base * 1'000'000'000.0);
           packets.push_back(std::move(pd));
           av_packet_unref(filtered);
         }
@@ -186,6 +186,15 @@ class VideoStreamWindow : public QMainWindow {
     connect(live_button_, &QPushButton::toggled, this, &VideoStreamWindow::onLiveToggled);
     connect(slider_, &QSlider::valueChanged, this, &VideoStreamWindow::onSliderChanged);
 
+    // Burst the first 120 packets to fill the decoder's reorder buffer
+    // instantly. Without this, B-frame videos take ~3 seconds to show
+    // the first frame (96 packets at 33ms each). I+P videos are unaffected
+    // (first frame appears after ~4 packets regardless).
+    constexpr size_t kBurstCount = 120;
+    for (size_t i = 0; i < kBurstCount && push_index_ < demuxed_.packets.size(); ++i) {
+      onPushFrame();
+    }
+
     push_timer_->start();
     display_timer_->start();
 
@@ -207,11 +216,11 @@ class VideoStreamWindow : public QMainWindow {
       store_->setRetentionBudget(topic_, {.time_window_ns = retention_ns_, .max_memory_bytes = 0});
       decoder_->reset();
       decoder_->attach(store_.get(), topic_);
-      pts_offset_ += demuxed_.packets.back().pts_ns + demuxed_.frame_interval_us * 1000;
+      pts_offset_ += demuxed_.packets.back().dts_ns + demuxed_.frame_interval_us * 1000;
     }
 
     const auto& pkt = demuxed_.packets[push_index_];
-    PJ::Timestamp ts = pkt.pts_ns + pts_offset_;
+    PJ::Timestamp ts = pkt.dts_ns + pts_offset_;
     store_->pushOwned(topic_, ts, pkt.data);
     ++push_index_;
   }

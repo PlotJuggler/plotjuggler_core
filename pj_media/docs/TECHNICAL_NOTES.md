@@ -373,6 +373,22 @@ just `codec_id = AV_CODEC_ID_H264` and no `extradata` causes VAAPI
 from the first keyframe and set them as `AVCodecParameters::extradata`
 via `extractH264SpsPps()`. This lets VAAPI properly size its surface pool.
 
+**Never drain() during live streaming startup.** FFmpeg's `avcodec_send_packet(nullptr)`
+signals EOF and puts the codec in drain state. Subsequent `avcodec_send_packet` calls
+return `AVERROR_EOF` until `avcodec_flush_buffers` is called. With B-frames, the
+decoder returns EAGAIN for the first ~30 packets (reorder buffer filling). If you
+drain after each failed decode, you poison the codec state, forcing a full
+flush+re-decode-from-keyframe on every call — O(n^2) total. Fix: treat EAGAIN as
+normal, update `last_decoded_ts_` to track position, and let the forward path feed
+more packets on subsequent calls.
+
+**DTS-keyed ObjectStore storage for B-frame videos.** When ingesting from MP4
+containers with B-frames, use DTS (always monotonic) as the ObjectStore
+timestamp, not PTS (non-monotonic). FFmpeg's decoder expects packets in decode
+order and handles reordering internally — `AVFrame::pts` on the output gives
+the correct presentation timestamp. For production streaming (per VideoFrame
+spec), B-frames are disallowed, so PTS == DTS and this is a non-issue.
+
 **ObjectStore indices shift after eviction.** A cached `last_decoded_index_`
 becomes stale after eviction removes entries from the front. Always
 re-derive the index via `indexAt(last_decoded_ts_)` instead of caching it.

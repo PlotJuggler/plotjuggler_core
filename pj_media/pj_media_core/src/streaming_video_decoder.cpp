@@ -43,14 +43,14 @@ Expected<DecodedFrame> StreamingVideoDecoder::decodeAt(Timestamp ts) {
   // Fast path: forward from current position (normal live-mode path).
   // Also handles the case where the original keyframe was evicted by retention.
   // Equal timestamp = display polling faster than push rate — return cached frame.
-  if (initialized_ && last_decoded_ts_ >= 0 && target_ts >= last_decoded_ts_) {
-    if (target_ts == last_decoded_ts_ && !last_frame_.isNull()) {
+  if (initialized_ && last_sent_ts_.has_value() && target_ts >= *last_sent_ts_) {
+    if (target_ts == *last_sent_ts_ && !last_frame_.isNull()) {
       return last_frame_;
     }
-    // Find first undecoded entry. If last_decoded_ts_ was evicted,
+    // Find first unsent entry. If last_sent_ts_ was evicted,
     // all remaining entries are newer — start from 0.
     size_t start_idx = 0;
-    auto start_idx_opt = store_->indexAt(topic_, last_decoded_ts_);
+    auto start_idx_opt = store_->indexAt(topic_, *last_sent_ts_);
     if (start_idx_opt.has_value()) {
       start_idx = *start_idx_opt + 1;
     }
@@ -83,22 +83,9 @@ Expected<DecodedFrame> StreamingVideoDecoder::decodeAt(Timestamp ts) {
   }
 
   decoder_->flush();
-  last_decoded_ts_ = -1;
+  last_sent_ts_.reset();
 
-  auto result = decodeRange(kf_idx, target_idx);
-
-  // EOF drain: flush remaining buffered frames (B-frames waiting for reference)
-  if (!result.has_value() || result->isNull()) {
-    auto trailing = decoder_->drain();
-    for (auto& frame : trailing) {
-      if (!frame.isNull()) {
-        last_frame_ = frame;
-        return frame;
-      }
-    }
-    return unexpected("decode produced no frame");
-  }
-  return result;
+  return decodeRange(kf_idx, target_idx);
 }
 
 Expected<DecodedFrame> StreamingVideoDecoder::decodeRange(size_t start_idx, size_t target_idx) {
@@ -108,16 +95,14 @@ Expected<DecodedFrame> StreamingVideoDecoder::decodeRange(size_t start_idx, size
     if (!entry.has_value()) {
       continue;
     }
+    // Track position by ObjectStore timestamp (= DTS for B-frame videos).
+    last_sent_ts_ = entry->timestamp;
     if (i < target_idx) {
-      int64_t skip_pts = decoder_->decodeSkip(entry->data->data(), entry->data->size(), entry->timestamp);
-      if (skip_pts >= 0) {
-        last_decoded_ts_ = skip_pts;
-      }
+      decoder_->decodeSkip(entry->data->data(), entry->data->size(), entry->timestamp);
     } else {
       auto frame = decoder_->decode(entry->data->data(), entry->data->size(), entry->timestamp);
       if (frame.has_value() && !frame->isNull()) {
         result = std::move(*frame);
-        last_decoded_ts_ = entry->timestamp;
       }
     }
   }
@@ -132,8 +117,8 @@ void StreamingVideoDecoder::reset() {
   decoder_.reset();
   initialized_ = false;
   keyframe_timestamps_.clear();
-  last_scanned_ts_ = -1;
-  last_decoded_ts_ = -1;
+  last_scanned_ts_.reset();
+  last_sent_ts_.reset();
   last_frame_ = {};
 }
 
@@ -163,8 +148,8 @@ void StreamingVideoDecoder::updateKeyframeIndex() {
   // Scan entries we haven't seen yet. Track by timestamp (not count)
   // because retention can keep count constant while new entries replace old.
   size_t start = 0;
-  if (last_scanned_ts_ >= 0) {
-    auto idx_opt = store_->indexAt(topic_, last_scanned_ts_);
+  if (last_scanned_ts_.has_value()) {
+    auto idx_opt = store_->indexAt(topic_, *last_scanned_ts_);
     if (idx_opt.has_value()) {
       start = *idx_opt + 1;
     }

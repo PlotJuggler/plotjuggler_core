@@ -3,6 +3,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -71,10 +72,11 @@ class StreamingVideoDecoder {
 
   // Keyframe timestamps (sorted, ascending). Updated incrementally.
   std::vector<Timestamp> keyframe_timestamps_;
-  Timestamp last_scanned_ts_ = -1;
+  std::optional<Timestamp> last_scanned_ts_;
 
-  // Decoder position tracking
-  Timestamp last_decoded_ts_ = -1;
+  // Last packet timestamp sent to the decoder (tracks ObjectStore position,
+  // not the PTS of the decoded output — those differ with B-frames).
+  std::optional<Timestamp> last_sent_ts_;
   DecodedFrame last_frame_;  // Cached for same-timestamp re-requests
 };
 
