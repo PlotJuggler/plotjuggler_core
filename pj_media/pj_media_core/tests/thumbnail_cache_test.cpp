@@ -72,7 +72,6 @@ TEST_F(ThumbnailCacheTest, ReopenClearsPreviousFrames) {
   // Before the fix, this was 10 (5 stale 480p + 5 new 1080p).
   size_t count_1080p = cache.size();
   EXPECT_GT(count_1080p, 0u);
-  EXPECT_EQ(count_1080p, count_1080p);  // sanity
   EXPECT_LE(count_1080p, 6u) << "stale frames from previous build were not cleared (got " << count_1080p
                              << ", expected ~5)";
 }

@@ -42,13 +42,11 @@ struct DualStoreResult {
 DualStoreResult loadPotato(ObjectStore& obj_store, DataEngine& engine) {
   DualStoreResult result;
 
-  mcap::McapReader reader;
-  auto status = reader.open(kPotatoPath);
-  if (!status.ok()) {
+  auto shared_reader = std::make_shared<mcap::McapReader>();
+  if (!shared_reader->open(kPotatoPath).ok()) {
     return result;
   }
-  status = reader.readSummary(mcap::ReadSummaryMethod::AllowFallbackScan);
-  if (!status.ok()) {
+  if (!shared_reader->readSummary(mcap::ReadSummaryMethod::AllowFallbackScan).ok()) {
     return result;
   }
 
@@ -63,13 +61,13 @@ DualStoreResult loadPotato(ObjectStore& obj_store, DataEngine& engine) {
   std::unordered_map<uint16_t, ObjectTopicId> image_chan_map;
   std::unordered_map<uint16_t, ScalarSeriesHandle> scalar_chan_map;
 
-  for (const auto& [chan_id, chan_ptr] : reader.channels()) {
+  for (const auto& [chan_id, chan_ptr] : shared_reader->channels()) {
     if (chan_ptr == nullptr) {
       continue;
     }
     std::string schema_name;
-    auto schema_it = reader.schemas().find(chan_ptr->schemaId);
-    if (schema_it != reader.schemas().end() && schema_it->second != nullptr) {
+    auto schema_it = shared_reader->schemas().find(chan_ptr->schemaId);
+    if (schema_it != shared_reader->schemas().end() && schema_it->second != nullptr) {
       schema_name = schema_it->second->name;
     }
 
@@ -94,18 +92,9 @@ DualStoreResult loadPotato(ObjectStore& obj_store, DataEngine& engine) {
     }
   }
 
-  // Open a second reader for lazy callbacks
-  auto shared_reader = std::make_shared<mcap::McapReader>();
-  if (!shared_reader->open(kPotatoPath).ok()) {
-    return result;
-  }
-  if (!shared_reader->readSummary(mcap::ReadSummaryMethod::AllowFallbackScan).ok()) {
-    return result;
-  }
-
   // Route messages
   mcap::ReadMessageOptions opts;
-  auto view = reader.readMessages([](const mcap::Status&) {}, opts);
+  auto view = shared_reader->readMessages([](const mcap::Status&) {}, opts);
 
   for (auto it = view.begin(); it != view.end(); ++it) {
     auto ts = static_cast<Timestamp>(it->message.logTime);

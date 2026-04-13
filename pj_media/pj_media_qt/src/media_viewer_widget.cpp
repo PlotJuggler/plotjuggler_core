@@ -192,8 +192,8 @@ void MediaViewerWidget::render(QRhiCommandBuffer* cb) {
         // YUV420P path: upload 3 planes to separate R8 textures
         int w = pending_decoded_.width;
         int h = pending_decoded_.height;
-        int uv_w = w / 2;
-        int uv_h = h / 2;
+        int uv_w = (w + 1) / 2;
+        int uv_h = (h + 1) / 2;
         const uint8_t* pixel_data = pending_decoded_.pixels->data();
         int y_size = w * h;
         int uv_size = uv_w * uv_h;
@@ -260,17 +260,32 @@ void MediaViewerWidget::render(QRhiCommandBuffer* cb) {
         const uint8_t* rgba_data = nullptr;
         size_t rgba_size = 0;
 
-        if (pending_decoded_.format == PixelFormat::kRGBA8888 || pending_decoded_.format == PixelFormat::kBGRA8888) {
+        bool is_bgr =
+            (pending_decoded_.format == PixelFormat::kBGR888 || pending_decoded_.format == PixelFormat::kBGRA8888);
+
+        if (pending_decoded_.format == PixelFormat::kRGBA8888) {
           rgba_data = src;
           rgba_size = src_size;
-        } else if (pending_decoded_.format == PixelFormat::kRGB888 || pending_decoded_.format == PixelFormat::kBGR888) {
-          // RGB→RGBA: insert alpha=255
+        } else if (pending_decoded_.format == PixelFormat::kBGRA8888) {
+          // BGRA→RGBA: swap R and B channels
           rgba_buf.resize(static_cast<size_t>(w) * static_cast<size_t>(h) * 4);
           int pixel_count = w * h;
           for (int i = 0; i < pixel_count; ++i) {
-            rgba_buf[i * 4 + 0] = src[i * 3 + 0];
+            rgba_buf[i * 4 + 0] = src[i * 4 + 2];  // R ← B
+            rgba_buf[i * 4 + 1] = src[i * 4 + 1];  // G
+            rgba_buf[i * 4 + 2] = src[i * 4 + 0];  // B ← R
+            rgba_buf[i * 4 + 3] = src[i * 4 + 3];  // A
+          }
+          rgba_data = rgba_buf.data();
+          rgba_size = rgba_buf.size();
+        } else if (pending_decoded_.format == PixelFormat::kRGB888 || pending_decoded_.format == PixelFormat::kBGR888) {
+          // RGB/BGR→RGBA: insert alpha=255, swap R/B if BGR
+          rgba_buf.resize(static_cast<size_t>(w) * static_cast<size_t>(h) * 4);
+          int pixel_count = w * h;
+          for (int i = 0; i < pixel_count; ++i) {
+            rgba_buf[i * 4 + 0] = src[i * 3 + (is_bgr ? 2 : 0)];
             rgba_buf[i * 4 + 1] = src[i * 3 + 1];
-            rgba_buf[i * 4 + 2] = src[i * 3 + 2];
+            rgba_buf[i * 4 + 2] = src[i * 3 + (is_bgr ? 0 : 2)];
             rgba_buf[i * 4 + 3] = 255;
           }
           rgba_data = rgba_buf.data();

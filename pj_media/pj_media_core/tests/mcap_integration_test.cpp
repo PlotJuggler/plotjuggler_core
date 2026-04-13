@@ -87,7 +87,7 @@ struct McapLoader {
           mcap::ReadMessageOptions read_opts;
           read_opts.startTime = static_cast<mcap::Timestamp>(ts);
           read_opts.endTime = read_opts.startTime + 1;
-          read_opts.topicFilter = [&local_topic](std::string_view t) { return t == local_topic; };
+          read_opts.topicFilter = [local_topic](std::string_view t) { return t == local_topic; };
           auto v = local_reader->readMessages([](const mcap::Status&) {}, read_opts);
           for (auto vit = v.begin(); vit != v.end(); ++vit) {
             auto* d = reinterpret_cast<const uint8_t*>(vit->message.data);
