@@ -94,9 +94,9 @@ class WidgetEvent {
     return getInt("item_double_clicked_index");
   }
 
-  /// Drag-and-drop: field curves dropped on a widget
-  std::optional<std::vector<std::string>> curvesDropped() const {
-    auto it = data_.find("curves_dropped");
+  /// Drag-and-drop: items dropped on a widget (curves, files, or any draggable payload).
+  std::optional<std::vector<std::string>> itemsDropped() const {
+    auto it = data_.find("items_dropped");
     if (it == data_.end() || !it->is_array()) {
       return std::nullopt;
     }

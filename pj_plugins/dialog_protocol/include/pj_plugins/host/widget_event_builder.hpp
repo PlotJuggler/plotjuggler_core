@@ -95,10 +95,10 @@ struct WidgetEventBuilder {
     return j.dump();
   }
 
-  /// Drag-and-drop: field curves dropped on a widget
-  [[nodiscard]] static std::string curvesDropped(const std::vector<std::string>& labels) {
+  /// Drag-and-drop: items dropped on a widget (curves, files, or any draggable payload).
+  [[nodiscard]] static std::string itemsDropped(const std::vector<std::string>& labels) {
     nlohmann::json j;
-    j["curves_dropped"] = labels;
+    j["items_dropped"] = labels;
     return j.dump();
   }
 };

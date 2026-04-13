@@ -16,7 +16,7 @@ namespace PJ {
 
 /// Single event filter installed on the dialog root that handles drag-and-drop
 /// of PJ fields. Registered widgets are tracked by objectName. When a drop
-/// lands on (or inside) a registered widget, the callback fires a curvesDropped event.
+/// lands on (or inside) a registered widget, the callback fires an itemsDropped event.
 class DropEventFilter : public QObject {
   Q_OBJECT
 
@@ -54,7 +54,7 @@ class DropEventFilter : public QObject {
       if (target_name && e->mimeData()->hasFormat(kPjFieldMime)) {
         auto labels = parseMime(e->mimeData()->data(kPjFieldMime));
         if (!labels.empty()) {
-          callback_(*target_name, WidgetEventBuilder::curvesDropped(labels));
+          callback_(*target_name, WidgetEventBuilder::itemsDropped(labels));
           e->acceptProposedAction();
           return true;
         }
