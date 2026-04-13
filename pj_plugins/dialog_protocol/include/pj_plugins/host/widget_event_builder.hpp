@@ -99,6 +99,12 @@ struct WidgetEventBuilder {
   [[nodiscard]] static std::string itemsDropped(const std::vector<std::string>& labels) {
     nlohmann::json j;
     j["items_dropped"] = labels;
+  }
+  
+  /// Code editor: code changed
+  [[nodiscard]] static std::string codeChanged(std::string_view code) {
+    nlohmann::json j;
+    j["code_changed"] = code;
     return j.dump();
   }
 };

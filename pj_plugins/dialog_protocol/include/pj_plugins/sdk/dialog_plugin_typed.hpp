@@ -69,7 +69,10 @@ class DialogPluginTyped : public DialogPluginBase {
     WidgetEvent event(event_json);
 
     if (auto v = event.itemsDropped()) {
-      return onItemsDropped(widget_name, *v);
+      return onItemsDropped(widget_name, *v); 
+    }  
+    if (auto v = event.codeChanged()) {
+      return onCodeChanged(widget_name, *v);
     }
     if (auto v = event.text()) {
       return onTextChanged(widget_name, *v);

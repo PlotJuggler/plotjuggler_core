@@ -108,7 +108,11 @@ class WidgetEvent {
       }
     }
     return result;
-  }
+
+  /// Code editor: code changed
+  std::optional<std::string> codeChanged() const {
+    return getString("code_changed");
+ }
 
   /// Check if a key exists in the event data
   bool has(std::string_view key) const {
