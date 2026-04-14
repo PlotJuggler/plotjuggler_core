@@ -59,6 +59,10 @@ class DialogPluginTyped : public DialogPluginBase {
     return false;
   }
 
+  virtual bool onCodeChanged(std::string_view /*widget_name*/, std::string_view /*code*/) {
+    return false;
+  }
+
   virtual bool onItemsDropped(std::string_view /*widget_name*/, const std::vector<std::string>& /*items*/) {
     return false;
   }
@@ -70,6 +74,9 @@ class DialogPluginTyped : public DialogPluginBase {
 
     if (auto v = event.itemsDropped()) {
       return onItemsDropped(widget_name, *v);
+    }
+    if (auto v = event.codeChanged()) {
+      return onCodeChanged(widget_name, *v);
     }
     if (auto v = event.text()) {
       return onTextChanged(widget_name, *v);

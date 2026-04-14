@@ -94,6 +94,11 @@ class WidgetEvent {
     return getInt("item_double_clicked_index");
   }
 
+  /// Code editor: code changed
+  std::optional<std::string> codeChanged() const {
+    return getString("code_changed");
+  }
+
   /// Drag-and-drop: items dropped on a widget (curves, files, or any draggable payload).
   std::optional<std::vector<std::string>> itemsDropped() const {
     auto it = data_.find("items_dropped");
