@@ -1,6 +1,7 @@
 #pragma once
 
 #include <initializer_list>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <type_traits>
@@ -561,6 +562,21 @@ class ToolboxHostView {
       return unexpected(std::string(lastError()));
     }
     return MaterializedSeries(raw);
+  }
+
+  /// Query the current visible time range (in nanoseconds) from the host's main chart.
+  /// Returns std::nullopt if no range is currently available (no data loaded yet, or
+  /// the host does not support visible-range reporting).
+  [[nodiscard]] std::optional<std::pair<int64_t, int64_t>> visibleRange() const {
+    if (host_.vtable->get_visible_range == nullptr) {
+      return std::nullopt;
+    }
+    int64_t t_min = 0;
+    int64_t t_max = 0;
+    if (!host_.vtable->get_visible_range(host_.ctx, &t_min, &t_max)) {
+      return std::nullopt;
+    }
+    return std::make_pair(t_min, t_max);
   }
 
   [[nodiscard]] std::string_view lastError() const {

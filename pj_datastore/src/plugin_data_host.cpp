@@ -958,6 +958,12 @@ struct DatastoreParserWriteHostState {
 struct DatastoreToolboxHostState {
   explicit DatastoreToolboxHostState(DataEngine& engine) : core(engine) {}
   ToolboxCore core;
+  // Visible time range exposed to plugins via get_visible_range. Updated by
+  // the application (e.g. MainWindow) when the main chart's range changes.
+  // valid=false means no range available.
+  bool visible_range_valid = false;
+  int64_t visible_range_min_ns = 0;
+  int64_t visible_range_max_ns = 0;
 };
 
 bool sourceEnsureTopic(void* ctx, PJ_string_view_t topic_name, TopicHandle* out_topic) {
@@ -1054,6 +1060,16 @@ bool toolboxReadSeries(void* ctx, FieldHandle field, PJ_materialized_series_t* o
   return static_cast<DatastoreToolboxHostState*>(ctx)->core.readSeries(field, out_series);
 }
 
+bool toolboxGetVisibleRange(void* ctx, int64_t* out_t_min, int64_t* out_t_max) {
+  const auto* state = static_cast<const DatastoreToolboxHostState*>(ctx);
+  if (!state->visible_range_valid) {
+    return false;
+  }
+  *out_t_min = state->visible_range_min_ns;
+  *out_t_max = state->visible_range_max_ns;
+  return true;
+}
+
 const char* toolboxLastError(void* ctx) {
   return static_cast<DatastoreToolboxHostState*>(ctx)->core.write.lastError();
 }
@@ -1080,12 +1096,12 @@ const PJ_parser_write_host_vtable_t kParserWriteVTable = {
 };
 
 const PJ_toolbox_host_vtable_t kToolboxVTable = {
-    PJ_PLUGIN_DATA_API_VERSION, sizeof(PJ_toolbox_host_vtable_t),
-    toolboxLastError,           toolboxCreateDataSource,
-    toolboxEnsureTopic,         toolboxEnsureField,
-    toolboxAppendRecord,        toolboxAppendRecordFast,
-    toolboxAppendArrowIpc,      toolboxAcquireCatalogSnapshot,
-    toolboxReadSeries,
+    PJ_PLUGIN_DATA_API_VERSION,      sizeof(PJ_toolbox_host_vtable_t),
+    toolboxLastError,                toolboxCreateDataSource,
+    toolboxEnsureTopic,              toolboxEnsureField,
+    toolboxAppendRecord,             toolboxAppendRecordFast,
+    toolboxAppendArrowIpc,           toolboxAcquireCatalogSnapshot,
+    toolboxReadSeries,               toolboxGetVisibleRange,
 };
 
 DatastoreSourceWriteHost::DatastoreSourceWriteHost(DataEngine& engine, DataSourceHandle source)
@@ -1128,6 +1144,16 @@ PJ_toolbox_host_t DatastoreToolboxHost::raw() noexcept {
 
 void DatastoreToolboxHost::flushPending() {
   state_->core.write.flushPending();
+}
+
+void DatastoreToolboxHost::setVisibleRange(int64_t t_min_ns, int64_t t_max_ns) {
+  state_->visible_range_valid = true;
+  state_->visible_range_min_ns = t_min_ns;
+  state_->visible_range_max_ns = t_max_ns;
+}
+
+void DatastoreToolboxHost::clearVisibleRange() {
+  state_->visible_range_valid = false;
 }
 
 }  // namespace PJ

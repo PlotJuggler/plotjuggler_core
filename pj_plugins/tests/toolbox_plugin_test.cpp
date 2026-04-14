@@ -89,6 +89,7 @@ PJ_toolbox_host_t makeToolboxHost(MinimalToolboxHost* recorder) {
       .append_arrow_ipc = MinimalToolboxHost::appendArrowIpc,
       .acquire_catalog_snapshot = MinimalToolboxHost::acquireCatalogSnapshot,
       .read_series = MinimalToolboxHost::readSeries,
+      .get_visible_range = nullptr,
   };
   return PJ_toolbox_host_t{.ctx = recorder, .vtable = &vtable};
 }

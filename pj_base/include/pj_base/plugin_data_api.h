@@ -206,6 +206,9 @@ typedef struct PJ_toolbox_host_vtable_t {
       void* ctx, PJ_topic_handle_t topic, PJ_bytes_view_t ipc_stream, PJ_string_view_t timestamp_column);
   bool (*acquire_catalog_snapshot)(void* ctx, PJ_catalog_snapshot_t* out_snapshot);
   bool (*read_series)(void* ctx, PJ_field_handle_t field, PJ_materialized_series_t* out_series);
+  /** Query the current visible time range from the host's main chart, in ns.
+   *  Returns false if no range is currently available (e.g. no data loaded). */
+  bool (*get_visible_range)(void* ctx, int64_t* out_t_min, int64_t* out_t_max);
 } PJ_toolbox_host_vtable_t;
 
 typedef struct {
