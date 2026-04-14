@@ -25,7 +25,7 @@ C++20 foundation libraries for [PlotJuggler](https://github.com/facontidavide/Pl
 | **pj_app_core** | Headless business services (sessions, playback, workspace, transforms, toolboxes, undo). Qt allowed, no QWidget |
 | **pj_plot_widgets** | Qwt-based plot widgets, lifted wholesale from PlotJuggler 3.x |
 | **pj_media_widgets_qt** | 2D viewer widgets wrapping pj_media/pj_media_qt |
-| **pj_3d_widgets** | Placeholder for future 3D (renderer TBD) |
+| **pj_3d_widgets** | 3D widgets for robotics (TF2, URDF/mesh, pointcloud, markers, image+pinhole, occupancy grid) via custom QRhi + GLM + assimp. Implementation post-v1 |
 | **pj_app** | Main-window shell, Qt Advanced Docking, menus |
 
 The three widget families (plot / 2D / 3D) are independent by design; each owns its own rendering and input world. Cross-widget coordination flows through `pj_app_core` services.

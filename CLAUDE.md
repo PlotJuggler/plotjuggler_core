@@ -18,7 +18,7 @@ PlotJuggler Core — C++20 foundation libraries that will host the full PlotJugg
 - **pj_app_core** — headless business services (SessionManager, PlaybackEngine, WorkspaceManager, TransformRegistry, ToolboxManager, UndoManager, etc.). **Qt allowed (QObject/QTimer/QSettings/signals), no QWidget/QDialog.**
 - **pj_plot_widgets** — Qwt-based plot widgets, lifted wholesale from PlotJuggler 3.x.
 - **pj_media_widgets_qt** — 2D viewer widgets wrapping pj_media / pj_media_qt.
-- **pj_3d_widgets** — placeholder for future 3D (renderer TBD; `IDataWidget` contract reserved).
+- **pj_3d_widgets** — 3D widgets for robotics data (TF2, URDF/mesh, pointcloud, markers, image+pinhole, occupancy grid) via custom QRhi scene + GLM + assimp. Architecture locked in PJ4_PLAN §5.5 and APP_IMPLEMENTATION_PLAN §2.4; full implementation scheduled post-app-v1.
 - **pj_app** — main-window shell, Qt Advanced Docking, menus, wiring.
 
 The three widget families (plot / 2D / 3D) are **independent by design** — each owns its own rendering and input world. Cross-widget coordination flows through `pj_app_core` services (global tracker, catalog, workspace).

@@ -273,11 +273,72 @@ Key types:
 - Factory registered with `WidgetRegistry`
 - Supports drag-drop of image/video topics from `CatalogModel`
 
-### `pj_3d_widgets` — Placeholder
+### `pj_3d_widgets` — 3D widget family
 
-Empty module with CMake skeleton + a README describing the deferred renderer choice (Qt 3D / QRhi+custom / embed Rerun / VTK). Whatever is chosen must implement `IDataWidget` and register with `WidgetRegistry`.
+Renders robotics 3D data synchronized to the global tracker. **Architecture locked; full implementation is post-v1** (adds ~6-7 weeks on top of app v1). Scaffolding exists during Phase 0 so the `WidgetRegistry` contract is in place.
 
-`pj_datastore::ObjectStore` already accommodates `ScenePrimitive` / `Transform3D` / `CameraCalibration` types per existing `pj_media/docs/datatypes_2D.md`. Renderer choice is deferred; not blocked by v1 architecture.
+**Data types rendered (v1 target)**:
+
+- **TF2** — coordinate frame tree, interpolated transform lookup (tree infrastructure, not a drawable)
+- **URDF / mesh** — robot model; mesh formats via assimp (STL, OBJ, glTF, COLLADA, FBX, PLY)
+- **Pointcloud** — PCD + ROS `PointCloud2`; `GL_POINTS` with scalar-field colormapping
+- **Markers** — ROS `MarkerArray`: arrows, boxes, spheres, cylinders, line strips, text
+- **Image + Pinhole** — camera frustum wireframe + optional textured near-plane (reuses `pj_media` image decode)
+- **OccupancyGrid** — 2D costmap rendered as textured plane in 3D
+
+**Storage (all via ObjectStore)**:
+
+- **Pointcloud**: lazy-fetch (like MCAP images in `pj_media`)
+- **Everything else**: in-memory copies
+- DataSource plugins write via the existing `object_write_host.push(topic, encoding, bytes, t)` using encoding strings like `ros.tf2`, `ros.markerarray`, `ros.pointcloud2`, `ros.occupancygrid`, `pj.urdf`, `pj.pinhole_intrinsics`. No new write hosts.
+
+**Technology stack (v1 locked)**:
+
+| Piece | Choice |
+|---|---|
+| GPU abstraction | **QRhi** (consistent with `pj_media`) |
+| Widget base | **`QRhiWidget`** subclass; hand-rolled scene (no Qt 3D) |
+| Scene model | **Flat per-widget drawable list** (Foxglove-lean; RViz-style per-type config knobs can be added incrementally) |
+| 3D math | **GLM** (GLSL-matching `vec3`/`vec4`/`mat4`/`quat`, `glm::slerp` for TF interpolation, header-only conan dep) |
+| Mesh loading | **assimp** (conan dep) |
+| URDF parsing | **`QXmlStreamReader`** (no pugixml/urdfdom) |
+| Pointcloud format decoders | hand-rolled PCD + `PointCloud2` (~200 LOC each) |
+| Marker primitive geometries | hand-rolled generators (box / sphere / arrow / cylinder / line strip) |
+| Text rendering | **`QPainter` + `QFont` → `QImage` → QRhi texture** (no stb_truetype) |
+| Image decoding | reuse `pj_media` |
+| Coordinate convention | **ROS Z-up** (graphics Y-up flip applied in camera matrix) |
+
+**Scene & data flow**:
+
+- Each 3D widget owns a flat list of subscribed topics; each topic produces one or more drawables
+- Subscribes to `PlaybackEngine::trackerChanged` → queries `ObjectStore::latestAt(topic, t)` → updates drawables
+- Per-topic visibility toggle + minimal config (color override for primitives; color source for pointclouds)
+- No deep hierarchy — robotics scenes are small
+
+**Caching strategy (minimal)**:
+
+- **Pointcloud drawables**: cache GPU buffers across tracker changes (re-uploading millions of points is expensive)
+- **Everything else**: re-decode on tracker change (cheap — meshes rarely change, markers and occupancy are small, pinhole intrinsics near-static)
+
+**TF interpretation layer** (stateful: per-edge time-indexed cache + slerp/lerp interpolation + tree traversal over ObjectStore TF samples) lives **inside `pj_3d_widgets`** for v1. To be reviewed later: if 2D widgets or `pj_app_core` transforms need TF, promote it to a sibling module `pj_tf` (depends only on `pj_base` + `pj_datastore`).
+
+**Interaction**:
+
+- Orbit camera: mouse drag = rotate, wheel = zoom, middle-drag = pan
+- Drag-drop topic from `CatalogModel` → widget adds subscription
+- Context menu per drawable: visibility, color, delete
+- **Click-to-select picking** (for inspection)
+
+**Deferred (post-v1)**:
+
+- Multiple 3D widgets sharing decoded GPU resources (each widget caches independently for v1)
+- Advanced pointcloud LOD / voxel downsampling
+- Costmap 3D / octomap types
+- Richer per-display config UI (RViz-style history/decay/opacity knobs)
+
+**Scope estimate**: ~6-7 weeks focused work. Renders all 5 visual types well with orbit camera, TF-resolved poses, picking, text labels.
+
+**Inspiration source (not a dependency)**: [threepp](https://github.com/markaren/threepp) — a mature MIT-licensed C++20 port of Three.js — is referenced as a reading source when deciding how to implement specific patterns (URDF link/joint traversal, OrbitControls math, Raycaster algorithm, material abstractions). Logic may be ported with attribution; threepp is **never linked** as a runtime dep, preserving the single-GPU-stack property (QRhi only) and zero-external-3D-library property.
 
 ### `pj_app` — Main Window Shell
 
@@ -589,7 +650,7 @@ The PJ3 repo lives at `~/ws_plotjuggler/src/PlotJuggler`.
 
 ## Out of Scope (v1)
 
-- 3D widgets (door-open contract only, no renderer chosen)
+- 3D widgets implementation (architecture locked in Section 2.4; scope is ~6-7 weeks on top of app v1, so deferred to post-v1 delivery)
 - PJ3 XML layout import (manual rebuild required)
 - Hot plugin reload
 - Cross-process plugin sandbox

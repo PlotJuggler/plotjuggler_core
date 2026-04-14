@@ -337,20 +337,40 @@ Constraints:
 
 - no dependency on `pj_plot_widgets` or `pj_3d_widgets`
 
-### 5.5 `pj_3d_widgets` — placeholder for future 3D
+### 5.5 `pj_3d_widgets` — 3D widget family (robotics viz)
 
-Purpose:
+Architecture locked; full implementation post-v1 (adds ~6-7 weeks on top of app v1). See `docs/APP_IMPLEMENTATION_PLAN.md` section 2.4 for the full spec.
 
-- reserve module location and the `IDataWidget` contract fit
+**Data types (v1 target, 6 total)**: TF2 (infrastructure), URDF/mesh, Pointcloud, Markers (arrows/boxes/spheres/cylinders/line strips/text), Image+Pinhole (frustum + optional textured near-plane), OccupancyGrid (textured plane in 3D).
 
-Contents (v1):
+**Storage**: all via `pj_datastore::ObjectStore`. Pointcloud is lazy-fetch (like MCAP images in `pj_media`); everything else lives in memory. DataSource plugins write via existing `object_write_host.push(topic, encoding, bytes, t)` using per-type encoding strings — no new write hosts.
 
-- empty CMake skeleton + README documenting the chosen approach is TBD (candidates: Qt 3D, QRhi + custom, embed Rerun, VTK)
-- no implementation
+**Stack (locked)**:
 
-Rule:
+- GPU abstraction: **QRhi** (consistent with `pj_media`)
+- Widget base: `QRhiWidget` subclass, hand-rolled scene (no Qt 3D, no Qt 3D scene graph)
+- 3D math: **GLM** (GLSL-matching types, `glm::slerp` for TF interpolation, header-only conan dep)
+- Mesh loading: **assimp** (conan dep)
+- URDF parsing: `QXmlStreamReader`
+- Pointcloud decoders: hand-rolled (PCD, `PointCloud2`)
+- Marker primitives: hand-rolled geometry generators
+- Text rendering: `QPainter` + `QFont` → `QImage` → QRhi texture
+- Image decoding: reuse `pj_media`
+- Coordinate convention: **ROS Z-up**
 
-- whatever renderer is chosen, it must fit behind `IDataWidget` and register with `WidgetRegistry`
+**Scene organization**: flat per-widget drawable list (Foxglove-lean; RViz-style per-type config knobs can be added incrementally). Scenes in robotics contexts are small enough that a deep scene graph is unnecessary.
+
+**Caching**: minimal. Pointcloud drawables cache GPU buffers across tracker changes; everything else re-decodes on change (cheap).
+
+**TF interpretation layer** (stateful: per-edge ring buffer + slerp/lerp interpolation + tree traversal over ObjectStore TF samples) lives inside `pj_3d_widgets` for v1. To be reviewed later: if 2D widgets or `pj_app_core` transforms need TF too, promote to a sibling module `pj_tf`.
+
+**Interaction**: orbit camera (drag rotate / wheel zoom / middle-drag pan), drag-drop topics from `CatalogModel`, per-drawable context menu (visibility / color / delete), click-to-select picking.
+
+**Deferred (post-v1)**: shared GPU resources across multiple 3D widgets, advanced pointcloud LOD, costmap 3D / octomap, richer per-display config UI.
+
+**Inspiration source (not a dependency)**: [threepp](https://github.com/markaren/threepp) (MIT-licensed C++20 Three.js port) is read as a reference for specific rendering patterns (URDF traversal, OrbitControls math, Raycaster algorithm, material abstractions). Logic may be ported with attribution. threepp is never linked as a runtime dep — the single-QRhi-GPU-stack property is preserved.
+
+**Rule**: implements `IDataWidget` from `pj_app_core`; registered with `WidgetRegistry`.
 
 ### 5.6 `pj_app` — desktop shell
 
