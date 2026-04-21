@@ -146,13 +146,6 @@ TEST_F(DialogHandleTest, LoadConfigInvalidJson) {
   EXPECT_FALSE(h.load_config("not json"));
 }
 
-// --- Error reporting ---
-
-TEST_F(DialogHandleTest, NoErrorInitially) {
-  PJ::DialogHandle h(vt_);
-  EXPECT_EQ(h.lastError(), "");
-}
-
 // --- Accept / Reject ---
 
 TEST_F(DialogHandleTest, AcceptDoesNotCrash) {

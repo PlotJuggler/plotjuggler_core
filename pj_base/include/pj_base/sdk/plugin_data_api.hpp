@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstring>
 #include <initializer_list>
 #include <string>
 #include <string_view>
@@ -284,22 +285,120 @@ class MaterializedSeries {
   return out;
 }
 
+// ---------------------------------------------------------------------------
+// Write-host views (protocol v3)
+//
+// Three distinct typed views, one per plugin family, each wrapping its own
+// ABI fat pointer. The host-side impl may share one backend across all
+// three services — but at the ABI layer the types are distinct so the
+// compiler enforces scope.
+// ---------------------------------------------------------------------------
+
+// --- PJ_error_t helpers ------------------------------------------------------
+
+/// Copy a string_view into a fixed-size null-terminated char buffer, truncating.
+inline void setErrorField(char* dest, std::size_t dest_size, std::string_view src) {
+  if (dest == nullptr || dest_size == 0) {
+    return;
+  }
+  std::size_t n = src.size() < dest_size - 1 ? src.size() : dest_size - 1;
+  std::memcpy(dest, src.data(), n);
+  dest[n] = '\0';
+}
+
+/// Populate a PJ_error_t with code + domain + message. Safe on NULL pointer.
+/// Clears the `extended` escape-hatch slots to prevent stale-pointer reuse.
+inline void fillError(PJ_error_t* err, int32_t code, std::string_view domain, std::string_view message) {
+  if (err == nullptr) {
+    return;
+  }
+  err->code = code;
+  setErrorField(err->domain, sizeof(err->domain), domain);
+  setErrorField(err->message, sizeof(err->message), message);
+  err->extended = nullptr;
+  err->extended_kind[0] = '\0';
+}
+
+/// Attach a typed payload to an already-populated error. @p kind is a
+/// reverse-DNS ID ("pj.error.cause.v1" etc); @p payload is valid for the
+/// lifetime of the current ABI call window. Safe on NULL.
+inline void setExtended(PJ_error_t* err, std::string_view kind, const void* payload) {
+  if (err == nullptr) {
+    return;
+  }
+  err->extended = payload;
+  setErrorField(err->extended_kind, sizeof(err->extended_kind), kind);
+}
+
+/// Returns true if the error carries a typed extended payload.
+[[nodiscard]] inline bool hasExtended(const PJ_error_t& err) {
+  return err.extended_kind[0] != '\0' && err.extended != nullptr;
+}
+
+/// Convert a PJ_error_t into a human-readable string. Safe on zero-initialized.
+[[nodiscard]] inline std::string errorToString(const PJ_error_t& err) {
+  std::string out;
+  if (err.domain[0] != '\0') {
+    out.append(err.domain);
+    out.append(": ");
+  }
+  if (err.message[0] != '\0') {
+    out.append(err.message);
+  }
+  if (out.empty()) {
+    out = "unspecified error";
+  }
+  return out;
+}
+
+/// Builds a PJ_named_field_value_t span from a C++ NamedFieldValue span.
+[[nodiscard]] inline std::vector<PJ_named_field_value_t> toAbiNamed(Span<const NamedFieldValue> fields) {
+  std::vector<PJ_named_field_value_t> raw;
+  raw.reserve(fields.size());
+  for (const auto& field : fields) {
+    raw.push_back(
+        PJ_named_field_value_t{
+            .name = toAbiString(field.name),
+            .is_null = isNull(field.value),
+            .value = toAbiScalar(field.value),
+        });
+  }
+  return raw;
+}
+
+[[nodiscard]] inline std::vector<PJ_bound_field_value_t> toAbiBound(Span<const BoundFieldValue> fields) {
+  std::vector<PJ_bound_field_value_t> raw;
+  raw.reserve(fields.size());
+  for (const auto& field : fields) {
+    raw.push_back(
+        PJ_bound_field_value_t{
+            .field = field.field,
+            .is_null = isNull(field.value),
+            .value = toAbiScalar(field.value),
+        });
+  }
+  return raw;
+}
+
+/// View over PJ_source_write_host_t. Exposes multi-topic writes rooted on
+/// a single data source.
 class SourceWriteHostView {
  public:
+  SourceWriteHostView() = default;
   explicit SourceWriteHostView(PJ_source_write_host_t host) : host_(host) {}
 
-  /// Returns true if both context and vtable pointers are set.
   [[nodiscard]] bool valid() const {
     return host_.ctx != nullptr && host_.vtable != nullptr;
   }
 
   [[nodiscard]] Expected<TopicHandle> ensureTopic(std::string_view topic_name) const {
     if (!valid()) {
-      return unexpected("write host is not bound");
+      return unexpected("source write host is not bound");
     }
     TopicHandle handle{};
-    if (!host_.vtable->ensure_topic(host_.ctx, toAbiString(topic_name), &handle)) {
-      return unexpected(std::string(lastError()));
+    PJ_error_t err{};
+    if (!host_.vtable->ensure_topic(host_.ctx, toAbiString(topic_name), &handle, &err)) {
+      return unexpected(errorToString(err));
     }
     return handle;
   }
@@ -307,35 +406,24 @@ class SourceWriteHostView {
   [[nodiscard]] Expected<FieldHandle> ensureField(
       TopicHandle topic, std::string_view field_name, PrimitiveType type) const {
     if (!valid()) {
-      return unexpected("write host is not bound");
+      return unexpected("source write host is not bound");
     }
     FieldHandle handle{};
-    if (!host_.vtable->ensure_field(host_.ctx, topic, toAbiString(field_name), toAbiType(type), &handle)) {
-      return unexpected(std::string(lastError()));
+    PJ_error_t err{};
+    if (!host_.vtable->ensure_field(host_.ctx, topic, toAbiString(field_name), toAbiType(type), &handle, &err)) {
+      return unexpected(errorToString(err));
     }
     return handle;
   }
 
-  /// Append one record with named fields.
-  /// Fields not included in the span are automatically filled with null.
-  /// This enables sparse records — not all fields need data for every row.
-  /// Pre-register all fields via ensureField() before the first appendRecord().
   [[nodiscard]] Status appendRecord(TopicHandle topic, Timestamp timestamp, Span<const NamedFieldValue> fields) const {
     if (!valid()) {
-      return unexpected("write host is not bound");
+      return unexpected("source write host is not bound");
     }
-    std::vector<PJ_named_field_value_t> raw_fields;
-    raw_fields.reserve(fields.size());
-    for (const auto& field : fields) {
-      raw_fields.push_back(
-          PJ_named_field_value_t{
-              .name = toAbiString(field.name),
-              .is_null = isNull(field.value),
-              .value = toAbiScalar(field.value),
-          });
-    }
-    if (!host_.vtable->append_record(host_.ctx, topic, timestamp, raw_fields.data(), raw_fields.size())) {
-      return unexpected(std::string(lastError()));
+    auto raw = toAbiNamed(fields);
+    PJ_error_t err{};
+    if (!host_.vtable->append_record(host_.ctx, topic, timestamp, raw.data(), raw.size(), &err)) {
+      return unexpected(errorToString(err));
     }
     return okStatus();
   }
@@ -343,20 +431,12 @@ class SourceWriteHostView {
   [[nodiscard]] Status appendBoundRecord(
       TopicHandle topic, Timestamp timestamp, Span<const BoundFieldValue> fields) const {
     if (!valid()) {
-      return unexpected("write host is not bound");
+      return unexpected("source write host is not bound");
     }
-    std::vector<PJ_bound_field_value_t> raw_fields;
-    raw_fields.reserve(fields.size());
-    for (const auto& field : fields) {
-      raw_fields.push_back(
-          PJ_bound_field_value_t{
-              .field = field.field,
-              .is_null = isNull(field.value),
-              .value = toAbiScalar(field.value),
-          });
-    }
-    if (!host_.vtable->append_bound_record(host_.ctx, topic, timestamp, raw_fields.data(), raw_fields.size())) {
-      return unexpected(std::string(lastError()));
+    auto raw = toAbiBound(fields);
+    PJ_error_t err{};
+    if (!host_.vtable->append_bound_record(host_.ctx, topic, timestamp, raw.data(), raw.size(), &err)) {
+      return unexpected(errorToString(err));
     }
     return okStatus();
   }
@@ -374,68 +454,67 @@ class SourceWriteHostView {
   [[nodiscard]] Status appendArrowIpc(
       TopicHandle topic, Span<const uint8_t> ipc_stream, std::string_view timestamp_column = "_timestamp") const {
     if (!valid()) {
-      return unexpected("write host is not bound");
+      return unexpected("source write host is not bound");
     }
-    if (!host_.vtable->append_arrow_ipc(host_.ctx, topic, toAbiBytes(ipc_stream), toAbiString(timestamp_column))) {
-      return unexpected(std::string(lastError()));
+    PJ_error_t err{};
+    if (!host_.vtable->append_arrow_ipc(
+            host_.ctx, topic, toAbiBytes(ipc_stream), toAbiString(timestamp_column), &err)) {
+      return unexpected(errorToString(err));
     }
     return okStatus();
   }
 
-  [[nodiscard]] std::string_view lastError() const {
-    if (!valid()) {
-      return {};
-    }
-    const char* err = host_.vtable->get_last_error(host_.ctx);
-    return err == nullptr ? std::string_view{} : std::string_view(err);
+  [[nodiscard]] const PJ_source_write_host_t& raw() const noexcept {
+    return host_;
   }
 
  private:
-  PJ_source_write_host_t host_;
+  PJ_source_write_host_t host_{};
 };
 
+/// View over PJ_parser_write_host_t. Single-topic: the topic is bound at
+/// service-creation time by the host; the plugin never names it.
 class ParserWriteHostView {
  public:
+  ParserWriteHostView() = default;
   explicit ParserWriteHostView(PJ_parser_write_host_t host) : host_(host) {}
 
+  [[nodiscard]] bool valid() const {
+    return host_.ctx != nullptr && host_.vtable != nullptr;
+  }
+
   [[nodiscard]] Expected<FieldHandle> ensureField(std::string_view field_name, PrimitiveType type) const {
+    if (!valid()) {
+      return unexpected("parser write host is not bound");
+    }
     FieldHandle handle{};
-    if (!host_.vtable->ensure_field(host_.ctx, toAbiString(field_name), toAbiType(type), &handle)) {
-      return unexpected(std::string(lastError()));
+    PJ_error_t err{};
+    if (!host_.vtable->ensure_field(host_.ctx, toAbiString(field_name), toAbiType(type), &handle, &err)) {
+      return unexpected(errorToString(err));
     }
     return handle;
   }
 
   [[nodiscard]] Status appendRecord(Timestamp timestamp, Span<const NamedFieldValue> fields) const {
-    std::vector<PJ_named_field_value_t> raw_fields;
-    raw_fields.reserve(fields.size());
-    for (const auto& field : fields) {
-      raw_fields.push_back(
-          PJ_named_field_value_t{
-              .name = toAbiString(field.name),
-              .is_null = isNull(field.value),
-              .value = toAbiScalar(field.value),
-          });
+    if (!valid()) {
+      return unexpected("parser write host is not bound");
     }
-    if (!host_.vtable->append_record(host_.ctx, timestamp, raw_fields.data(), raw_fields.size())) {
-      return unexpected(std::string(lastError()));
+    auto raw = toAbiNamed(fields);
+    PJ_error_t err{};
+    if (!host_.vtable->append_record(host_.ctx, timestamp, raw.data(), raw.size(), &err)) {
+      return unexpected(errorToString(err));
     }
     return okStatus();
   }
 
   [[nodiscard]] Status appendBoundRecord(Timestamp timestamp, Span<const BoundFieldValue> fields) const {
-    std::vector<PJ_bound_field_value_t> raw_fields;
-    raw_fields.reserve(fields.size());
-    for (const auto& field : fields) {
-      raw_fields.push_back(
-          PJ_bound_field_value_t{
-              .field = field.field,
-              .is_null = isNull(field.value),
-              .value = toAbiScalar(field.value),
-          });
+    if (!valid()) {
+      return unexpected("parser write host is not bound");
     }
-    if (!host_.vtable->append_bound_record(host_.ctx, timestamp, raw_fields.data(), raw_fields.size())) {
-      return unexpected(std::string(lastError()));
+    auto raw = toAbiBound(fields);
+    PJ_error_t err{};
+    if (!host_.vtable->append_bound_record(host_.ctx, timestamp, raw.data(), raw.size(), &err)) {
+      return unexpected(errorToString(err));
     }
     return okStatus();
   }
@@ -450,81 +529,92 @@ class ParserWriteHostView {
 
   [[nodiscard]] Status appendArrowIpc(
       Span<const uint8_t> ipc_stream, std::string_view timestamp_column = "_timestamp") const {
-    if (!host_.vtable->append_arrow_ipc(host_.ctx, toAbiBytes(ipc_stream), toAbiString(timestamp_column))) {
-      return unexpected(std::string(lastError()));
+    if (!valid()) {
+      return unexpected("parser write host is not bound");
+    }
+    PJ_error_t err{};
+    if (!host_.vtable->append_arrow_ipc(host_.ctx, toAbiBytes(ipc_stream), toAbiString(timestamp_column), &err)) {
+      return unexpected(errorToString(err));
     }
     return okStatus();
   }
 
-  [[nodiscard]] std::string_view lastError() const {
-    const char* err = host_.vtable->get_last_error(host_.ctx);
-    return err == nullptr ? std::string_view{} : std::string_view(err);
+  [[nodiscard]] const PJ_parser_write_host_t& raw() const noexcept {
+    return host_;
   }
 
  private:
-  PJ_parser_write_host_t host_;
+  PJ_parser_write_host_t host_{};
 };
 
+/// View over PJ_toolbox_host_t. Multi-source read+write + catalog.
 class ToolboxHostView {
  public:
+  ToolboxHostView() = default;
   explicit ToolboxHostView(PJ_toolbox_host_t host) : host_(host) {}
 
+  [[nodiscard]] bool valid() const {
+    return host_.ctx != nullptr && host_.vtable != nullptr;
+  }
+
   [[nodiscard]] Expected<DataSourceHandle> createDataSource(std::string_view name) const {
+    if (!valid()) {
+      return unexpected("toolbox host is not bound");
+    }
     DataSourceHandle handle{};
-    if (!host_.vtable->create_data_source(host_.ctx, toAbiString(name), &handle)) {
-      return unexpected(std::string(lastError()));
+    PJ_error_t err{};
+    if (!host_.vtable->create_data_source(host_.ctx, toAbiString(name), &handle, &err)) {
+      return unexpected(errorToString(err));
     }
     return handle;
   }
 
   [[nodiscard]] Expected<TopicHandle> ensureTopic(DataSourceHandle source, std::string_view topic_name) const {
+    if (!valid()) {
+      return unexpected("toolbox host is not bound");
+    }
     TopicHandle handle{};
-    if (!host_.vtable->ensure_topic(host_.ctx, source, toAbiString(topic_name), &handle)) {
-      return unexpected(std::string(lastError()));
+    PJ_error_t err{};
+    if (!host_.vtable->ensure_topic(host_.ctx, source, toAbiString(topic_name), &handle, &err)) {
+      return unexpected(errorToString(err));
     }
     return handle;
   }
 
   [[nodiscard]] Expected<FieldHandle> ensureField(
       TopicHandle topic, std::string_view field_name, PrimitiveType type) const {
+    if (!valid()) {
+      return unexpected("toolbox host is not bound");
+    }
     FieldHandle handle{};
-    if (!host_.vtable->ensure_field(host_.ctx, topic, toAbiString(field_name), toAbiType(type), &handle)) {
-      return unexpected(std::string(lastError()));
+    PJ_error_t err{};
+    if (!host_.vtable->ensure_field(host_.ctx, topic, toAbiString(field_name), toAbiType(type), &handle, &err)) {
+      return unexpected(errorToString(err));
     }
     return handle;
   }
 
   [[nodiscard]] Status appendRecord(TopicHandle topic, Timestamp timestamp, Span<const NamedFieldValue> fields) const {
-    std::vector<PJ_named_field_value_t> raw_fields;
-    raw_fields.reserve(fields.size());
-    for (const auto& field : fields) {
-      raw_fields.push_back(
-          PJ_named_field_value_t{
-              .name = toAbiString(field.name),
-              .is_null = isNull(field.value),
-              .value = toAbiScalar(field.value),
-          });
+    if (!valid()) {
+      return unexpected("toolbox host is not bound");
     }
-    if (!host_.vtable->append_record(host_.ctx, topic, timestamp, raw_fields.data(), raw_fields.size())) {
-      return unexpected(std::string(lastError()));
+    auto raw = toAbiNamed(fields);
+    PJ_error_t err{};
+    if (!host_.vtable->append_record(host_.ctx, topic, timestamp, raw.data(), raw.size(), &err)) {
+      return unexpected(errorToString(err));
     }
     return okStatus();
   }
 
   [[nodiscard]] Status appendBoundRecord(
       TopicHandle topic, Timestamp timestamp, Span<const BoundFieldValue> fields) const {
-    std::vector<PJ_bound_field_value_t> raw_fields;
-    raw_fields.reserve(fields.size());
-    for (const auto& field : fields) {
-      raw_fields.push_back(
-          PJ_bound_field_value_t{
-              .field = field.field,
-              .is_null = isNull(field.value),
-              .value = toAbiScalar(field.value),
-          });
+    if (!valid()) {
+      return unexpected("toolbox host is not bound");
     }
-    if (!host_.vtable->append_bound_record(host_.ctx, topic, timestamp, raw_fields.data(), raw_fields.size())) {
-      return unexpected(std::string(lastError()));
+    auto raw = toAbiBound(fields);
+    PJ_error_t err{};
+    if (!host_.vtable->append_bound_record(host_.ctx, topic, timestamp, raw.data(), raw.size(), &err)) {
+      return unexpected(errorToString(err));
     }
     return okStatus();
   }
@@ -541,35 +631,47 @@ class ToolboxHostView {
 
   [[nodiscard]] Status appendArrowIpc(
       TopicHandle topic, Span<const uint8_t> ipc_stream, std::string_view timestamp_column = "_timestamp") const {
-    if (!host_.vtable->append_arrow_ipc(host_.ctx, topic, toAbiBytes(ipc_stream), toAbiString(timestamp_column))) {
-      return unexpected(std::string(lastError()));
+    if (!valid()) {
+      return unexpected("toolbox host is not bound");
+    }
+    PJ_error_t err{};
+    if (!host_.vtable->append_arrow_ipc(
+            host_.ctx, topic, toAbiBytes(ipc_stream), toAbiString(timestamp_column), &err)) {
+      return unexpected(errorToString(err));
     }
     return okStatus();
   }
 
   [[nodiscard]] Expected<CatalogSnapshot> catalogSnapshot() const {
+    if (!valid()) {
+      return unexpected("toolbox host is not bound");
+    }
     PJ_catalog_snapshot_t raw{};
-    if (!host_.vtable->acquire_catalog_snapshot(host_.ctx, &raw)) {
-      return unexpected(std::string(lastError()));
+    PJ_error_t err{};
+    if (!host_.vtable->acquire_catalog_snapshot(host_.ctx, &raw, &err)) {
+      return unexpected(errorToString(err));
     }
     return CatalogSnapshot(raw);
   }
 
   [[nodiscard]] Expected<MaterializedSeries> readSeries(FieldHandle field) const {
+    if (!valid()) {
+      return unexpected("toolbox host is not bound");
+    }
     PJ_materialized_series_t raw{};
-    if (!host_.vtable->read_series(host_.ctx, field, &raw)) {
-      return unexpected(std::string(lastError()));
+    PJ_error_t err{};
+    if (!host_.vtable->read_series(host_.ctx, field, &raw, &err)) {
+      return unexpected(errorToString(err));
     }
     return MaterializedSeries(raw);
   }
 
-  [[nodiscard]] std::string_view lastError() const {
-    const char* err = host_.vtable->get_last_error(host_.ctx);
-    return err == nullptr ? std::string_view{} : std::string_view(err);
+  [[nodiscard]] const PJ_toolbox_host_t& raw() const noexcept {
+    return host_;
   }
 
  private:
-  PJ_toolbox_host_t host_;
+  PJ_toolbox_host_t host_{};
 };
 
 // ---------------------------------------------------------------------------
@@ -593,17 +695,27 @@ class ColorMapRegistryView {
   }
 
   /// Register (or replace) a named colormap. The new entry becomes active.
-  [[nodiscard]] bool registerMap(std::string_view name,
-                                 ColorMapEvalFn eval_fn,
-                                 void* user_ctx) const {
-    if (!valid() || registry_.vtable->register_map == nullptr) return false;
-    return registry_.vtable->register_map(registry_.ctx, toAbiString(name), eval_fn, user_ctx);
+  [[nodiscard]] Status registerMap(std::string_view name, ColorMapEvalFn eval_fn, void* user_ctx) const {
+    if (!valid() || registry_.vtable->register_map == nullptr) {
+      return unexpected("colormap registry is not bound");
+    }
+    PJ_error_t err{};
+    if (!registry_.vtable->register_map(registry_.ctx, toAbiString(name), eval_fn, user_ctx, &err)) {
+      return unexpected(errorToString(err));
+    }
+    return okStatus();
   }
 
   /// Unregister a colormap by name. Clears the active selection if it matched.
-  [[nodiscard]] bool unregisterMap(std::string_view name) const {
-    if (!valid() || registry_.vtable->unregister_map == nullptr) return false;
-    return registry_.vtable->unregister_map(registry_.ctx, toAbiString(name));
+  [[nodiscard]] Status unregisterMap(std::string_view name) const {
+    if (!valid() || registry_.vtable->unregister_map == nullptr) {
+      return unexpected("colormap registry is not bound");
+    }
+    PJ_error_t err{};
+    if (!registry_.vtable->unregister_map(registry_.ctx, toAbiString(name), &err)) {
+      return unexpected(errorToString(err));
+    }
+    return okStatus();
   }
 
  private:

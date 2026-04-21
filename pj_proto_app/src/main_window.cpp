@@ -16,10 +16,9 @@
 #include <limits>
 #include <nlohmann/json.hpp>
 
+#include "pj_datastore/reader.hpp"
 #include "pj_marketplace/extension_manager.hpp"
 #include "pj_marketplace/marketplace_window.hpp"
-
-#include "pj_datastore/reader.hpp"
 #include "pj_plugins/host_qt/dialog_engine.hpp"
 #include "plugin_registry.hpp"
 
@@ -322,9 +321,9 @@ void MainWindow::onLoadFile() {
   if ((source->capabilities & PJ_DATA_SOURCE_CAPABILITY_HAS_DIALOG) != 0) {
     auto vt_result = source->library.resolveDialogVtable();
     if (vt_result) {
-      auto* dialog_ctx = session->handle().dialogContext();
-      if (dialog_ctx != nullptr) {
-        auto dialog_handle = PJ::DialogHandle::borrowed(*vt_result, dialog_ctx);
+      auto borrowed = session->handle().getDialog();
+      if (borrowed.ctx != nullptr) {
+        auto dialog_handle = PJ::DialogHandle::borrowed(*vt_result, borrowed.ctx);
         PJ::DialogEngineConfig engine_config;
         engine_config.parser_dialog_provider = makeParserDialogProvider(&registry_);
         PJ::DialogEngine dialog_engine(std::move(dialog_handle), engine_config);
@@ -395,9 +394,9 @@ void MainWindow::onStartStream() {
   if ((source->capabilities & PJ_DATA_SOURCE_CAPABILITY_HAS_DIALOG) != 0) {
     auto vt_result = source->library.resolveDialogVtable();
     if (vt_result) {
-      auto* dialog_ctx = session->handle().dialogContext();
-      if (dialog_ctx != nullptr) {
-        auto dialog_handle = PJ::DialogHandle::borrowed(*vt_result, dialog_ctx);
+      auto borrowed = session->handle().getDialog();
+      if (borrowed.ctx != nullptr) {
+        auto dialog_handle = PJ::DialogHandle::borrowed(*vt_result, borrowed.ctx);
         PJ::DialogEngineConfig engine_config;
         engine_config.parser_dialog_provider = makeParserDialogProvider(&registry_);
         engine_config.initial_parser_config = saved_parser_config;
@@ -641,7 +640,8 @@ void MainWindow::removeSession(DataSourceSession* session) {
 }
 
 void MainWindow::restartSession(DataSourceSession* session) {
-  auto config = session->handle().saveConfig();
+  std::string config;
+  (void)session->handle().saveConfig(config);
   auto& library = session->library();
   auto name = session->sourceName();
   auto dataset_id = session->datasetId();

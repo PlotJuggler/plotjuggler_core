@@ -2,6 +2,7 @@
 
 #include <string_view>
 
+#include "pj_base/sdk/plugin_data_api.hpp"
 #include "pj_datastore/colormap_registry.hpp"
 
 namespace PJ {
@@ -12,14 +13,22 @@ std::string_view toStringView(PJ_string_view_t s) {
   return std::string_view(s.data, s.size);
 }
 
-bool registryRegisterMap(void* ctx, PJ_string_view_t name,
-                         const char* (*eval_fn)(double, void*), void* user_ctx) {
+bool registryRegisterMap(
+    void* ctx, PJ_string_view_t name, const char* (*eval_fn)(double, void*), void* user_ctx, PJ_error_t* out_error) {
+  if (ctx == nullptr || eval_fn == nullptr) {
+    sdk::fillError(out_error, 2, "colormap", "null registry ctx or eval_fn");
+    return false;
+  }
   auto* reg = static_cast<ColorMapRegistry*>(ctx);
   reg->registerMap(toStringView(name), eval_fn, user_ctx);
   return true;
 }
 
-bool registryUnregisterMap(void* ctx, PJ_string_view_t name) {
+bool registryUnregisterMap(void* ctx, PJ_string_view_t name, PJ_error_t* out_error) {
+  if (ctx == nullptr) {
+    sdk::fillError(out_error, 2, "colormap", "null registry ctx");
+    return false;
+  }
   auto* reg = static_cast<ColorMapRegistry*>(ctx);
   reg->unregisterMap(toStringView(name));
   return true;

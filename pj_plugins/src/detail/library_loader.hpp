@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdint>
 #include <string>
 #include <string_view>
 
@@ -10,6 +11,7 @@
 #endif
 
 #include "pj_base/expected.hpp"
+#include "pj_base/plugin_data_api.h"
 
 namespace PJ::detail {
 
@@ -58,6 +60,21 @@ inline Expected<void*> resolveSymbol(void* handle, const char* symbol_name) {
   }
   return symbol;
 #endif
+}
+
+/// Verify the plugin exports `pj_plugin_abi_version` and its value equals
+/// PJ_ABI_VERSION. Must be called BEFORE the family vtable is fetched — the
+/// vtable layout is only meaningful once the boot-level ABI matches.
+inline Expected<void> checkPluginAbiVersion(void* handle) {
+  auto sym = resolveSymbol(handle, "pj_plugin_abi_version");
+  if (!sym) {
+    return unexpected(std::string("plugin missing pj_plugin_abi_version symbol"));
+  }
+  const auto* plugin_abi = static_cast<const uint32_t*>(*sym);
+  if (plugin_abi == nullptr || *plugin_abi != PJ_ABI_VERSION) {
+    return unexpected(std::string("plugin pj_plugin_abi_version mismatch (expected 3)"));
+  }
+  return {};
 }
 
 inline void closeLibraryHandle(void* handle) {

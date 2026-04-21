@@ -1,5 +1,117 @@
 # Plugin System Architecture
 
+## 0a. ABI stability and evolution rules (v3.1)
+
+Seven rules the loader and every plugin author rely on. Breaking any of
+these is an ABI break and requires a v4 bump.
+
+1. **Boot-level ABI symbol.** Every plugin .so exports
+   `pj_plugin_abi_version` as a `const uint32_t` symbol independent of
+   any vtable. The host `dlsym`s it BEFORE fetching the family vtable;
+   missing or mismatched symbol is a fail-fast rejection with a specific
+   error. Emitted automatically by `PJ_DATA_SOURCE_PLUGIN`,
+   `PJ_MESSAGE_PARSER_PLUGIN`, `PJ_TOOLBOX_PLUGIN` macros. Current value
+   is `PJ_ABI_VERSION == 3`.
+
+2. **Min-vtable-size floor, pinned at v3.0.** Each family header defines
+   `PJ_<FAMILY>_MIN_VTABLE_SIZE` — the byte count of the vtable as
+   shipped in v3.0. The loader accepts
+   `struct_size >= MIN_VTABLE_SIZE`. This constant MUST NEVER GROW.
+   Growing it would reject plugins compiled against older v3 headers
+   (which correctly report a smaller size), silently breaking the
+   forward-compatibility promise.
+
+3. **Tail-slot gating.** Every vtable slot added after v3.0 is a tail
+   slot. Host reads must go through the `PJ_HAS_TAIL_SLOT(vtable_type,
+   vtable_ptr, field)` macro, which verifies both that the plugin's
+   `struct_size` reaches the slot AND that the slot is non-null. Skipping
+   this gate is undefined behaviour on plugins built against older
+   headers.
+
+4. **Frozen vs appendable struct classification.** Each ABI-visible
+   struct carries a header comment declaring its policy:
+   - **ABI-FROZEN**: `PJ_error_t`, `PJ_string_view_t`, `PJ_bytes_view_t`,
+     `PJ_borrowed_dialog_t`, `PJ_service_t`, `PJ_service_registry_t`,
+     handle types, primitive-value unions. Layout permanent; any change
+     is a v4 break. `PJ_error_t` has `extended` + `extended_kind` slots
+     reserved as its one growth path — do not add further top-level
+     fields.
+   - **ABI-APPENDABLE**: all `*_vtable_t` types, service-host vtables,
+     `PJ_service_registry_vtable_t`. New slots at the tail; read with
+     `PJ_HAS_TAIL_SLOT`.
+
+5. **Compile-time ABI layout sentinels.** `pj_base/tests/abi_layout_sentinels_test.cpp`
+   consists entirely of `static_assert`s pinning `sizeof`, `alignof`,
+   and `offsetof` for every ABI struct plus `sizeof(void*)` (64-bit
+   guard) and enum-size pins (defends against `-fshort-enums`). A
+   failed assertion at compile time is ALWAYS a serious signal:
+   - Offset changes = field reorder = ABI break.
+   - MIN-size increase = floor moved = forward-compat break.
+   - sizeof growth = deliberate append, update the assertion.
+
+6. **Service-name grammar (compile-time enforced).**
+   | Pattern | Stability |
+   |---|---|
+   | `"pj.<name>.v<N>"` | Stable. Frozen for ≥3 releases before deprecation. |
+   | `"pj.experimental.<name>/draft-<N>"` | Unstable. No guarantees. |
+   `sdk/service_traits.hpp` calls `detail::isValidServiceName()` in a
+   `static_assert` at every trait's `kName`. Requesting a
+   `pj.experimental.*` service should log a runtime warning through the
+   `pj.runtime.v1` log channel.
+
+7. **Exception discipline at the ABI boundary.** Every C ABI entry
+   point (SDK trampolines and host-side service trampolines) must
+   catch all exceptions and convert to a `PJ_error_t` out-param (or a
+   safe default for non-fallible calls). C++ exceptions across
+   `dlopen` boundaries are undefined behaviour in practice. The
+   `data_source_trampolines.hpp` / `message_parser_trampolines.hpp` /
+   `toolbox_trampolines.hpp` files centralize this pattern — mirror it
+   exactly in any new trampoline.
+
+### Plugin extension query (CLAP-style, v3.1)
+
+Each family vtable has a tail slot
+`const void* (*get_plugin_extension)(void* ctx, PJ_string_view_t id)`
+that plugins use to expose additional capabilities to the host without
+bumping the family protocol version. The plugin returns a static POD
+for known ids or `nullptr`. Hosts call via `handle.getPluginExtension(id)`
+(tail-slot-gated). Use the experimental namespace for work-in-progress
+extensions; graduate to stable (`pj.<name>.v1`) once locked in.
+
+## 0. Protocol v3 (current)
+
+All four plugin families (DataSource, MessageParser, Toolbox, Dialog) have
+been migrated to protocol v3. The key structural changes from v1/v2:
+
+- **Service registry as the sole binding mechanism.** Plugin vtables expose
+  a single `bind(ctx, registry, err)` slot. The host registers all services
+  (write hosts, runtime hosts, colormap, etc.) under canonical
+  reverse-DNS-style names (e.g. `"pj.source_write.v1"`,
+  `"pj.runtime.v1"`, `"pj.toolbox_runtime.v1"`, `"pj.colormap.v1"`). Plugins
+  acquire only the services they use.
+- **Structured errors everywhere.** All fallible ABI calls take a
+  `PJ_error_t* out_error` out-parameter. The old per-plugin `get_last_error`
+  slot is gone.
+- **Unified write surface.** The three previous write-host vtables
+  (`PJ_source_write_host_vtable_t`, `PJ_parser_write_host_vtable_t`,
+  `PJ_toolbox_host_vtable_t`) collapse into one `PJ_write_surface_vtable_t`.
+  Service name selects semantics; host implementations enforce scope.
+  Three SDK facade views (`SourceWriteHostView`, `ParserWriteHostView`,
+  `ToolboxHostView`) still present family-appropriate APIs at the C++ level.
+- **Typed borrowed dialog.** `get_dialog_context()` returning `void*` is
+  replaced by `get_dialog()` returning a `PJ_borrowed_dialog_t` fat pointer
+  `{ctx, const PJ_dialog_vtable_t* vtable}`.
+- **Uniform plugin-vtable prefix.** Every family vtable starts with
+  `protocol_version, struct_size, create, destroy, manifest_json,
+  capabilities, bind, save_config, load_config` in that order. Host-side
+  generic code can iterate all families through a common header layout.
+
+Service traits (`pj_base/sdk/service_traits.hpp`,
+`sdk/toolbox_plugin_base.hpp`) map canonical names to their ABI type and
+C++ view. `PJ::ServiceRegistryBuilder` (`pj_plugins/host/`) is the
+host-side assembler that populates a `PJ_service_registry_t` from
+registered services.
+
 ## 1. Three-Level Design
 
 Every plugin family follows the same three-level pattern:

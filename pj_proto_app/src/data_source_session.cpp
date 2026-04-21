@@ -2,6 +2,8 @@
 
 #include <iostream>
 
+#include "pj_base/sdk/service_traits.hpp"
+#include "pj_plugins/host/service_registry_builder.hpp"
 #include "plugin_registry.hpp"
 
 namespace proto {
@@ -9,11 +11,6 @@ namespace proto {
 // --- Runtime host callbacks (static, C-compatible) ---
 
 namespace {
-
-const char* rhGetLastError(void* ctx) {
-  auto* s = static_cast<RuntimeHostState*>(ctx);
-  return s->last_error.empty() ? nullptr : s->last_error.c_str();
-}
 
 void rhReportMessage(void* ctx, PJ_data_source_message_level_t level, PJ_string_view_t msg) {
   auto* s = static_cast<RuntimeHostState*>(ctx);
@@ -28,7 +25,7 @@ void rhReportMessage(void* ctx, PJ_data_source_message_level_t level, PJ_string_
   }
 }
 
-bool rhProgressStart(void* ctx, PJ_string_view_t label, uint64_t, bool) {
+bool rhProgressStart(void* ctx, PJ_string_view_t label, uint64_t, bool, PJ_error_t* /*out_error*/) {
   static_cast<RuntimeHostState*>(ctx)->progress_starts++;
   std::cerr << "[progress] start: " << std::string(label.data, label.size) << "\n";
   return true;
@@ -57,7 +54,8 @@ void rhRequestStop(void*, PJ_data_source_state_t, PJ_string_view_t reason) {
   std::cerr << "[plugin] requestStop: " << std::string(reason.data, reason.size) << "\n";
 }
 
-bool rhEnsureParserBinding(void* ctx, const PJ_parser_binding_request_t* request, PJ_parser_binding_handle_t* out) {
+bool rhEnsureParserBinding(
+    void* ctx, const PJ_parser_binding_request_t* request, PJ_parser_binding_handle_t* out, PJ_error_t* /*out_error*/) {
   auto* state = static_cast<RuntimeHostState*>(ctx);
   if (state->registry == nullptr || state->engine == nullptr) {
     return false;
@@ -96,9 +94,12 @@ bool rhEnsureParserBinding(void* ctx, const PJ_parser_binding_request_t* request
   // Create parser write host scoped to this topic
   auto write_host = std::make_unique<PJ::DatastoreParserWriteHost>(*state->engine, topic_handle);
 
-  // Bind write host to parser
-  if (!parser->bindWriteHost(write_host->raw())) {
-    state->last_error = "failed to bind write host to parser";
+  // Bind parser via service registry. The builder must outlive this scope
+  // because the plugin may hold a view into it; we move it into ParserBinding.
+  auto registry_builder = std::make_unique<PJ::ServiceRegistryBuilder>();
+  registry_builder->registerService<PJ::sdk::ParserWriteHostService>(write_host->raw());
+  if (auto s = parser->bind(registry_builder->view()); !s) {
+    state->last_error = "failed to bind parser services: " + s.error();
     std::cerr << "[bridge] " << state->last_error << "\n";
     return false;
   }
@@ -106,10 +107,9 @@ bool rhEnsureParserBinding(void* ctx, const PJ_parser_binding_request_t* request
   // Bind schema if provided by request
   if (request->schema.size > 0) {
     PJ::Span<const uint8_t> schema_span(request->schema.data, request->schema.size);
-    if (!parser->bindSchema(type_name, schema_span)) {
-      state->last_error = "failed to parse " + std::string(type_name) + ": " + parser->lastError();
-      std::cerr << "[bridge] parser schema binding failed for type '" << type_name << "': " << parser->lastError()
-                << "\n";
+    if (auto s = parser->bindSchema(type_name, schema_span); !s) {
+      state->last_error = "failed to bind schema for " + std::string(type_name) + ": " + s.error();
+      std::cerr << "[bridge] " << state->last_error << "\n";
       return false;
     }
   }
@@ -123,31 +123,33 @@ bool rhEnsureParserBinding(void* ctx, const PJ_parser_binding_request_t* request
   }
 
   if (!parser_config.empty()) {
-    auto status = parser->loadConfig(parser_config);
-    if (!status) {
-      state->last_error = "failed to load parser config: " + parser->lastError();
+    if (auto s = parser->loadConfig(parser_config); !s) {
+      state->last_error = "failed to load parser config: " + s.error();
       std::cerr << "[bridge] " << state->last_error << "\n";
       return false;
     }
   }
 
   uint32_t binding_id = state->next_binding_id++;
-  state->parser_bindings.emplace(binding_id, ParserBinding{std::move(parser), std::move(write_host)});
+  state->parser_bindings.emplace(
+      binding_id, ParserBinding{std::move(registry_builder), std::move(write_host), std::move(parser)});
 
   *out = PJ_parser_binding_handle_t{binding_id};
   std::cerr << "[bridge] bound parser '" << parser_entry->name << "' for topic '" << topic_name << "'\n";
   return true;
 }
 
-bool rhPushRawMessage(void* ctx, PJ_parser_binding_handle_t handle, int64_t timestamp_ns, PJ_bytes_view_t payload) {
+bool rhPushRawMessage(
+    void* ctx, PJ_parser_binding_handle_t handle, int64_t timestamp_ns, PJ_bytes_view_t payload,
+    PJ_error_t* /*out_error*/) {
   auto* state = static_cast<RuntimeHostState*>(ctx);
   auto it = state->parser_bindings.find(handle.id);
   if (it == state->parser_bindings.end()) {
     state->last_error = "invalid parser binding handle";
     return false;
   }
-  if (!it->second.parser->parse(timestamp_ns, PJ::Span<const uint8_t>(payload.data, payload.size))) {
-    state->last_error = it->second.parser->lastError();
+  if (auto s = it->second.parser->parse(timestamp_ns, PJ::Span<const uint8_t>(payload.data, payload.size)); !s) {
+    state->last_error = s.error();
     return false;
   }
   return true;
@@ -158,8 +160,12 @@ int rhShowMessageBox(
   auto* state = static_cast<RuntimeHostState*>(ctx);
   if (!state->show_message_box_callback) {
     // No callback bound - return positive default (headless mode)
-    if (buttons & PJ_MSG_BTN_CONTINUE) return PJ_MSG_BTN_CONTINUE;
-    if (buttons & PJ_MSG_BTN_YES) return PJ_MSG_BTN_YES;
+    if (buttons & PJ_MSG_BTN_CONTINUE) {
+      return PJ_MSG_BTN_CONTINUE;
+    }
+    if (buttons & PJ_MSG_BTN_YES) {
+      return PJ_MSG_BTN_YES;
+    }
     return PJ_MSG_BTN_OK;
   }
   return state->show_message_box_callback(
@@ -181,7 +187,6 @@ PJ_data_source_runtime_host_t DataSourceSession::makeRuntimeHost(RuntimeHostStat
   static const PJ_data_source_runtime_host_vtable_t vtable = {
       .protocol_version = PJ_DATA_SOURCE_PROTOCOL_VERSION,
       .struct_size = sizeof(PJ_data_source_runtime_host_vtable_t),
-      .get_last_error = rhGetLastError,
       .report_message = rhReportMessage,
       .progress_start = rhProgressStart,
       .progress_update = rhProgressUpdate,
@@ -215,7 +220,10 @@ void DataSourceSession::bindRuntimeHostForDialog() {
   runtime_state_.engine = nullptr;
   runtime_state_.dataset_id = 0;
 
-  (void)handle_.bindRuntimeHost(makeRuntimeHost(&runtime_state_));
+  // Build a registry with only the runtime host; engine/write_host are wired later.
+  bind_registry_.emplace();
+  bind_registry_->registerService<PJ::sdk::DataSourceRuntimeHostService>(makeRuntimeHost(&runtime_state_));
+  (void)handle_.bind(bind_registry_->view());
 }
 
 bool DataSourceSession::setupAndStart(const std::string& config_json) {
@@ -234,9 +242,12 @@ bool DataSourceSession::setupAndStart(const std::string& config_json) {
   runtime_state_.dataset_id = *ds_result;
   runtime_state_.registry = registry_;
 
-  // Bind hosts
-  (void)handle_.bindWriteHost(write_host_->raw());
-  (void)handle_.bindRuntimeHost(makeRuntimeHost(&runtime_state_));
+  // Rebuild registry with source_write + runtime, replacing the minimal
+  // dialog-phase registry. `emplace` destroys the old builder in place.
+  bind_registry_.emplace();
+  bind_registry_->registerService<PJ::sdk::SourceWriteHostService>(write_host_->raw());
+  bind_registry_->registerService<PJ::sdk::DataSourceRuntimeHostService>(makeRuntimeHost(&runtime_state_));
+  (void)handle_.bind(bind_registry_->view());
 
   // Load config if provided
   if (!config_json.empty()) {
@@ -248,14 +259,14 @@ bool DataSourceSession::setupAndStart(const std::string& config_json) {
 
 bool DataSourceSession::startFileImport(const std::string& config_json) {
   if (!setupAndStart(config_json)) {
-    last_error_ = "failed to create dataset or bind hosts";
+    runtime_state_.last_error = "failed to create dataset or bind hosts";
     return false;
   }
 
-  bool ok = handle_.start();
-  if (!ok) {
-    last_error_ = handle_.lastError();
-    std::cerr << "[import] start failed for '" << source_name_ << "': " << last_error_ << "\n";
+  auto status = handle_.start();
+  if (!status) {
+    runtime_state_.last_error = status.error();
+    std::cerr << "[import] start failed for '" << source_name_ << "': " << runtime_state_.last_error << "\n";
   }
   write_host_->flushPending();
   // Flush all parser write hosts (delegated ingest creates per-topic writers)
@@ -263,22 +274,22 @@ bool DataSourceSession::startFileImport(const std::string& config_json) {
     binding.write_host->flushPending();
   }
   emit importComplete();
-  return ok;
+  return static_cast<bool>(status);
 }
 
 bool DataSourceSession::startStream(const std::string& config_json) {
   if (!setupAndStart(config_json)) {
-    last_error_ = "failed to create dataset or bind hosts";
+    runtime_state_.last_error = "failed to create dataset or bind hosts";
     return false;
   }
   is_stream_ = true;
   last_config_json_ = config_json;
-  bool ok = handle_.start();
-  if (!ok) {
-    last_error_ = handle_.lastError();
-    std::cerr << "[stream] start failed for '" << source_name_ << "': " << last_error_ << "\n";
+  auto status = handle_.start();
+  if (!status) {
+    runtime_state_.last_error = status.error();
+    std::cerr << "[stream] start failed for '" << source_name_ << "': " << runtime_state_.last_error << "\n";
   }
-  return ok;
+  return static_cast<bool>(status);
 }
 
 void DataSourceSession::stopStream() {
@@ -302,11 +313,19 @@ void DataSourceSession::requestStop() {
 }
 
 bool DataSourceSession::pauseStream() {
-  return handle_.pause();
+  auto s = handle_.pause();
+  if (!s) {
+    runtime_state_.last_error = s.error();
+  }
+  return static_cast<bool>(s);
 }
 
 bool DataSourceSession::resumeStream() {
-  return handle_.resume();
+  auto s = handle_.resume();
+  if (!s) {
+    runtime_state_.last_error = s.error();
+  }
+  return static_cast<bool>(s);
 }
 
 }  // namespace proto
