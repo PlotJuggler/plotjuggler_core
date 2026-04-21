@@ -93,7 +93,13 @@ struct ParserWriteHostService {
 };
 
 struct ToolboxHostService {
-  static constexpr const char* kName = "pj.toolbox_host.v1";
+  // "pj.toolbox_write.v1" for symmetry with "pj.source_write.v1" and
+  // "pj.parser_write.v1" — this service IS the toolbox write surface
+  // (create_data_source / ensure_topic / ensure_field / append_record /
+  // acquire_catalog_snapshot / read_series). The C++ trait is named
+  // ToolboxHostService for historical reasons (the vtable type is
+  // PJ_toolbox_host_t); the canonical service id uses the _write suffix.
+  static constexpr const char* kName = "pj.toolbox_write.v1";
   static constexpr uint32_t kMinVersion = 1;
   using Raw = PJ_toolbox_host_t;
   using Vtable = PJ_toolbox_host_vtable_t;

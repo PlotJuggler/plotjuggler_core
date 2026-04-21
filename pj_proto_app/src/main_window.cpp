@@ -311,8 +311,12 @@ void MainWindow::onLoadFile() {
       std::make_unique<DataSourceSession>(engine_, source->library, default_td_id_, display_name, &registry_, this);
   session->setMessageBoxCallback(makeMessageBoxCallback(this));
 
-  // Bind runtime host early so the dialog can call listAvailableEncodings()
-  session->bindRuntimeHostForDialog();
+  // Bind the plugin with the full service registry BEFORE showing the dialog
+  // (v3 contract: bind() is one-shot). This creates the dataset up-front.
+  if (!session->bindForDialog()) {
+    QMessageBox::warning(this, "Load Failed", QString::fromStdString(source->name + ": " + session->lastError()));
+    return;
+  }
 
   // Load merged config (filepath + last-used settings) so the dialog is pre-populated
   (void)session->handle().loadConfig(config);
@@ -381,8 +385,12 @@ void MainWindow::onStartStream() {
       std::make_unique<DataSourceSession>(engine_, source->library, default_td_id_, source->name, &registry_, this);
   session->setMessageBoxCallback(makeMessageBoxCallback(this));
 
-  // Bind runtime host early so the dialog can call listAvailableEncodings()
-  session->bindRuntimeHostForDialog();
+  // Bind the plugin with the full service registry BEFORE showing the dialog
+  // (v3 contract: bind() is one-shot). This creates the dataset up-front.
+  if (!session->bindForDialog()) {
+    QMessageBox::warning(this, "Stream Failed", QString::fromStdString(source->name + ": " + session->lastError()));
+    return;
+  }
 
   // Always call loadConfig() so the plugin can initialize (e.g., populate encodings list)
   // even if there's no saved config yet
@@ -447,6 +455,10 @@ void MainWindow::startDummyStream() {
   auto session =
       std::make_unique<DataSourceSession>(engine_, dummy->library, default_td_id_, dummy->name, &registry_, this);
   session->setMessageBoxCallback(makeMessageBoxCallback(this));
+  if (!session->bindForDialog()) {
+    qWarning("Dummy Streamer bind failed: %s", session->lastError().c_str());
+    return;
+  }
   session->startStream("{}");
   sessions_.push_back(std::move(session));
 
@@ -658,6 +670,10 @@ void MainWindow::restartSession(DataSourceSession* session) {
   // Create and start a new session with the same config
   auto new_session = std::make_unique<DataSourceSession>(engine_, library, default_td_id_, name, &registry_, this);
   new_session->setMessageBoxCallback(makeMessageBoxCallback(this));
+  if (!new_session->bindForDialog()) {
+    qWarning("Restart bind failed: %s", new_session->lastError().c_str());
+    return;
+  }
   new_session->startStream(config);
   sessions_.push_back(std::move(new_session));
 

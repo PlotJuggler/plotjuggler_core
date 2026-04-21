@@ -83,9 +83,15 @@ class DataSourceSession : public QObject {
       PJ::DataEngine& engine, PJ::DataSourceLibrary& library, PJ::TimeDomainId td_id, std::string source_name,
       PluginRegistry* registry, QObject* parent = nullptr);
 
-  /// Bind a minimal runtime host so the dialog can call listAvailableEncodings().
-  /// Must be called before showing the dialog. setupAndStart() will complete the binding.
-  void bindRuntimeHostForDialog();
+  /// Bind the plugin with the full service registry (source_write + runtime).
+  /// Creates the dataset + write_host up-front so the registry is complete
+  /// before the dialog is shown — the v3 protocol requires `bind()` to be
+  /// called exactly once per plugin instance. Idempotent: a second call is
+  /// a no-op.
+  ///
+  /// Must be called before showing the dialog. startFileImport/startStream
+  /// assume the session is already bound.
+  [[nodiscard]] bool bindForDialog();
 
   bool startFileImport(const std::string& config_json);
   bool startStream(const std::string& config_json);
@@ -141,7 +147,7 @@ class DataSourceSession : public QObject {
  private:
   static PJ_data_source_runtime_host_t makeRuntimeHost(RuntimeHostState* state);
 
-  bool setupAndStart(const std::string& config_json);
+  bool applyConfigAndStart(const std::string& config_json);
 
   PJ::DataEngine& engine_;
   PJ::DataSourceLibrary& library_;
@@ -159,6 +165,7 @@ class DataSourceSession : public QObject {
   std::optional<PJ::ServiceRegistryBuilder> bind_registry_;
   std::string last_config_json_;
   bool is_stream_ = false;
+  bool bound_ = false;
 };
 
 }  // namespace proto

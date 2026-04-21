@@ -213,83 +213,92 @@ DataSourceSession::DataSourceSession(
       registry_(registry),
       handle_(library.createHandle()) {}
 
-void DataSourceSession::bindRuntimeHostForDialog() {
-  // Bind a minimal runtime host so the dialog can call listAvailableEncodings().
-  // Only registry is needed for that callback; engine/dataset_id are set later in setupAndStart().
-  runtime_state_.registry = registry_;
-  runtime_state_.engine = nullptr;
-  runtime_state_.dataset_id = 0;
+bool DataSourceSession::bindForDialog() {
+  // v3 contract: bind() must be one-shot. To satisfy the dialog's need for a
+  // bound runtime host (for stream plugins that call listAvailableEncodings
+  // inside their dialog's pre-populate path) AND avoid a second bind call
+  // later, we create the dataset + write_host up-front so the FULL registry
+  // is ready before the dialog is shown.
+  //
+  // Side-effect: if the user cancels the dialog, the dataset remains as an
+  // empty placeholder in the engine. Acceptable for now (datasets are cheap
+  // metadata); a future cleanup pass can add a delete-on-cancel path.
+  if (bound_) {
+    return true;  // idempotent — avoid a second bind if called twice
+  }
 
-  // Build a registry with only the runtime host; engine/write_host are wired later.
-  bind_registry_.emplace();
-  bind_registry_->registerService<PJ::sdk::DataSourceRuntimeHostService>(makeRuntimeHost(&runtime_state_));
-  (void)handle_.bind(bind_registry_->view());
-}
-
-bool DataSourceSession::setupAndStart(const std::string& config_json) {
   auto ds_result = engine_.createDataset(PJ::DatasetDescriptor{.source_name = source_name_, .time_domain_id = td_id_});
   if (!ds_result) {
-    std::cerr << "Failed to create dataset: " << ds_result.error() << "\n";
+    runtime_state_.last_error = "failed to create dataset: " + ds_result.error();
+    std::cerr << "[session] " << runtime_state_.last_error << "\n";
     return false;
   }
 
-  // Create write host
   PJ_data_source_handle_t source_handle{static_cast<uint32_t>(*ds_result)};
   write_host_ = std::make_unique<PJ::DatastoreSourceWriteHost>(engine_, source_handle);
 
-  // Wire delegated ingest bridge state
   runtime_state_.engine = &engine_;
   runtime_state_.dataset_id = *ds_result;
   runtime_state_.registry = registry_;
 
-  // Rebuild registry with source_write + runtime, replacing the minimal
-  // dialog-phase registry. `emplace` destroys the old builder in place.
   bind_registry_.emplace();
   bind_registry_->registerService<PJ::sdk::SourceWriteHostService>(write_host_->raw());
   bind_registry_->registerService<PJ::sdk::DataSourceRuntimeHostService>(makeRuntimeHost(&runtime_state_));
-  (void)handle_.bind(bind_registry_->view());
 
-  // Load config if provided
-  if (!config_json.empty()) {
-    (void)handle_.loadConfig(config_json);
-  }
-
-  return true;
-}
-
-bool DataSourceSession::startFileImport(const std::string& config_json) {
-  if (!setupAndStart(config_json)) {
-    runtime_state_.last_error = "failed to create dataset or bind hosts";
+  if (auto s = handle_.bind(bind_registry_->view()); !s) {
+    runtime_state_.last_error = "bind failed: " + s.error();
+    std::cerr << "[session] " << runtime_state_.last_error << "\n";
     return false;
   }
 
+  bound_ = true;
+  return true;
+}
+
+bool DataSourceSession::applyConfigAndStart(const std::string& config_json) {
+  if (!bound_) {
+    runtime_state_.last_error = "session not bound; call bindForDialog() first";
+    return false;
+  }
+  if (!config_json.empty()) {
+    if (auto s = handle_.loadConfig(config_json); !s) {
+      runtime_state_.last_error = "loadConfig failed: " + s.error();
+      return false;
+    }
+  }
   auto status = handle_.start();
   if (!status) {
     runtime_state_.last_error = status.error();
+  }
+  return static_cast<bool>(status);
+}
+
+bool DataSourceSession::startFileImport(const std::string& config_json) {
+  if (!applyConfigAndStart(config_json)) {
     std::cerr << "[import] start failed for '" << source_name_ << "': " << runtime_state_.last_error << "\n";
+    write_host_->flushPending();
+    for (auto& [id, binding] : runtime_state_.parser_bindings) {
+      binding.write_host->flushPending();
+    }
+    emit importComplete();
+    return false;
   }
   write_host_->flushPending();
-  // Flush all parser write hosts (delegated ingest creates per-topic writers)
   for (auto& [id, binding] : runtime_state_.parser_bindings) {
     binding.write_host->flushPending();
   }
   emit importComplete();
-  return static_cast<bool>(status);
+  return true;
 }
 
 bool DataSourceSession::startStream(const std::string& config_json) {
-  if (!setupAndStart(config_json)) {
-    runtime_state_.last_error = "failed to create dataset or bind hosts";
-    return false;
-  }
   is_stream_ = true;
   last_config_json_ = config_json;
-  auto status = handle_.start();
-  if (!status) {
-    runtime_state_.last_error = status.error();
+  if (!applyConfigAndStart(config_json)) {
     std::cerr << "[stream] start failed for '" << source_name_ << "': " << runtime_state_.last_error << "\n";
+    return false;
   }
-  return static_cast<bool>(status);
+  return true;
 }
 
 void DataSourceSession::stopStream() {

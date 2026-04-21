@@ -81,6 +81,10 @@ class DialogPluginBase {
     };
     writeField(out_error->domain, sizeof(out_error->domain), domain);
     writeField(out_error->message, sizeof(out_error->message), message);
+    // Clear the v3.1 growth-path slots so a reused error struct does not
+    // carry a stale pointer from a previous call. Matches sdk::fillError.
+    out_error->extended = nullptr;
+    out_error->extended_kind[0] = '\0';
   }
 
   static void trampoline_destroy(void* ctx) {
