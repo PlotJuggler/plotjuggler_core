@@ -1,12 +1,12 @@
 /**
  * @file message_parser_protocol.h
- * @brief C ABI protocol for MessageParser plugins (version 3).
+ * @brief C ABI protocol for MessageParser plugins (version 4).
  *
- * v3 summary of changes vs v1:
- *   - Single `bind(ctx, registry, err)` replaces `bind_write_host`. Plugins
- *     acquire services (including "pj.parser_write.v1") from the registry.
- *   - All fallible calls take a `PJ_error_t*` out-parameter. The
- *     plugin-level `get_last_error` slot is gone.
+ * v4 summary of changes vs v3:
+ *   - Every vtable slot is PJ_NOEXCEPT and carries a thread-class tag.
+ *   - Parser write host (pj.parser_write.v1) no longer has
+ *     append_arrow_ipc — see plugin_data_api.h. Parsers stay per-record;
+ *     the host coalesces into Arrow batches internally.
  *
  * The host obtains the plugin's vtable via `PJ_get_message_parser_vtable()`
  * and drives the plugin through: create -> bind(registry) ->
@@ -26,19 +26,19 @@ extern "C" {
 #endif
 
 /** Protocol version. Host and plugin must agree on the same major version. */
-#define PJ_MESSAGE_PARSER_PROTOCOL_VERSION 3
+#define PJ_MESSAGE_PARSER_PROTOCOL_VERSION 4
 
 /**
- * Minimum vtable size for v3.0 compatibility, pinned at v3.0 release.
+ * Minimum vtable size for v4.0 compatibility, pinned at v4.0 release.
  *
  * Loaders reject plugins whose `struct_size < PJ_MESSAGE_PARSER_MIN_VTABLE_SIZE`.
  * MUST NOT GROW when new tail slots are appended. See PJ_ABI_VERSION comment
  * in plugin_data_api.h for the rationale.
  *
- * Last v3.0 slot is `parse`.
+ * Last v4.0 slot is `get_plugin_extension` (promoted from v3 tail).
  */
 #define PJ_MESSAGE_PARSER_MIN_VTABLE_SIZE \
-  (offsetof(PJ_message_parser_vtable_t, parse) + sizeof(bool (*)(void*, int64_t, PJ_bytes_view_t, PJ_error_t*)))
+  (offsetof(PJ_message_parser_vtable_t, get_plugin_extension) + sizeof(const void* (*)(void*, PJ_string_view_t)))
 
 #if defined(_WIN32)
 #define PJ_MESSAGE_PARSER_EXPORT __declspec(dllexport)
@@ -49,17 +49,19 @@ extern "C" {
 #endif
 
 /**
- * MessageParser plugin vtable (v3).
+ * MessageParser plugin vtable (v4).
  *
  * Fallible slots take a `PJ_error_t* out_error`; callers may pass NULL
- * to discard error detail.
+ * to discard error detail. Every slot is PJ_NOEXCEPT.
  */
 typedef struct PJ_message_parser_vtable_t {
   uint32_t protocol_version; /**< Must equal PJ_MESSAGE_PARSER_PROTOCOL_VERSION. */
   uint32_t struct_size;      /**< sizeof(PJ_message_parser_vtable_t). */
 
-  void* (*create)(void);
-  void (*destroy)(void* ctx);
+  /** [main-thread] Allocate a new parser instance. */
+  void* (*create)(void)PJ_NOEXCEPT;
+  /** [main-thread] Destroy an instance previously created by create(). */
+  void (*destroy)(void* ctx) PJ_NOEXCEPT;
 
   /**
    * Static JSON manifest. Compile-time constant.
@@ -73,34 +75,39 @@ typedef struct PJ_message_parser_vtable_t {
   const char* manifest_json;
 
   /**
-   * Bind host services. The host registers at least "pj.parser_write.v1".
-   * Plugins that need extra services can query additional names.
+   * [main-thread] Bind host services. The host registers at least
+   * "pj.parser_write.v1". Plugins that need extra services can query
+   * additional names.
    */
-  bool (*bind)(void* ctx, PJ_service_registry_t registry, PJ_error_t* out_error);
+  bool (*bind)(void* ctx, PJ_service_registry_t registry, PJ_error_t* out_error) PJ_NOEXCEPT;
 
   /**
-   * Bind a message schema. Optional — parsers that don't require schema
-   * (e.g. JSON) may accept and ignore this.
+   * [main-thread] Bind a message schema. Optional — parsers that don't
+   * require schema (e.g. JSON) may accept and ignore this.
    */
-  bool (*bind_schema)(void* ctx, PJ_string_view_t type_name, PJ_bytes_view_t schema, PJ_error_t* out_error);
+  bool (*bind_schema)(void* ctx, PJ_string_view_t type_name, PJ_bytes_view_t schema, PJ_error_t* out_error) PJ_NOEXCEPT;
 
-  bool (*save_config)(void* ctx, PJ_string_view_t* out_json, PJ_error_t* out_error);
-  bool (*load_config)(void* ctx, PJ_string_view_t config_json, PJ_error_t* out_error);
+  /** [main-thread] Serialize parser configuration to JSON. */
+  bool (*save_config)(void* ctx, PJ_string_view_t* out_json, PJ_error_t* out_error) PJ_NOEXCEPT;
+  /** [main-thread] Restore parser configuration from JSON. */
+  bool (*load_config)(void* ctx, PJ_string_view_t config_json, PJ_error_t* out_error) PJ_NOEXCEPT;
 
   /**
-   * Parse one raw message into writes via the bound write host.
-   * @p timestamp_ns is nanoseconds since the Unix epoch.
+   * [stream-thread] Parse one raw message into writes via the bound
+   * write host. @p timestamp_ns is nanoseconds since the Unix epoch.
+   * Called on the thread that drives the host's parser dispatcher.
    */
-  bool (*parse)(void* ctx, int64_t timestamp_ns, PJ_bytes_view_t payload, PJ_error_t* out_error);
+  bool (*parse)(void* ctx, int64_t timestamp_ns, PJ_bytes_view_t payload, PJ_error_t* out_error) PJ_NOEXCEPT;
+
+  /** [thread-safe] Query a plugin-exposed extension by reverse-DNS id.
+   *  See PJ_data_source_vtable_t::get_plugin_extension for the full
+   *  contract and ID-versioning convention. */
+  const void* (*get_plugin_extension)(void* ctx, PJ_string_view_t id)PJ_NOEXCEPT;
 
   /* ====================================================================
    * Tail slots beyond here are OPTIONAL. Host reads MUST check both
    * struct_size and slot-nullability via PJ_HAS_TAIL_SLOT.
    * ==================================================================== */
-
-  /** Query a plugin-exposed extension by reverse-DNS id. See
-   *  PJ_data_source_vtable_t::get_plugin_extension for the full contract. */
-  const void* (*get_plugin_extension)(void* ctx, PJ_string_view_t id);
 } PJ_message_parser_vtable_t;
 /* The vtable above is ABI-APPENDABLE: new slots may be added at the tail;
  * host reads guard with PJ_HAS_TAIL_SLOT. See PJ_MESSAGE_PARSER_MIN_VTABLE_SIZE. */

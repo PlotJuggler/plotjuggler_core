@@ -1,6 +1,8 @@
 /**
  * @file toolbox_plugin_base.hpp
- * @brief C++ SDK for implementing Toolbox plugins (protocol v3).
+ * @brief C++ SDK for implementing Toolbox plugins (protocol v4).
+ *
+ * All trampolines are noexcept at the ABI boundary.
  */
 #pragma once
 
@@ -37,7 +39,7 @@ class ToolboxRuntimeHostView {
     return host_.ctx != nullptr && host_.vtable != nullptr;
   }
 
-  void reportMessage(ToolboxMessageLevel level, std::string_view message) const {
+  void reportMessage(ToolboxMessageLevel level, std::string_view message) const noexcept {
     if (valid() && host_.vtable->report_message != nullptr) {
       host_.vtable->report_message(
           host_.ctx, static_cast<PJ_toolbox_message_level_t>(level), sdk::toAbiString(message));
@@ -201,31 +203,31 @@ class ToolboxPluginBase {
     sdk::fillError(out_error, code, domain, message);
   }
 
-  static void trampoline_destroy(void* ctx);
-  static uint64_t trampoline_capabilities(void* ctx);
-  static bool trampoline_bind(void* ctx, PJ_service_registry_t registry, PJ_error_t* out_error);
-  static bool trampoline_save_config(void* ctx, PJ_string_view_t* out_json, PJ_error_t* out_error);
-  static bool trampoline_load_config(void* ctx, PJ_string_view_t config_json, PJ_error_t* out_error);
-  static PJ_borrowed_dialog_t trampoline_get_dialog(void* ctx);
-  static void trampoline_on_data_changed(void* ctx);
-  static const void* trampoline_get_plugin_extension(void* ctx, PJ_string_view_t id);
+  static void trampoline_destroy(void* ctx) noexcept;
+  static uint64_t trampoline_capabilities(void* ctx) noexcept;
+  static bool trampoline_bind(void* ctx, PJ_service_registry_t registry, PJ_error_t* out_error) noexcept;
+  static bool trampoline_save_config(void* ctx, PJ_string_view_t* out_json, PJ_error_t* out_error) noexcept;
+  static bool trampoline_load_config(void* ctx, PJ_string_view_t config_json, PJ_error_t* out_error) noexcept;
+  static PJ_borrowed_dialog_t trampoline_get_dialog(void* ctx) noexcept;
+  static void trampoline_on_data_changed(void* ctx) noexcept;
+  static const void* trampoline_get_plugin_extension(void* ctx, PJ_string_view_t id) noexcept;
 };
 
 }  // namespace PJ
 
 #include "pj_base/sdk/detail/toolbox_trampolines.hpp"
 
-#define PJ_TOOLBOX_PLUGIN(ClassName, manifest)                                        \
-  extern "C" PJ_TOOLBOX_EXPORT const uint32_t pj_plugin_abi_version = PJ_ABI_VERSION; \
-  extern "C" PJ_TOOLBOX_EXPORT const PJ_toolbox_vtable_t* PJ_get_toolbox_vtable() {   \
-    static const PJ_toolbox_vtable_t* vt = PJ::ToolboxPluginBase::vtableWithCreate(   \
-        []() -> void* {                                                               \
-          try {                                                                       \
-            return new ClassName();                                                   \
-          } catch (...) {                                                             \
-            return nullptr;                                                           \
-          }                                                                           \
-        },                                                                            \
-        manifest);                                                                    \
-    return vt;                                                                        \
+#define PJ_TOOLBOX_PLUGIN(ClassName, manifest)                                               \
+  extern "C" PJ_TOOLBOX_EXPORT const uint32_t pj_plugin_abi_version = PJ_ABI_VERSION;        \
+  extern "C" PJ_TOOLBOX_EXPORT const PJ_toolbox_vtable_t* PJ_get_toolbox_vtable() noexcept { \
+    static const PJ_toolbox_vtable_t* vt = PJ::ToolboxPluginBase::vtableWithCreate(          \
+        []() noexcept -> void* {                                                             \
+          try {                                                                              \
+            return new ClassName();                                                          \
+          } catch (...) {                                                                    \
+            return nullptr;                                                                  \
+          }                                                                                  \
+        },                                                                                   \
+        manifest);                                                                           \
+    return vt;                                                                               \
   }

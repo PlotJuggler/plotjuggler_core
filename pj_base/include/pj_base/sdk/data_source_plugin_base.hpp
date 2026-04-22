@@ -182,20 +182,21 @@ class DataSourcePluginBase {
   }
 
   // C ABI trampolines — exception-safe bridges between host vtable calls and
-  // C++ virtuals. Definitions live in detail/data_source_trampolines.hpp.
-  static void trampoline_destroy(void* ctx);
-  static uint64_t trampoline_capabilities(void* ctx);
-  static bool trampoline_bind(void* ctx, PJ_service_registry_t registry, PJ_error_t* out_error);
-  static bool trampoline_save_config(void* ctx, PJ_string_view_t* out_json, PJ_error_t* out_error);
-  static bool trampoline_load_config(void* ctx, PJ_string_view_t config_json, PJ_error_t* out_error);
-  static bool trampoline_start(void* ctx, PJ_error_t* out_error);
-  static void trampoline_stop(void* ctx);
-  static bool trampoline_pause(void* ctx, PJ_error_t* out_error);
-  static bool trampoline_resume(void* ctx, PJ_error_t* out_error);
-  static bool trampoline_poll(void* ctx, PJ_error_t* out_error);
-  static PJ_data_source_state_t trampoline_current_state(void* ctx);
-  static PJ_borrowed_dialog_t trampoline_get_dialog(void* ctx);
-  static const void* trampoline_get_plugin_extension(void* ctx, PJ_string_view_t id);
+  // C++ virtuals. All are noexcept at the ABI boundary. Definitions live in
+  // detail/data_source_trampolines.hpp.
+  static void trampoline_destroy(void* ctx) noexcept;
+  static uint64_t trampoline_capabilities(void* ctx) noexcept;
+  static bool trampoline_bind(void* ctx, PJ_service_registry_t registry, PJ_error_t* out_error) noexcept;
+  static bool trampoline_save_config(void* ctx, PJ_string_view_t* out_json, PJ_error_t* out_error) noexcept;
+  static bool trampoline_load_config(void* ctx, PJ_string_view_t config_json, PJ_error_t* out_error) noexcept;
+  static bool trampoline_start(void* ctx, PJ_error_t* out_error) noexcept;
+  static void trampoline_stop(void* ctx) noexcept;
+  static bool trampoline_pause(void* ctx, PJ_error_t* out_error) noexcept;
+  static bool trampoline_resume(void* ctx, PJ_error_t* out_error) noexcept;
+  static bool trampoline_poll(void* ctx, PJ_error_t* out_error) noexcept;
+  static PJ_data_source_state_t trampoline_current_state(void* ctx) noexcept;
+  static PJ_borrowed_dialog_t trampoline_get_dialog(void* ctx) noexcept;
+  static const void* trampoline_get_plugin_extension(void* ctx, PJ_string_view_t id) noexcept;
 };
 
 }  // namespace PJ
@@ -212,17 +213,17 @@ class DataSourcePluginBase {
  * @param ClassName The DataSourcePluginBase subclass to instantiate.
  * @param manifest  String literal JSON manifest (must have "name" and "version").
  */
-#define PJ_DATA_SOURCE_PLUGIN(ClassName, manifest)                                              \
-  extern "C" PJ_DATA_SOURCE_EXPORT const uint32_t pj_plugin_abi_version = PJ_ABI_VERSION;       \
-  extern "C" PJ_DATA_SOURCE_EXPORT const PJ_data_source_vtable_t* PJ_get_data_source_vtable() { \
-    static const PJ_data_source_vtable_t* vt = PJ::DataSourcePluginBase::vtableWithCreate(      \
-        []() -> void* {                                                                         \
-          try {                                                                                 \
-            return new ClassName();                                                             \
-          } catch (...) {                                                                       \
-            return nullptr;                                                                     \
-          }                                                                                     \
-        },                                                                                      \
-        manifest);                                                                              \
-    return vt;                                                                                  \
+#define PJ_DATA_SOURCE_PLUGIN(ClassName, manifest)                                                       \
+  extern "C" PJ_DATA_SOURCE_EXPORT const uint32_t pj_plugin_abi_version = PJ_ABI_VERSION;                \
+  extern "C" PJ_DATA_SOURCE_EXPORT const PJ_data_source_vtable_t* PJ_get_data_source_vtable() noexcept { \
+    static const PJ_data_source_vtable_t* vt = PJ::DataSourcePluginBase::vtableWithCreate(               \
+        []() noexcept -> void* {                                                                         \
+          try {                                                                                          \
+            return new ClassName();                                                                      \
+          } catch (...) {                                                                                \
+            return nullptr;                                                                              \
+          }                                                                                              \
+        },                                                                                               \
+        manifest);                                                                                       \
+    return vt;                                                                                           \
   }

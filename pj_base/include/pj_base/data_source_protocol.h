@@ -1,17 +1,14 @@
 /**
  * @file data_source_protocol.h
- * @brief C ABI protocol for DataSource plugins (version 3).
+ * @brief C ABI protocol for DataSource plugins (version 4).
  *
- * v3 summary of changes vs v2:
- *   - Single `bind(ctx, registry, err)` replaces bind_write_host +
- *     bind_runtime_host. Plugins acquire services from the registry
- *     under canonical names ("pj.source_write.v1", "pj.runtime.v1",
- *     and any optional services the host exposes).
- *   - All fallible calls take a PJ_error_t* out-parameter. The
- *     plugin-level `get_last_error` slot is gone — errors are
- *     delivered through the out-param, never through ambient state.
- *   - `get_dialog_context` (returning raw void*) replaced by
- *     `get_dialog` which returns a typed `PJ_borrowed_dialog_t`.
+ * v4 summary of changes vs v3:
+ *   - Arrow C Data Interface at the write boundary: bulk loaders use
+ *     SourceWriteHost::append_arrow_stream instead of per-row appends.
+ *     See pj_base/plugin_data_api.h. append_arrow_ipc is removed.
+ *   - Every vtable slot is PJ_NOEXCEPT. Trampolines that drop exceptions
+ *     through the ABI boundary are now a compile-time error in C++.
+ *   - Every slot carries a thread-class tag (// [main-thread], etc.).
  *
  * The host obtains the plugin's vtable via `PJ_get_data_source_vtable()`
  * and drives the plugin through: create -> bind(registry) -> load_config
@@ -35,10 +32,10 @@ extern "C" {
 #endif
 
 /** Protocol version. Host and plugin must agree on the same major version. */
-#define PJ_DATA_SOURCE_PROTOCOL_VERSION 3
+#define PJ_DATA_SOURCE_PROTOCOL_VERSION 4
 
 /**
- * Minimum vtable size for v3.0 compatibility, pinned at v3.0 release.
+ * Minimum vtable size for v4.0 compatibility, pinned at v4.0 release.
  *
  * Loaders reject plugins whose `struct_size < PJ_DATA_SOURCE_MIN_VTABLE_SIZE`.
  * This constant MUST NOT GROW as new tail slots are appended in later
@@ -46,13 +43,13 @@ extern "C" {
  * (which legitimately report a smaller struct_size). Tail-slot additions
  * grow `sizeof(PJ_data_source_vtable_t)` but leave this floor alone.
  *
- * Reads of any slot added after v3.0 must be gated with PJ_HAS_TAIL_SLOT.
+ * Reads of any slot added after v4.0 must be gated with PJ_HAS_TAIL_SLOT.
  *
- * Computed as `offsetof(last v3.0 slot) + sizeof(its function pointer)`.
- * Last v3.0 slot is `get_dialog`.
+ * Computed as `offsetof(last v4.0 slot) + sizeof(its function pointer)`.
+ * Last v4.0 slot is `get_plugin_extension` (promoted from v3.1 tail).
  */
 #define PJ_DATA_SOURCE_MIN_VTABLE_SIZE \
-  (offsetof(PJ_data_source_vtable_t, get_dialog) + sizeof(PJ_borrowed_dialog_t (*)(void*)))
+  (offsetof(PJ_data_source_vtable_t, get_plugin_extension) + sizeof(const void* (*)(void*, PJ_string_view_t)))
 
 #if defined(_WIN32)
 #define PJ_DATA_SOURCE_EXPORT __declspec(dllexport)
@@ -159,80 +156,82 @@ typedef struct {
  * cannot fail in a way the plugin can act on.
  */
 typedef struct PJ_data_source_runtime_host_vtable_t {
-  uint32_t protocol_version; /**< = 1 for the v3-era runtime host. */
+  uint32_t protocol_version; /**< = 1 for the v4-era runtime host. */
   uint32_t struct_size;      /**< sizeof(PJ_data_source_runtime_host_vtable_t). */
 
-  /** Send a diagnostic message to the host (shown in UI log). */
-  void (*report_message)(void* ctx, PJ_data_source_message_level_t level, PJ_string_view_t message);
+  /** [thread-safe] Send a diagnostic message to the host (shown in UI log). */
+  void (*report_message)(void* ctx, PJ_data_source_message_level_t level, PJ_string_view_t message) PJ_NOEXCEPT;
 
-  /** Begin a progress sequence. Returns false + error if the host cannot show progress. */
+  /** [stream-thread] Begin a progress sequence. Returns false + error if the
+   *  host cannot show progress. */
   bool (*progress_start)(
-      void* ctx, PJ_string_view_t label, uint64_t total_steps, bool cancellable, PJ_error_t* out_error);
+      void* ctx, PJ_string_view_t label, uint64_t total_steps, bool cancellable, PJ_error_t* out_error) PJ_NOEXCEPT;
 
   /**
-   * Advance progress. Returns false to signal user cancellation (when the
-   * sequence was started with cancellable=true). This is NOT an error; no
-   * PJ_error_t is produced.
+   * [stream-thread] Advance progress. Returns false to signal user
+   * cancellation (when the sequence was started with cancellable=true).
+   * This is NOT an error; no PJ_error_t is produced.
    */
-  bool (*progress_update)(void* ctx, uint64_t current_step);
+  bool (*progress_update)(void* ctx, uint64_t current_step) PJ_NOEXCEPT;
 
-  /** End the current progress sequence. */
-  void (*progress_finish)(void* ctx);
+  /** [stream-thread] End the current progress sequence. */
+  void (*progress_finish)(void* ctx) PJ_NOEXCEPT;
 
-  /** Returns true if the host has requested the plugin to stop. */
-  bool (*is_stop_requested)(void* ctx);
+  /** [thread-safe] Returns true if the host has requested the plugin to stop. */
+  bool (*is_stop_requested)(void* ctx) PJ_NOEXCEPT;
 
-  /** Inform the host that the plugin has transitioned to @p state. */
-  void (*notify_state)(void* ctx, PJ_data_source_state_t state);
+  /** [thread-safe] Inform the host that the plugin has transitioned to @p state. */
+  void (*notify_state)(void* ctx, PJ_data_source_state_t state) PJ_NOEXCEPT;
 
   /**
-   * Plugin-initiated stop. The plugin asks the host to terminate it,
-   * specifying a terminal state (stopped or failed) and a reason string.
+   * [thread-safe] Plugin-initiated stop. The plugin asks the host to
+   * terminate it, specifying a terminal state (stopped or failed) and a
+   * reason string.
    */
-  void (*request_stop)(void* ctx, PJ_data_source_state_t terminal_state, PJ_string_view_t reason);
+  void (*request_stop)(void* ctx, PJ_data_source_state_t terminal_state, PJ_string_view_t reason) PJ_NOEXCEPT;
 
   /**
-   * Bind (or look up) a parser for a topic. On success, writes the handle
-   * to *out_handle and returns true. On failure, returns false and (if
-   * out_error != NULL) populates it. Used for delegated ingest mode.
+   * [stream-thread] Bind (or look up) a parser for a topic. On success,
+   * writes the handle to *out_handle and returns true. On failure, returns
+   * false and (if out_error != NULL) populates it. Used for delegated
+   * ingest mode.
    */
   bool (*ensure_parser_binding)(
       void* ctx, const PJ_parser_binding_request_t* request, PJ_parser_binding_handle_t* out_handle,
-      PJ_error_t* out_error);
+      PJ_error_t* out_error) PJ_NOEXCEPT;
 
   /**
-   * Push a raw message payload for host-side parsing.
+   * [stream-thread] Push a raw message payload for host-side parsing.
    * @p handle must have been obtained from ensure_parser_binding.
-   * @p host_timestamp_ns is nanoseconds since the Unix epoch (1970-01-01T00:00:00Z).
-   * Returns false + error on failure.
+   * @p host_timestamp_ns is nanoseconds since the Unix epoch
+   * (1970-01-01T00:00:00Z). Returns false + error on failure.
    */
   bool (*push_raw_message)(
       void* ctx, PJ_parser_binding_handle_t handle, int64_t host_timestamp_ns, PJ_bytes_view_t payload,
-      PJ_error_t* out_error);
+      PJ_error_t* out_error) PJ_NOEXCEPT;
 
   /**
-   * Display a modal message box to the user and wait for their response.
-   *
-   * This function BLOCKS until the user closes the dialog. The host is
+   * [main-thread] Display a modal message box to the user and wait for
+   * their response. BLOCKS until the user closes the dialog. The host is
    * responsible for showing the dialog on the UI thread in a thread-safe
-   * manner.
+   * manner; the plugin may call from any thread and the host will marshal.
    *
    * @return The button that was clicked (a single PJ_message_box_buttons_t
    *         value), or -1 if the host does not support modal dialogs
    *         (e.g. headless mode).
    */
   int (*show_message_box)(
-      void* ctx, PJ_message_box_type_t type, PJ_string_view_t title, PJ_string_view_t message, int buttons);
+      void* ctx, PJ_message_box_type_t type, PJ_string_view_t title, PJ_string_view_t message, int buttons) PJ_NOEXCEPT;
 
   /**
-   * List all available parser encodings.
+   * [main-thread] List all available parser encodings.
    *
    * @return JSON array string of encoding names, e.g.
    *         ["json","cbor","protobuf"]. Host-owned string, valid until
    *         the next call to this function. Returns NULL if no parsers
    *         are loaded.
    */
-  const char* (*list_available_encodings)(void* ctx);
+  const char* (*list_available_encodings)(void* ctx)PJ_NOEXCEPT;
 } PJ_data_source_runtime_host_vtable_t;
 
 /** Fat pointer pairing a runtime host context with its vtable. */
@@ -245,22 +244,24 @@ typedef struct {
  * DataSource plugin vtable — the interface a plugin shared library exports.
  *
  * The host obtains this via the exported `PJ_get_data_source_vtable()`
- * symbol. Typical lifecycle (v3):
+ * symbol. Typical lifecycle (v4):
  *
  *   create  -> bind(registry) -> load_config (optional)
  *           -> start -> poll* -> stop -> destroy
  *
  * Fallible slots take a PJ_error_t* out-param which the callee populates
- * on failure. Callers may pass NULL to discard error detail.
+ * on failure. Callers may pass NULL to discard error detail. Every slot
+ * is PJ_NOEXCEPT; exceptions from the implementation must be caught
+ * inside the plugin and translated to the error return.
  */
 typedef struct PJ_data_source_vtable_t {
   uint32_t protocol_version; /**< Must equal PJ_DATA_SOURCE_PROTOCOL_VERSION. */
   uint32_t struct_size;      /**< sizeof(PJ_data_source_vtable_t). */
 
-  /** Allocate a new plugin instance. Returns opaque context pointer. */
-  void* (*create)(void);
-  /** Destroy an instance previously created by create(). */
-  void (*destroy)(void* ctx);
+  /** [main-thread] Allocate a new plugin instance. Returns opaque context pointer. */
+  void* (*create)(void)PJ_NOEXCEPT;
+  /** [main-thread] Destroy an instance previously created by create(). */
+  void (*destroy)(void* ctx) PJ_NOEXCEPT;
 
   /**
    * Static JSON manifest. Compile-time constant string literal.
@@ -278,11 +279,11 @@ typedef struct PJ_data_source_vtable_t {
    *                       instantiating the plugin.
    */
   const char* manifest_json;
-  /** Return capability bitmask (PJ_DATA_SOURCE_CAPABILITY_* flags). */
-  uint64_t (*capabilities)(void* ctx);
+  /** [main-thread] Return capability bitmask (PJ_DATA_SOURCE_CAPABILITY_* flags). */
+  uint64_t (*capabilities)(void* ctx) PJ_NOEXCEPT;
 
   /**
-   * Bind host-provided services.
+   * [main-thread] Bind host-provided services.
    *
    * The plugin acquires whatever services it needs from @p registry
    * (write host, runtime host, optional services). The host must have
@@ -295,47 +296,43 @@ typedef struct PJ_data_source_vtable_t {
    *
    * Called exactly once between create() and the first lifecycle call.
    */
-  bool (*bind)(void* ctx, PJ_service_registry_t registry, PJ_error_t* out_error);
+  bool (*bind)(void* ctx, PJ_service_registry_t registry, PJ_error_t* out_error) PJ_NOEXCEPT;
 
   /**
-   * Serialize plugin configuration to JSON.
+   * [main-thread] Serialize plugin configuration to JSON.
    *
    * On success, returns true and writes to @p out_json a view over a
    * plugin-owned string that remains valid until the next call to this
    * function on the same ctx.
    */
-  bool (*save_config)(void* ctx, PJ_string_view_t* out_json, PJ_error_t* out_error);
-  /** Restore plugin configuration from JSON. */
-  bool (*load_config)(void* ctx, PJ_string_view_t config_json, PJ_error_t* out_error);
+  bool (*save_config)(void* ctx, PJ_string_view_t* out_json, PJ_error_t* out_error) PJ_NOEXCEPT;
+  /** [main-thread] Restore plugin configuration from JSON. */
+  bool (*load_config)(void* ctx, PJ_string_view_t config_json, PJ_error_t* out_error) PJ_NOEXCEPT;
 
-  /** Begin data acquisition. */
-  bool (*start)(void* ctx, PJ_error_t* out_error);
-  /** Stop data acquisition. Must be idempotent. Failures are not reportable. */
-  void (*stop)(void* ctx);
-  /** Pause a running source. Returns false + error if unsupported. */
-  bool (*pause)(void* ctx, PJ_error_t* out_error);
-  /** Resume a paused source. Returns false + error if unsupported. */
-  bool (*resume)(void* ctx, PJ_error_t* out_error);
-  /** Called periodically by the host while running. Returns false + error on failure. */
-  bool (*poll)(void* ctx, PJ_error_t* out_error);
+  /** [main-thread] Begin data acquisition. May spawn stream threads internally. */
+  bool (*start)(void* ctx, PJ_error_t* out_error) PJ_NOEXCEPT;
+  /** [main-thread] Stop data acquisition. Must be idempotent. Failures are not reportable. */
+  void (*stop)(void* ctx) PJ_NOEXCEPT;
+  /** [main-thread] Pause a running source. Returns false + error if unsupported. */
+  bool (*pause)(void* ctx, PJ_error_t* out_error) PJ_NOEXCEPT;
+  /** [main-thread] Resume a paused source. Returns false + error if unsupported. */
+  bool (*resume)(void* ctx, PJ_error_t* out_error) PJ_NOEXCEPT;
+  /** [stream-thread] Called periodically by the host while running. */
+  bool (*poll)(void* ctx, PJ_error_t* out_error) PJ_NOEXCEPT;
 
-  /** Return the plugin's current lifecycle state. */
-  PJ_data_source_state_t (*current_state)(void* ctx);
+  /** [thread-safe] Return the plugin's current lifecycle state. */
+  PJ_data_source_state_t (*current_state)(void* ctx) PJ_NOEXCEPT;
 
   /**
-   * Return a typed borrowed reference to this source's embedded dialog.
-   * The host must NOT call the dialog vtable's create() or destroy() on a
-   * borrowed handle. Returns {NULL, NULL} if this source has no dialog.
+   * [main-thread] Return a typed borrowed reference to this source's
+   * embedded dialog. The host must NOT call the dialog vtable's create()
+   * or destroy() on a borrowed handle. Returns {NULL, NULL} if this
+   * source has no dialog.
    */
-  PJ_borrowed_dialog_t (*get_dialog)(void* ctx);
-
-  /* ====================================================================
-   * Tail slots beyond here are OPTIONAL. Host reads MUST check both
-   * struct_size and slot-nullability via PJ_HAS_TAIL_SLOT.
-   * ==================================================================== */
+  PJ_borrowed_dialog_t (*get_dialog)(void* ctx) PJ_NOEXCEPT;
 
   /**
-   * Query a plugin-exposed extension by reverse-DNS id.
+   * [thread-safe] Query a plugin-exposed extension by reverse-DNS id.
    *
    * Returns a pointer to a static, plugin-owned POD (typically a tiny
    * vtable-like struct) valid for the lifetime of the plugin instance,
@@ -344,8 +341,18 @@ typedef struct PJ_data_source_vtable_t {
    *
    * Mirrors CLAP's `get_extension`. Lets plugins advertise extra
    * capabilities to hosts without bumping the family protocol version.
+   *
+   * Extension-ID convention: "pj.<name>.v<N>" for stable, or
+   * "pj.experimental.<name>/draft-<N>" for unstable. A plugin may offer
+   * multiple versions of the same capability (e.g. "pj.params.v1" and
+   * "pj.params.v2") side by side.
    */
-  const void* (*get_plugin_extension)(void* ctx, PJ_string_view_t id);
+  const void* (*get_plugin_extension)(void* ctx, PJ_string_view_t id)PJ_NOEXCEPT;
+
+  /* ====================================================================
+   * Tail slots beyond here are OPTIONAL. Host reads MUST check both
+   * struct_size and slot-nullability via PJ_HAS_TAIL_SLOT.
+   * ==================================================================== */
 } PJ_data_source_vtable_t;
 /* The vtable above is ABI-APPENDABLE: new slots may be added at the tail;
  * host reads guard with PJ_HAS_TAIL_SLOT. See PJ_DATA_SOURCE_MIN_VTABLE_SIZE. */

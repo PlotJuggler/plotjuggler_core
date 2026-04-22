@@ -11,6 +11,18 @@ extern "C" {
 
 #define PJ_PLUGIN_DATA_API_VERSION 1
 
+/*
+ * PJ_NOEXCEPT: applied to every function-pointer type in a vtable. In C++ this
+ * is part of the function type (since C++17) and is enforced at compile time;
+ * in C it is a no-op. Plugin-side trampolines that implement these slots MUST
+ * be declared noexcept — a throw across the ABI boundary calls std::terminate.
+ */
+#ifdef __cplusplus
+#define PJ_NOEXCEPT noexcept
+#else
+#define PJ_NOEXCEPT
+#endif
+
 /**
  * Boot-level ABI version, exported by every plugin .so as a separate C symbol
  * independent of any vtable. Loaders dlsym this BEFORE fetching the family
@@ -27,9 +39,15 @@ extern "C" {
  * PJ_MESSAGE_PARSER_PLUGIN, etc.) emits `pj_plugin_abi_version` automatically.
  * Do not redefine it.
  *
- * v3 plugins advertise version 3.
+ * v4 plugins advertise version 4. Breaking v3→v4 changes:
+ *   - Arrow C Data Interface replaces Arrow IPC bytes at the boundary
+ *     (append_arrow_stream + read_series_arrow).
+ *   - append_arrow_ipc removed from all write hosts.
+ *   - read_series (PJ_materialized_series_t) removed from toolbox host.
+ *   - Every vtable slot is PJ_NOEXCEPT.
+ *   - Every slot carries a thread-class tag (// [main-thread], etc.).
  */
-#define PJ_ABI_VERSION 3
+#define PJ_ABI_VERSION 4
 
 /**
  * Convention for plugin-loaders:
@@ -78,6 +96,66 @@ typedef struct {
   size_t size;
 } PJ_bytes_view_t;
 
+/* ==========================================================================
+ * Apache Arrow C Data Interface.
+ *
+ * These are the exact POD struct layouts from the Arrow specification at
+ * https://arrow.apache.org/docs/format/CDataInterface.html, inlined verbatim
+ * so the plugin ABI surface has zero Arrow-library dependency. Plugins that
+ * want helpers link nanoarrow themselves.
+ *
+ * Frozen by upstream Arrow ("once this specification is supported in an
+ * official Arrow release, the C ABI is frozen"). The ARROW_C_DATA_INTERFACE
+ * guard is the official spec guard — if nanoarrow or arrow-cpp is already
+ * included, these declarations are elided and the existing definitions win.
+ *
+ * Ownership: every struct carries its own `release` callback plus private
+ * data. The producer of the struct is responsible for setting `release`; the
+ * consumer that takes ownership is responsible for calling it when done.
+ * ========================================================================== */
+
+#ifndef ARROW_C_DATA_INTERFACE
+#define ARROW_C_DATA_INTERFACE
+
+#define ARROW_FLAG_DICTIONARY_ORDERED 1
+#define ARROW_FLAG_NULLABLE 2
+#define ARROW_FLAG_MAP_KEYS_SORTED 4
+
+struct ArrowSchema {
+  const char* format;
+  const char* name;
+  const char* metadata;
+  int64_t flags;
+  int64_t n_children;
+  struct ArrowSchema** children;
+  struct ArrowSchema* dictionary;
+  void (*release)(struct ArrowSchema*);
+  void* private_data;
+};
+
+struct ArrowArray {
+  int64_t length;
+  int64_t null_count;
+  int64_t offset;
+  int64_t n_buffers;
+  int64_t n_children;
+  const void** buffers;
+  struct ArrowArray** children;
+  struct ArrowArray* dictionary;
+  void (*release)(struct ArrowArray*);
+  void* private_data;
+};
+
+struct ArrowArrayStream {
+  int (*get_schema)(struct ArrowArrayStream*, struct ArrowSchema* out);
+  int (*get_next)(struct ArrowArrayStream*, struct ArrowArray* out);
+  const char* (*get_last_error)(struct ArrowArrayStream*);
+  void (*release)(struct ArrowArrayStream*);
+  void* private_data;
+};
+
+#endif /* ARROW_C_DATA_INTERFACE */
+
 /* ABI-FROZEN: layout permanent; changes = v4 break. */
 typedef struct {
   uint32_t id;
@@ -95,7 +173,7 @@ typedef struct {
 } PJ_field_handle_t;
 
 /* ==========================================================================
- * Protocol v3 core types
+ * Protocol v4 core types
  *
  * PJ_error_t carries its message/domain INLINE (fixed-size null-terminated
  * buffers) so callers can copy it freely and its lifetime is trivial.
@@ -109,7 +187,7 @@ typedef struct {
 /*
  * ABI-FROZEN (with growth escape hatch).
  *
- * The inline layout is permanent for v3.x — existing fields never move or
+ * The inline layout is permanent for v4.x — existing fields never move or
  * change type. The `extended` + `extended_kind` slots are the designated
  * growth path for richer payloads (cause chains, stack traces, structured
  * field lists); never add further top-level fields.
@@ -143,8 +221,11 @@ typedef struct {
 typedef struct PJ_service_registry_vtable_t {
   uint32_t protocol_version;
   uint32_t struct_size;
+
+  /* [thread-safe] Look up a host-provided service by reverse-DNS name. */
   bool (*get_service)(
-      void* ctx, PJ_string_view_t name, uint32_t min_version, PJ_service_t* out_service, PJ_error_t* out_error);
+      void* ctx, PJ_string_view_t name, uint32_t min_version, PJ_service_t* out_service,
+      PJ_error_t* out_error) PJ_NOEXCEPT;
 } PJ_service_registry_vtable_t;
 
 /* ABI-FROZEN: fat pointer layout permanent. */
@@ -215,28 +296,6 @@ typedef struct {
 } PJ_field_info_t;
 
 typedef struct {
-  const uint32_t* offsets;
-  size_t offset_count;
-  const char* bytes;
-  size_t byte_count;
-} PJ_string_series_values_t;
-
-typedef union {
-  const float* as_float32;
-  const double* as_float64;
-  const int8_t* as_int8;
-  const int16_t* as_int16;
-  const int32_t* as_int32;
-  const int64_t* as_int64;
-  const uint8_t* as_uint8;
-  const uint16_t* as_uint16;
-  const uint32_t* as_uint32;
-  const uint64_t* as_uint64;
-  const uint8_t* as_bool;
-  PJ_string_series_values_t as_string;
-} PJ_series_values_t;
-
-typedef struct {
   const PJ_data_source_info_t* data_sources;
   size_t data_source_count;
   const PJ_topic_info_t* topics;
@@ -247,22 +306,8 @@ typedef struct {
   void (*release)(void* release_ctx);
 } PJ_catalog_snapshot_t;
 
-typedef struct {
-  PJ_data_source_handle_t source;
-  PJ_topic_handle_t topic;
-  PJ_field_handle_t field;
-  PJ_primitive_type_t type;
-  const int64_t* timestamps; /**< Nanoseconds since Unix epoch (1970-01-01T00:00:00Z). */
-  size_t row_count;
-  const uint8_t* validity_bits;
-  size_t validity_size;
-  PJ_series_values_t values;
-  void* release_ctx;
-  void (*release)(void* release_ctx);
-} PJ_materialized_series_t;
-
 /* ==========================================================================
- * Three distinct write-host vtables (protocol v3).
+ * Three distinct write-host vtables (protocol v4).
  *
  * Each plugin family binds to its own type so the compiler enforces scope:
  * a DataSource plugin cannot accidentally call Toolbox-only ops, a Parser
@@ -271,33 +316,60 @@ typedef struct {
  * types are distinct.
  *
  * All fallible slots take a PJ_error_t* out-parameter. Callers may pass
- * NULL to discard detail.
+ * NULL to discard detail. Every slot is PJ_NOEXCEPT and carries a
+ * thread-class tag in its leading comment.
+ *
+ * Arrow C Data Interface is the canonical bulk-ingest path
+ * (append_arrow_stream). Per-record slots remain for streaming producers
+ * and simple plugins where batching does not fit naturally. Thread tags:
+ *   [main-thread]    GUI thread. Dialog callbacks, initial config.
+ *   [stream-thread]  Host's background ingest thread. Most appends.
+ *   [thread-safe]    Any thread.
  * ========================================================================== */
 
 /* ABI-APPENDABLE: new slots may be added at the tail; struct_size gates read.
  *
- * Source write host: multi-topic writes bound to one data source. */
+ * Source write host: multi-topic writes bound to one data source.
+ *
+ * append_arrow_stream ownership:
+ *   Producer (plugin) sets `stream->release`. On a successful call the host
+ *   takes ownership of the stream, pulls all batches via get_next, and calls
+ *   stream->release before returning. On failure (function returns false),
+ *   ownership is NOT transferred — the plugin retains responsibility and
+ *   must release the stream itself. */
 typedef struct PJ_source_write_host_vtable_t {
   uint32_t abi_version;
   uint32_t struct_size;
 
-  bool (*ensure_topic)(void* ctx, PJ_string_view_t topic_name, PJ_topic_handle_t* out_topic, PJ_error_t* out_error);
+  /* [stream-thread] Ensure a topic exists under this data source. */
+  bool (*ensure_topic)(void* ctx, PJ_string_view_t topic_name, PJ_topic_handle_t* out_topic, PJ_error_t* out_error)
+      PJ_NOEXCEPT;
 
+  /* [stream-thread] Ensure a field exists under a topic with the given type. */
   bool (*ensure_field)(
       void* ctx, PJ_topic_handle_t topic, PJ_string_view_t field_name, PJ_primitive_type_t type,
-      PJ_field_handle_t* out_field, PJ_error_t* out_error);
+      PJ_field_handle_t* out_field, PJ_error_t* out_error) PJ_NOEXCEPT;
 
+  /* [stream-thread] Append a record by field name. Convenience path for
+   * simple plugins; resolves field handles on every call. */
   bool (*append_record)(
       void* ctx, PJ_topic_handle_t topic, int64_t timestamp, const PJ_named_field_value_t* fields, size_t field_count,
-      PJ_error_t* out_error);
+      PJ_error_t* out_error) PJ_NOEXCEPT;
 
+  /* [stream-thread] Append a record with pre-resolved field handles. Fast
+   * path for streaming producers — skip the name lookup. */
   bool (*append_bound_record)(
       void* ctx, PJ_topic_handle_t topic, int64_t timestamp, const PJ_bound_field_value_t* fields, size_t field_count,
-      PJ_error_t* out_error);
+      PJ_error_t* out_error) PJ_NOEXCEPT;
 
-  bool (*append_arrow_ipc)(
-      void* ctx, PJ_topic_handle_t topic, PJ_bytes_view_t ipc_stream, PJ_string_view_t timestamp_column,
-      PJ_error_t* out_error);
+  /* [stream-thread] PRIMARY BATCH PATH. Plugin hands ownership of an Arrow
+   * C Data Interface stream; host pulls all batches and releases the stream
+   * before returning (success path). `timestamp_column` names the column
+   * in the stream's schema whose int64 values are interpreted as nanoseconds
+   * since Unix epoch; if empty, a synthetic monotonic timestamp is used. */
+  bool (*append_arrow_stream)(
+      void* ctx, PJ_topic_handle_t topic, struct ArrowArrayStream* stream, PJ_string_view_t timestamp_column,
+      PJ_error_t* out_error) PJ_NOEXCEPT;
 } PJ_source_write_host_vtable_t;
 
 typedef struct {
@@ -308,23 +380,29 @@ typedef struct {
 /* ABI-APPENDABLE: new slots may be added at the tail; struct_size gates read.
  *
  * Parser write host: single-topic writes. The bound topic is set at
- * service-creation time; the parser plugin never names it. */
+ * service-creation time; the parser plugin never names it.
+ *
+ * No append_arrow_stream: parsers are inherently per-message. The host
+ * internally coalesces per-record appends into Arrow batches before
+ * committing to storage — plugin authors never see the batch grain. */
 typedef struct PJ_parser_write_host_vtable_t {
   uint32_t abi_version;
   uint32_t struct_size;
 
+  /* [stream-thread] Ensure a field exists in the bound topic. */
   bool (*ensure_field)(
       void* ctx, PJ_string_view_t field_name, PJ_primitive_type_t type, PJ_field_handle_t* out_field,
-      PJ_error_t* out_error);
+      PJ_error_t* out_error) PJ_NOEXCEPT;
 
+  /* [stream-thread] Append a record by field name. */
   bool (*append_record)(
-      void* ctx, int64_t timestamp, const PJ_named_field_value_t* fields, size_t field_count, PJ_error_t* out_error);
+      void* ctx, int64_t timestamp, const PJ_named_field_value_t* fields, size_t field_count,
+      PJ_error_t* out_error) PJ_NOEXCEPT;
 
+  /* [stream-thread] Append a record with pre-resolved field handles. */
   bool (*append_bound_record)(
-      void* ctx, int64_t timestamp, const PJ_bound_field_value_t* fields, size_t field_count, PJ_error_t* out_error);
-
-  bool (*append_arrow_ipc)(
-      void* ctx, PJ_bytes_view_t ipc_stream, PJ_string_view_t timestamp_column, PJ_error_t* out_error);
+      void* ctx, int64_t timestamp, const PJ_bound_field_value_t* fields, size_t field_count,
+      PJ_error_t* out_error) PJ_NOEXCEPT;
 } PJ_parser_write_host_vtable_t;
 
 typedef struct {
@@ -334,37 +412,57 @@ typedef struct {
 
 /* ABI-APPENDABLE: new slots may be added at the tail; struct_size gates read.
  *
- * Toolbox host: multi-source read+write. */
+ * Toolbox host: multi-source read+write.
+ *
+ * read_series_arrow: caller zero-initialises both out structs. Host fills
+ * them (allocates buffers, sets release callbacks). On success the caller
+ * MUST invoke out_schema->release and out_array->release when done. The
+ * array has two columns: ["timestamp" (int64), <field_name> (typed)].
+ * Validity bitmap populated per Arrow spec. */
 typedef struct PJ_toolbox_host_vtable_t {
   uint32_t abi_version;
   uint32_t struct_size;
 
+  /* [main-thread] Create a new named data source, returning its handle. */
   bool (*create_data_source)(
-      void* ctx, PJ_string_view_t name, PJ_data_source_handle_t* out_source, PJ_error_t* out_error);
+      void* ctx, PJ_string_view_t name, PJ_data_source_handle_t* out_source, PJ_error_t* out_error) PJ_NOEXCEPT;
 
+  /* [main-thread] Ensure a topic exists under a specified data source. */
   bool (*ensure_topic)(
       void* ctx, PJ_data_source_handle_t source, PJ_string_view_t topic_name, PJ_topic_handle_t* out_topic,
-      PJ_error_t* out_error);
+      PJ_error_t* out_error) PJ_NOEXCEPT;
 
+  /* [main-thread] Ensure a field exists under a topic. */
   bool (*ensure_field)(
       void* ctx, PJ_topic_handle_t topic, PJ_string_view_t field_name, PJ_primitive_type_t type,
-      PJ_field_handle_t* out_field, PJ_error_t* out_error);
+      PJ_field_handle_t* out_field, PJ_error_t* out_error) PJ_NOEXCEPT;
 
+  /* [main-thread] Append a record by field name. */
   bool (*append_record)(
       void* ctx, PJ_topic_handle_t topic, int64_t timestamp, const PJ_named_field_value_t* fields, size_t field_count,
-      PJ_error_t* out_error);
+      PJ_error_t* out_error) PJ_NOEXCEPT;
 
+  /* [main-thread] Append a record with pre-resolved field handles. */
   bool (*append_bound_record)(
       void* ctx, PJ_topic_handle_t topic, int64_t timestamp, const PJ_bound_field_value_t* fields, size_t field_count,
-      PJ_error_t* out_error);
+      PJ_error_t* out_error) PJ_NOEXCEPT;
 
-  bool (*append_arrow_ipc)(
-      void* ctx, PJ_topic_handle_t topic, PJ_bytes_view_t ipc_stream, PJ_string_view_t timestamp_column,
-      PJ_error_t* out_error);
+  /* [main-thread] Bulk-write via Arrow C Data Interface (same ownership rule
+   * as PJ_source_write_host_vtable_t::append_arrow_stream). */
+  bool (*append_arrow_stream)(
+      void* ctx, PJ_topic_handle_t topic, struct ArrowArrayStream* stream, PJ_string_view_t timestamp_column,
+      PJ_error_t* out_error) PJ_NOEXCEPT;
 
-  bool (*acquire_catalog_snapshot)(void* ctx, PJ_catalog_snapshot_t* out_snapshot, PJ_error_t* out_error);
+  /* [main-thread] Snapshot the current catalog of data sources, topics, and
+   * fields. Caller releases via snapshot.release(snapshot.release_ctx). */
+  bool (*acquire_catalog_snapshot)(void* ctx, PJ_catalog_snapshot_t* out_snapshot, PJ_error_t* out_error) PJ_NOEXCEPT;
 
-  bool (*read_series)(void* ctx, PJ_field_handle_t field, PJ_materialized_series_t* out_series, PJ_error_t* out_error);
+  /* [main-thread] Materialise one field's time series into a host-owned
+   * ArrowArray (two columns: timestamp + field). Caller must call
+   * out_schema->release and out_array->release when done. */
+  bool (*read_series_arrow)(
+      void* ctx, PJ_field_handle_t field, struct ArrowSchema* out_schema, struct ArrowArray* out_array,
+      PJ_error_t* out_error) PJ_NOEXCEPT;
 } PJ_toolbox_host_vtable_t;
 
 typedef struct {
@@ -373,7 +471,7 @@ typedef struct {
 } PJ_toolbox_host_t;
 
 /**
- * Colormap registry service (v3).
+ * Colormap registry service (v4).
  *
  * Independent host-provided service for toolbox plugins that want to
  * publish named colormap callbacks.
@@ -382,11 +480,14 @@ typedef struct PJ_colormap_registry_vtable_t {
   uint32_t protocol_version;
   uint32_t struct_size;
 
+  /* [main-thread] Register a named colormap. eval_fn is invoked later from
+   * the main GUI thread when rendering. */
   bool (*register_map)(
       void* ctx, PJ_string_view_t name, const char* (*eval_fn)(double value, void* user_ctx), void* user_ctx,
-      PJ_error_t* out_error);
+      PJ_error_t* out_error) PJ_NOEXCEPT;
 
-  bool (*unregister_map)(void* ctx, PJ_string_view_t name, PJ_error_t* out_error);
+  /* [main-thread] Unregister a previously registered colormap. */
+  bool (*unregister_map)(void* ctx, PJ_string_view_t name, PJ_error_t* out_error) PJ_NOEXCEPT;
 } PJ_colormap_registry_vtable_t;
 
 typedef struct {

@@ -10,12 +10,14 @@
 
 namespace PJ {
 
-/// C++ base class for Dialog plugins (protocol v3).
+/// C++ base class for Dialog plugins (protocol v4).
 ///
 /// Plugin authors subclass this and override the virtual methods. String
 /// lifetime is managed by internal buffers. Trampolines catch exceptions
 /// to prevent UB at the C ABI; caught exceptions populate the `PJ_error_t*`
-/// out-parameter on fallible calls.
+/// out-parameter on fallible calls. All trampolines are `noexcept` at the
+/// ABI boundary (v4 requirement) — the try/catch sits inside, so a throw
+/// from user code is translated to an error return, never propagated.
 class DialogPluginBase {
  public:
   virtual ~DialogPluginBase() = default;
@@ -87,13 +89,13 @@ class DialogPluginBase {
     out_error->extended_kind[0] = '\0';
   }
 
-  static void trampoline_destroy(void* ctx) {
+  static void trampoline_destroy(void* ctx) noexcept {
     try {
       delete static_cast<DialogPluginBase*>(ctx);
     } catch (...) {}
   }
 
-  static const char* trampoline_get_manifest(void* ctx) {
+  static const char* trampoline_get_manifest(void* ctx) noexcept {
     auto* self = static_cast<DialogPluginBase*>(ctx);
     try {
       if (!self->manifest_cached_) {
@@ -106,7 +108,7 @@ class DialogPluginBase {
     }
   }
 
-  static const char* trampoline_get_ui_content(void* ctx) {
+  static const char* trampoline_get_ui_content(void* ctx) noexcept {
     auto* self = static_cast<DialogPluginBase*>(ctx);
     try {
       if (!self->ui_content_cached_) {
@@ -119,7 +121,7 @@ class DialogPluginBase {
     }
   }
 
-  static const char* trampoline_get_widget_data(void* ctx) {
+  static const char* trampoline_get_widget_data(void* ctx) noexcept {
     auto* self = static_cast<DialogPluginBase*>(ctx);
     try {
       self->widget_data_buf_ = self->widget_data();
@@ -130,7 +132,7 @@ class DialogPluginBase {
   }
 
   static bool trampoline_on_widget_event(
-      void* ctx, const char* widget_name, const char* event_json, PJ_error_t* out_error) {
+      void* ctx, const char* widget_name, const char* event_json, PJ_error_t* out_error) noexcept {
     auto* self = static_cast<DialogPluginBase*>(ctx);
     try {
       return self->onWidgetEvent(
@@ -145,7 +147,7 @@ class DialogPluginBase {
     }
   }
 
-  static bool trampoline_on_tick(void* ctx, PJ_error_t* out_error) {
+  static bool trampoline_on_tick(void* ctx, PJ_error_t* out_error) noexcept {
     auto* self = static_cast<DialogPluginBase*>(ctx);
     try {
       return self->onTick();
@@ -158,21 +160,21 @@ class DialogPluginBase {
     }
   }
 
-  static void trampoline_on_accepted(void* ctx, const char* final_state_json) {
+  static void trampoline_on_accepted(void* ctx, const char* final_state_json) noexcept {
     auto* self = static_cast<DialogPluginBase*>(ctx);
     try {
       self->onAccepted(final_state_json == nullptr ? std::string_view{} : std::string_view(final_state_json));
     } catch (...) {}
   }
 
-  static void trampoline_on_rejected(void* ctx) {
+  static void trampoline_on_rejected(void* ctx) noexcept {
     auto* self = static_cast<DialogPluginBase*>(ctx);
     try {
       self->onRejected();
     } catch (...) {}
   }
 
-  static bool trampoline_save_config(void* ctx, PJ_string_view_t* out_json, PJ_error_t* out_error) {
+  static bool trampoline_save_config(void* ctx, PJ_string_view_t* out_json, PJ_error_t* out_error) noexcept {
     auto* self = static_cast<DialogPluginBase*>(ctx);
     if (out_json == nullptr) {
       self->storeError(out_error, 2, "dialog", "save_config called with null out_json");
@@ -192,7 +194,7 @@ class DialogPluginBase {
     }
   }
 
-  static bool trampoline_load_config(void* ctx, PJ_string_view_t config_json, PJ_error_t* out_error) {
+  static bool trampoline_load_config(void* ctx, PJ_string_view_t config_json, PJ_error_t* out_error) noexcept {
     auto* self = static_cast<DialogPluginBase*>(ctx);
     try {
       std::string_view sv =
@@ -211,14 +213,14 @@ class DialogPluginBase {
 }  // namespace PJ
 
 /// Macro to export the vtable entry point for a plugin class.
-#define PJ_DIALOG_PLUGIN(ClassName)                                                              \
-  extern "C" PJ_DIALOG_EXPORT const PJ_dialog_vtable_t* PJ_get_dialog_vtable() {                 \
-    static const PJ_dialog_vtable_t* vt = PJ::DialogPluginBase::vtableWithCreate([]() -> void* { \
-      try {                                                                                      \
-        return new ClassName();                                                                  \
-      } catch (...) {                                                                            \
-        return nullptr;                                                                          \
-      }                                                                                          \
-    });                                                                                          \
-    return vt;                                                                                   \
+#define PJ_DIALOG_PLUGIN(ClassName)                                                                       \
+  extern "C" PJ_DIALOG_EXPORT const PJ_dialog_vtable_t* PJ_get_dialog_vtable() noexcept {                 \
+    static const PJ_dialog_vtable_t* vt = PJ::DialogPluginBase::vtableWithCreate([]() noexcept -> void* { \
+      try {                                                                                               \
+        return new ClassName();                                                                           \
+      } catch (...) {                                                                                     \
+        return nullptr;                                                                                   \
+      }                                                                                                   \
+    });                                                                                                   \
+    return vt;                                                                                            \
   }

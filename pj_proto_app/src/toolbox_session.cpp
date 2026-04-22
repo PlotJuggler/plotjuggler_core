@@ -19,20 +19,24 @@ static const PJ_toolbox_runtime_host_vtable_t kRuntimeVtable = {
     .struct_size = sizeof(PJ_toolbox_runtime_host_vtable_t),
 
     .report_message =
-        [](void* ctx, PJ_toolbox_message_level_t level, PJ_string_view_t msg) {
+        [](void* ctx, PJ_toolbox_message_level_t level, PJ_string_view_t msg) noexcept {
           (void)ctx;
-          const char* lvl = level == PJ_TOOLBOX_MESSAGE_ERROR     ? "ERROR"
-                            : level == PJ_TOOLBOX_MESSAGE_WARNING ? "WARNING"
-                                                                  : "INFO";
-          std::cerr << "[Toolbox " << lvl << "] " << std::string(msg.data, msg.size) << "\n";
+          try {
+            const char* lvl = level == PJ_TOOLBOX_MESSAGE_ERROR     ? "ERROR"
+                              : level == PJ_TOOLBOX_MESSAGE_WARNING ? "WARNING"
+                                                                    : "INFO";
+            std::cerr << "[Toolbox " << lvl << "] " << std::string(msg.data, msg.size) << "\n";
+          } catch (...) {}
         },
 
     .notify_data_changed =
-        [](void* ctx) {
-          auto* s = static_cast<ToolboxSession::RuntimeState*>(ctx);
-          if (s->session) {
-            emit s->session->dataChanged();
-          }
+        [](void* ctx) noexcept {
+          try {
+            auto* s = static_cast<ToolboxSession::RuntimeState*>(ctx);
+            if (s->session) {
+              emit s->session->dataChanged();
+            }
+          } catch (...) {}
         },
 };
 

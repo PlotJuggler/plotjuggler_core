@@ -10,7 +10,7 @@
 extern "C" {
 #endif
 
-#define PJ_DIALOG_PROTOCOL_VERSION 3
+#define PJ_DIALOG_PROTOCOL_VERSION 4
 
 /* Export macro for plugin shared libraries */
 #if defined(_WIN32)
@@ -27,32 +27,42 @@ extern "C" {
  *     until the next call to the same function on the same ctx.
  *   - Host-provided strings are valid only for the duration of the call.
  *   - Errors flow through PJ_error_t* out-parameters on fallible calls.
+ *
+ * v4: every slot is PJ_NOEXCEPT. Dialogs are always driven from the GUI
+ * thread, so every slot is [main-thread].
  */
 
 typedef struct PJ_dialog_vtable_t {
   uint32_t protocol_version; /* Must equal PJ_DIALOG_PROTOCOL_VERSION */
   uint32_t struct_size;
 
-  void* (*create)(void);
-  void (*destroy)(void* ctx);
+  /* [main-thread] Allocate a new dialog instance. */
+  void* (*create)(void)PJ_NOEXCEPT;
+  /* [main-thread] Destroy a dialog instance. */
+  void (*destroy)(void* ctx) PJ_NOEXCEPT;
 
-  /* Stable plugin-owned strings */
-  const char* (*get_manifest)(void* ctx);
-  const char* (*get_ui_content)(void* ctx);
+  /* [main-thread] Stable plugin-owned strings. */
+  const char* (*get_manifest)(void* ctx)PJ_NOEXCEPT;
+  const char* (*get_ui_content)(void* ctx)PJ_NOEXCEPT;
 
-  /* Plugin-owned, valid until next call to same function on same ctx */
-  const char* (*get_widget_data)(void* ctx);
+  /* [main-thread] Plugin-owned, valid until next call to same function
+   *               on same ctx. */
+  const char* (*get_widget_data)(void* ctx)PJ_NOEXCEPT;
 
-  /* Returns true if host should re-read get_widget_data() after this event */
-  bool (*on_widget_event)(void* ctx, const char* widget_name, const char* event_json, PJ_error_t* out_error);
-  bool (*on_tick)(void* ctx, PJ_error_t* out_error);
+  /* [main-thread] Returns true if host should re-read get_widget_data()
+   *               after this event. */
+  bool (*on_widget_event)(void* ctx, const char* widget_name, const char* event_json, PJ_error_t* out_error)
+      PJ_NOEXCEPT;
+  /* [main-thread] Periodic tick driven by the host's UI event loop. */
+  bool (*on_tick)(void* ctx, PJ_error_t* out_error) PJ_NOEXCEPT;
 
-  /* Dialog result — not fallible */
-  void (*on_accepted)(void* ctx, const char* final_state_json);
-  void (*on_rejected)(void* ctx);
+  /* [main-thread] Dialog result — not fallible. */
+  void (*on_accepted)(void* ctx, const char* final_state_json) PJ_NOEXCEPT;
+  void (*on_rejected)(void* ctx) PJ_NOEXCEPT;
 
-  bool (*save_config)(void* ctx, PJ_string_view_t* out_json, PJ_error_t* out_error);
-  bool (*load_config)(void* ctx, PJ_string_view_t config_json, PJ_error_t* out_error);
+  /* [main-thread] Configuration round-trip. */
+  bool (*save_config)(void* ctx, PJ_string_view_t* out_json, PJ_error_t* out_error) PJ_NOEXCEPT;
+  bool (*load_config)(void* ctx, PJ_string_view_t config_json, PJ_error_t* out_error) PJ_NOEXCEPT;
 } PJ_dialog_vtable_t;
 
 /*

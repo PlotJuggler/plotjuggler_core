@@ -5,7 +5,7 @@
 #include <string>
 
 // Defined in mock_dialog.cpp, linked statically
-extern "C" const PJ_dialog_vtable_t* PJ_get_dialog_vtable();
+extern "C" const PJ_dialog_vtable_t* PJ_get_dialog_vtable() noexcept;
 
 class DialogHandleTest : public ::testing::Test {
  protected:

@@ -130,72 +130,6 @@ class CatalogSnapshot {
   }
 };
 
-class MaterializedSeries {
- public:
-  MaterializedSeries() = default;
-  explicit MaterializedSeries(PJ_materialized_series_t raw) : raw_(raw) {}
-  ~MaterializedSeries() {
-    reset();
-  }
-
-  MaterializedSeries(const MaterializedSeries&) = delete;
-  MaterializedSeries& operator=(const MaterializedSeries&) = delete;
-
-  MaterializedSeries(MaterializedSeries&& other) noexcept : raw_(other.release()) {}
-
-  MaterializedSeries& operator=(MaterializedSeries&& other) noexcept {
-    if (this != &other) {
-      reset();
-      raw_ = other.release();
-    }
-    return *this;
-  }
-
-  [[nodiscard]] DataSourceHandle source() const {
-    return raw_.source;
-  }
-
-  [[nodiscard]] TopicHandle topic() const {
-    return raw_.topic;
-  }
-
-  [[nodiscard]] FieldHandle field() const {
-    return raw_.field;
-  }
-
-  [[nodiscard]] PrimitiveType type() const {
-    return fromAbiType(raw_.type);
-  }
-
-  [[nodiscard]] Span<const Timestamp> timestamps() const {
-    return Span<const Timestamp>(raw_.timestamps, raw_.row_count);
-  }
-
-  [[nodiscard]] Span<const uint8_t> validityBits() const {
-    return Span<const uint8_t>(raw_.validity_bits, raw_.validity_size);
-  }
-
-  [[nodiscard]] const PJ_materialized_series_t& raw() const {
-    return raw_;
-  }
-
- private:
-  PJ_materialized_series_t raw_{};
-
-  [[nodiscard]] PJ_materialized_series_t release() noexcept {
-    auto raw = raw_;
-    raw_ = {};
-    return raw;
-  }
-
-  void reset() {
-    if (raw_.release != nullptr) {
-      raw_.release(raw_.release_ctx);
-      raw_ = {};
-    }
-  }
-};
-
 [[nodiscard]] inline std::string_view toStringView(PJ_string_view_t view) {
   return std::string_view(view.data == nullptr ? "" : view.data, view.size);
 }
@@ -286,12 +220,16 @@ class MaterializedSeries {
 }
 
 // ---------------------------------------------------------------------------
-// Write-host views (protocol v3)
+// Write-host views (protocol v4)
 //
 // Three distinct typed views, one per plugin family, each wrapping its own
 // ABI fat pointer. The host-side impl may share one backend across all
 // three services — but at the ABI layer the types are distinct so the
 // compiler enforces scope.
+//
+// Arrow C Data Interface is the canonical bulk path (appendArrowStream).
+// Per-record helpers remain for streaming producers and simple plugins.
+// The parser write host is strictly per-record — host coalesces internally.
 // ---------------------------------------------------------------------------
 
 // --- PJ_error_t helpers ------------------------------------------------------
@@ -451,14 +389,24 @@ class SourceWriteHostView {
     return appendBoundRecord(topic, timestamp, Span<const BoundFieldValue>(fields.begin(), fields.size()));
   }
 
-  [[nodiscard]] Status appendArrowIpc(
-      TopicHandle topic, Span<const uint8_t> ipc_stream, std::string_view timestamp_column = "_timestamp") const {
+  /// Hand an Arrow C Data Interface stream to the host for bulk ingest.
+  ///
+  /// Ownership: on success, the host takes ownership of @p stream — it pulls
+  /// all batches via get_next and calls stream->release before returning.
+  /// The plugin must NOT call release itself after a successful call.
+  /// On failure (returns error), ownership is NOT transferred — the plugin
+  /// retains responsibility for calling stream->release itself.
+  ///
+  /// @param timestamp_column Name of the int64 column in the stream's schema
+  ///        whose values are nanoseconds since Unix epoch. Empty means use
+  ///        a synthetic monotonic timestamp.
+  [[nodiscard]] Status appendArrowStream(
+      TopicHandle topic, struct ArrowArrayStream* stream, std::string_view timestamp_column = "timestamp") const {
     if (!valid()) {
       return unexpected("source write host is not bound");
     }
     PJ_error_t err{};
-    if (!host_.vtable->append_arrow_ipc(
-            host_.ctx, topic, toAbiBytes(ipc_stream), toAbiString(timestamp_column), &err)) {
+    if (!host_.vtable->append_arrow_stream(host_.ctx, topic, stream, toAbiString(timestamp_column), &err)) {
       return unexpected(errorToString(err));
     }
     return okStatus();
@@ -525,18 +473,6 @@ class ParserWriteHostView {
 
   [[nodiscard]] Status appendBoundRecord(Timestamp timestamp, std::initializer_list<BoundFieldValue> fields) const {
     return appendBoundRecord(timestamp, Span<const BoundFieldValue>(fields.begin(), fields.size()));
-  }
-
-  [[nodiscard]] Status appendArrowIpc(
-      Span<const uint8_t> ipc_stream, std::string_view timestamp_column = "_timestamp") const {
-    if (!valid()) {
-      return unexpected("parser write host is not bound");
-    }
-    PJ_error_t err{};
-    if (!host_.vtable->append_arrow_ipc(host_.ctx, toAbiBytes(ipc_stream), toAbiString(timestamp_column), &err)) {
-      return unexpected(errorToString(err));
-    }
-    return okStatus();
   }
 
   [[nodiscard]] const PJ_parser_write_host_t& raw() const noexcept {
@@ -629,14 +565,16 @@ class ToolboxHostView {
     return appendBoundRecord(topic, timestamp, Span<const BoundFieldValue>(fields.begin(), fields.size()));
   }
 
-  [[nodiscard]] Status appendArrowIpc(
-      TopicHandle topic, Span<const uint8_t> ipc_stream, std::string_view timestamp_column = "_timestamp") const {
+  /// Bulk-write via Arrow C Data Interface. Same ownership rule as
+  /// SourceWriteHostView::appendArrowStream: success transfers ownership,
+  /// failure retains it.
+  [[nodiscard]] Status appendArrowStream(
+      TopicHandle topic, struct ArrowArrayStream* stream, std::string_view timestamp_column = "timestamp") const {
     if (!valid()) {
       return unexpected("toolbox host is not bound");
     }
     PJ_error_t err{};
-    if (!host_.vtable->append_arrow_ipc(
-            host_.ctx, topic, toAbiBytes(ipc_stream), toAbiString(timestamp_column), &err)) {
+    if (!host_.vtable->append_arrow_stream(host_.ctx, topic, stream, toAbiString(timestamp_column), &err)) {
       return unexpected(errorToString(err));
     }
     return okStatus();
@@ -654,16 +592,26 @@ class ToolboxHostView {
     return CatalogSnapshot(raw);
   }
 
-  [[nodiscard]] Expected<MaterializedSeries> readSeries(FieldHandle field) const {
+  /// Read one field's time series into host-owned Arrow structs.
+  ///
+  /// The caller passes in zero-initialised @p out_schema and @p out_array;
+  /// the host populates them (allocates buffers, sets release callbacks).
+  /// On success the caller MUST invoke out_schema->release and
+  /// out_array->release when done. The array has two columns:
+  /// ["timestamp" (int64), <field_name> (typed)].
+  [[nodiscard]] Status readSeriesArrow(
+      FieldHandle field, struct ArrowSchema* out_schema, struct ArrowArray* out_array) const {
     if (!valid()) {
       return unexpected("toolbox host is not bound");
     }
-    PJ_materialized_series_t raw{};
+    if (out_schema == nullptr || out_array == nullptr) {
+      return unexpected("readSeriesArrow: out_schema and out_array must not be null");
+    }
     PJ_error_t err{};
-    if (!host_.vtable->read_series(host_.ctx, field, &raw, &err)) {
+    if (!host_.vtable->read_series_arrow(host_.ctx, field, out_schema, out_array, &err)) {
       return unexpected(errorToString(err));
     }
-    return MaterializedSeries(raw);
+    return okStatus();
   }
 
   [[nodiscard]] const PJ_toolbox_host_t& raw() const noexcept {

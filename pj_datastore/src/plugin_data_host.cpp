@@ -628,30 +628,8 @@ struct CatalogSnapshotState {
   std::vector<PJ_field_info_t> fields;
 };
 
-struct MaterializedSeriesState {
-  std::vector<Timestamp> timestamps;
-  std::vector<uint8_t> validity_bits;
-  std::vector<float> float32_values;
-  std::vector<double> float64_values;
-  std::vector<int8_t> int8_values;
-  std::vector<int16_t> int16_values;
-  std::vector<int32_t> int32_values;
-  std::vector<int64_t> int64_values;
-  std::vector<uint8_t> uint8_values;
-  std::vector<uint16_t> uint16_values;
-  std::vector<uint32_t> uint32_values;
-  std::vector<uint64_t> uint64_values;
-  std::vector<uint8_t> bool_values;
-  std::vector<uint32_t> string_offsets;
-  std::vector<char> string_bytes;
-};
-
 void releaseCatalogSnapshot(void* ctx) {
   delete static_cast<CatalogSnapshotState*>(ctx);
-}
-
-void releaseMaterializedSeries(void* ctx) {
-  delete static_cast<MaterializedSeriesState*>(ctx);
 }
 
 PJ_string_view_t storeString(CatalogSnapshotState& state, std::string_view value) {
@@ -729,218 +707,16 @@ struct ToolboxCore {
     return true;
   }
 
-  [[nodiscard]] bool readSeries(FieldHandle field, PJ_materialized_series_t* out_series) {
-    const auto* storage = engine_.getTopicStorage(field.topic.id);
-    if (storage == nullptr) {
-      write.setError(fmt::format("topic {} not found", field.topic.id));
-      return false;
-    }
-    const auto columns = effectiveColumns(engine_, *storage);
-    const auto* desc = findFieldDescriptor(columns, field.id);
-    if (desc == nullptr) {
-      write.setError(fmt::format("field {} not found in topic {}", field.id, field.topic.id));
-      return false;
-    }
-
-    auto* state = new MaterializedSeriesState{};
-    const auto& chunks = storage->sealedChunks();
-    std::size_t total_rows = 0;
-    for (const auto& chunk : chunks) {
-      for (const auto& col : chunk.columns) {
-        if (col.descriptor->field_id == field.id) {
-          total_rows += chunk.stats.row_count;
-          break;
-        }
-      }
-    }
-
-    state->timestamps.reserve(total_rows);
-    state->validity_bits.assign((total_rows + 7) / 8, 0xFF);
-
-    auto mark_null = [&](std::size_t row_index) {
-      state->validity_bits[row_index / 8] &= static_cast<uint8_t>(~(1U << (row_index % 8)));
-    };
-
-    std::size_t row_index = 0;
-    switch (desc->logical_type) {
-      case PrimitiveType::kFloat32:
-        state->float32_values.reserve(total_rows);
-        break;
-      case PrimitiveType::kFloat64:
-        state->float64_values.reserve(total_rows);
-        break;
-      case PrimitiveType::kInt8:
-        state->int8_values.reserve(total_rows);
-        break;
-      case PrimitiveType::kInt16:
-        state->int16_values.reserve(total_rows);
-        break;
-      case PrimitiveType::kInt32:
-        state->int32_values.reserve(total_rows);
-        break;
-      case PrimitiveType::kInt64:
-        state->int64_values.reserve(total_rows);
-        break;
-      case PrimitiveType::kUint8:
-        state->uint8_values.reserve(total_rows);
-        break;
-      case PrimitiveType::kUint16:
-        state->uint16_values.reserve(total_rows);
-        break;
-      case PrimitiveType::kUint32:
-        state->uint32_values.reserve(total_rows);
-        break;
-      case PrimitiveType::kUint64:
-        state->uint64_values.reserve(total_rows);
-        break;
-      case PrimitiveType::kBool:
-        state->bool_values.reserve(total_rows);
-        break;
-      case PrimitiveType::kString:
-        state->string_offsets.push_back(0);
-        break;
-      case PrimitiveType::kUnspecified:
-        break;
-    }
-
-    for (const auto& chunk : chunks) {
-      int col_index = -1;
-      for (std::size_t i = 0; i < chunk.columns.size(); ++i) {
-        if (chunk.columns[i].descriptor->field_id == field.id) {
-          col_index = static_cast<int>(i);
-          break;
-        }
-      }
-      if (col_index < 0) {
-        continue;
-      }
-      for (uint32_t row = 0; row < chunk.stats.row_count; ++row) {
-        state->timestamps.push_back(chunk.readTimestamp(row));
-        const bool is_null = chunk.isNull(static_cast<std::size_t>(col_index), row);
-        if (is_null) {
-          mark_null(row_index);
-        }
-        switch (desc->logical_type) {
-          case PrimitiveType::kFloat32:
-            state->float32_values.push_back(
-                is_null ? 0.0F : decodeNumericExact<float>(chunk, static_cast<std::size_t>(col_index), row));
-            break;
-          case PrimitiveType::kFloat64:
-            state->float64_values.push_back(
-                is_null ? 0.0 : decodeNumericExact<double>(chunk, static_cast<std::size_t>(col_index), row));
-            break;
-          case PrimitiveType::kInt8:
-            state->int8_values.push_back(
-                is_null ? 0 : decodeNumericExact<int8_t>(chunk, static_cast<std::size_t>(col_index), row));
-            break;
-          case PrimitiveType::kInt16:
-            state->int16_values.push_back(
-                is_null ? 0 : decodeNumericExact<int16_t>(chunk, static_cast<std::size_t>(col_index), row));
-            break;
-          case PrimitiveType::kInt32:
-            state->int32_values.push_back(
-                is_null ? 0 : decodeNumericExact<int32_t>(chunk, static_cast<std::size_t>(col_index), row));
-            break;
-          case PrimitiveType::kInt64:
-            state->int64_values.push_back(
-                is_null ? 0 : decodeNumericExact<int64_t>(chunk, static_cast<std::size_t>(col_index), row));
-            break;
-          case PrimitiveType::kUint8:
-            state->uint8_values.push_back(
-                is_null ? 0 : decodeNumericExact<uint8_t>(chunk, static_cast<std::size_t>(col_index), row));
-            break;
-          case PrimitiveType::kUint16:
-            state->uint16_values.push_back(
-                is_null ? 0 : decodeNumericExact<uint16_t>(chunk, static_cast<std::size_t>(col_index), row));
-            break;
-          case PrimitiveType::kUint32:
-            state->uint32_values.push_back(
-                is_null ? 0 : decodeNumericExact<uint32_t>(chunk, static_cast<std::size_t>(col_index), row));
-            break;
-          case PrimitiveType::kUint64:
-            state->uint64_values.push_back(
-                is_null ? 0 : decodeNumericExact<uint64_t>(chunk, static_cast<std::size_t>(col_index), row));
-            break;
-          case PrimitiveType::kBool:
-            state->bool_values.push_back(
-                is_null ? 0 : static_cast<uint8_t>(chunk.readBool(static_cast<std::size_t>(col_index), row)));
-            break;
-          case PrimitiveType::kString: {
-            if (!is_null) {
-              const auto text = chunk.readString(static_cast<std::size_t>(col_index), row);
-              state->string_bytes.insert(state->string_bytes.end(), text.begin(), text.end());
-            }
-            state->string_offsets.push_back(static_cast<uint32_t>(state->string_bytes.size()));
-            break;
-          }
-          case PrimitiveType::kUnspecified:
-            break;
-        }
-        ++row_index;
-      }
-    }
-
-    *out_series = PJ_materialized_series_t{
-        .source = DataSourceHandle{.id = storage->descriptor().dataset_id},
-        .topic = field.topic,
-        .field = field,
-        .type = static_cast<PJ_primitive_type_t>(desc->logical_type),
-        .timestamps = state->timestamps.data(),
-        .row_count = state->timestamps.size(),
-        .validity_bits = state->validity_bits.data(),
-        .validity_size = state->validity_bits.size(),
-        .values = {},
-        .release_ctx = state,
-        .release = releaseMaterializedSeries,
-    };
-
-    switch (desc->logical_type) {
-      case PrimitiveType::kFloat32:
-        out_series->values.as_float32 = state->float32_values.data();
-        break;
-      case PrimitiveType::kFloat64:
-        out_series->values.as_float64 = state->float64_values.data();
-        break;
-      case PrimitiveType::kInt8:
-        out_series->values.as_int8 = state->int8_values.data();
-        break;
-      case PrimitiveType::kInt16:
-        out_series->values.as_int16 = state->int16_values.data();
-        break;
-      case PrimitiveType::kInt32:
-        out_series->values.as_int32 = state->int32_values.data();
-        break;
-      case PrimitiveType::kInt64:
-        out_series->values.as_int64 = state->int64_values.data();
-        break;
-      case PrimitiveType::kUint8:
-        out_series->values.as_uint8 = state->uint8_values.data();
-        break;
-      case PrimitiveType::kUint16:
-        out_series->values.as_uint16 = state->uint16_values.data();
-        break;
-      case PrimitiveType::kUint32:
-        out_series->values.as_uint32 = state->uint32_values.data();
-        break;
-      case PrimitiveType::kUint64:
-        out_series->values.as_uint64 = state->uint64_values.data();
-        break;
-      case PrimitiveType::kBool:
-        out_series->values.as_bool = state->bool_values.data();
-        break;
-      case PrimitiveType::kString:
-        out_series->values.as_string = PJ_string_series_values_t{
-            .offsets = state->string_offsets.data(),
-            .offset_count = state->string_offsets.size(),
-            .bytes = state->string_bytes.data(),
-            .byte_count = state->string_bytes.size(),
-        };
-        break;
-      case PrimitiveType::kUnspecified:
-        break;
-    }
-    write.last_error_.clear();
-    return true;
+  // v4: Arrow-based read path. Stubbed for Phase 1a; Phase 1b fills in the
+  // real implementation that produces host-owned ArrowSchema + ArrowArray
+  // pair via nanoarrow, mirroring the materialisation logic that used to
+  // live here in v3 but emitting Arrow directly.
+  [[nodiscard]] bool readSeriesArrow(FieldHandle field, struct ArrowSchema* out_schema, struct ArrowArray* out_array) {
+    (void)field;
+    (void)out_schema;
+    (void)out_array;
+    write.setError("read_series_arrow: not yet implemented (Phase 1b)");
+    return false;
   }
 };
 
@@ -966,7 +742,7 @@ void propagateError(PJ_error_t* out_error, const char* msg) {
   sdk::fillError(out_error, 1, "datastore", msg != nullptr ? std::string_view(msg) : std::string_view{});
 }
 
-bool sourceEnsureTopic(void* ctx, PJ_string_view_t topic_name, TopicHandle* out_topic, PJ_error_t* out_error) {
+bool sourceEnsureTopic(void* ctx, PJ_string_view_t topic_name, TopicHandle* out_topic, PJ_error_t* out_error) noexcept {
   auto* impl = static_cast<DatastoreSourceWriteHostState*>(ctx);
   if (!impl->core.ensureTopic(impl->source, toStringView(topic_name), out_topic)) {
     propagateError(out_error, impl->core.lastError());
@@ -977,7 +753,7 @@ bool sourceEnsureTopic(void* ctx, PJ_string_view_t topic_name, TopicHandle* out_
 
 bool sourceEnsureField(
     void* ctx, TopicHandle topic, PJ_string_view_t field_name, PJ_primitive_type_t type, FieldHandle* out_field,
-    PJ_error_t* out_error) {
+    PJ_error_t* out_error) noexcept {
   auto* impl = static_cast<DatastoreSourceWriteHostState*>(ctx);
   if (!impl->core.ensureField(topic, toStringView(field_name), type, out_field)) {
     propagateError(out_error, impl->core.lastError());
@@ -988,7 +764,7 @@ bool sourceEnsureField(
 
 bool sourceAppendRecord(
     void* ctx, TopicHandle topic, int64_t timestamp, const PJ_named_field_value_t* fields, std::size_t field_count,
-    PJ_error_t* out_error) {
+    PJ_error_t* out_error) noexcept {
   auto* impl = static_cast<DatastoreSourceWriteHostState*>(ctx);
   if (!impl->core.appendRecord(topic, timestamp, fields, field_count)) {
     propagateError(out_error, impl->core.lastError());
@@ -999,7 +775,7 @@ bool sourceAppendRecord(
 
 bool sourceAppendBoundRecord(
     void* ctx, TopicHandle topic, int64_t timestamp, const PJ_bound_field_value_t* fields, std::size_t field_count,
-    PJ_error_t* out_error) {
+    PJ_error_t* out_error) noexcept {
   auto* impl = static_cast<DatastoreSourceWriteHostState*>(ctx);
   if (!impl->core.appendBoundRecord(topic, timestamp, fields, field_count)) {
     propagateError(out_error, impl->core.lastError());
@@ -1008,19 +784,23 @@ bool sourceAppendBoundRecord(
   return true;
 }
 
-bool sourceAppendArrowIpc(
-    void* ctx, TopicHandle topic, PJ_bytes_view_t ipc_stream, PJ_string_view_t timestamp_column,
-    PJ_error_t* out_error) {
-  auto* impl = static_cast<DatastoreSourceWriteHostState*>(ctx);
-  if (!impl->core.appendArrowIpc(topic, ipc_stream, timestamp_column)) {
-    propagateError(out_error, impl->core.lastError());
-    return false;
-  }
-  return true;
+bool sourceAppendArrowStream(
+    void* ctx, TopicHandle topic, struct ArrowArrayStream* stream, PJ_string_view_t timestamp_column,
+    PJ_error_t* out_error) noexcept {
+  (void)ctx;
+  (void)topic;
+  (void)timestamp_column;
+  // Phase 1a: stub that rejects the call but still preserves the ownership
+  // contract — on failure the caller retains the stream. Phase 1b will wire
+  // this into the nanoarrow-backed ingest path.
+  (void)stream;
+  propagateError(out_error, "append_arrow_stream: not yet implemented (Phase 1b)");
+  return false;
 }
 
 bool parserEnsureField(
-    void* ctx, PJ_string_view_t field_name, PJ_primitive_type_t type, FieldHandle* out_field, PJ_error_t* out_error) {
+    void* ctx, PJ_string_view_t field_name, PJ_primitive_type_t type, FieldHandle* out_field,
+    PJ_error_t* out_error) noexcept {
   auto* impl = static_cast<DatastoreParserWriteHostState*>(ctx);
   if (!impl->core.ensureField(impl->topic, toStringView(field_name), type, out_field)) {
     propagateError(out_error, impl->core.lastError());
@@ -1031,7 +811,7 @@ bool parserEnsureField(
 
 bool parserAppendRecord(
     void* ctx, int64_t timestamp, const PJ_named_field_value_t* fields, std::size_t field_count,
-    PJ_error_t* out_error) {
+    PJ_error_t* out_error) noexcept {
   auto* impl = static_cast<DatastoreParserWriteHostState*>(ctx);
   if (!impl->core.appendRecord(impl->topic, timestamp, fields, field_count)) {
     propagateError(out_error, impl->core.lastError());
@@ -1042,7 +822,7 @@ bool parserAppendRecord(
 
 bool parserAppendBoundRecord(
     void* ctx, int64_t timestamp, const PJ_bound_field_value_t* fields, std::size_t field_count,
-    PJ_error_t* out_error) {
+    PJ_error_t* out_error) noexcept {
   auto* impl = static_cast<DatastoreParserWriteHostState*>(ctx);
   if (!impl->core.appendBoundRecord(impl->topic, timestamp, fields, field_count)) {
     propagateError(out_error, impl->core.lastError());
@@ -1051,17 +831,8 @@ bool parserAppendBoundRecord(
   return true;
 }
 
-bool parserAppendArrowIpc(
-    void* ctx, PJ_bytes_view_t ipc_stream, PJ_string_view_t timestamp_column, PJ_error_t* out_error) {
-  auto* impl = static_cast<DatastoreParserWriteHostState*>(ctx);
-  if (!impl->core.appendArrowIpc(impl->topic, ipc_stream, timestamp_column)) {
-    propagateError(out_error, impl->core.lastError());
-    return false;
-  }
-  return true;
-}
-
-bool toolboxCreateDataSource(void* ctx, PJ_string_view_t name, DataSourceHandle* out_source, PJ_error_t* out_error) {
+bool toolboxCreateDataSource(
+    void* ctx, PJ_string_view_t name, DataSourceHandle* out_source, PJ_error_t* out_error) noexcept {
   auto* impl = static_cast<DatastoreToolboxHostState*>(ctx);
   if (!impl->core.write.createDataSource(toStringView(name), out_source)) {
     propagateError(out_error, impl->core.write.lastError());
@@ -1071,7 +842,8 @@ bool toolboxCreateDataSource(void* ctx, PJ_string_view_t name, DataSourceHandle*
 }
 
 bool toolboxEnsureTopic(
-    void* ctx, DataSourceHandle source, PJ_string_view_t topic_name, TopicHandle* out_topic, PJ_error_t* out_error) {
+    void* ctx, DataSourceHandle source, PJ_string_view_t topic_name, TopicHandle* out_topic,
+    PJ_error_t* out_error) noexcept {
   auto* impl = static_cast<DatastoreToolboxHostState*>(ctx);
   if (!impl->core.write.ensureTopic(source, toStringView(topic_name), out_topic)) {
     propagateError(out_error, impl->core.write.lastError());
@@ -1082,7 +854,7 @@ bool toolboxEnsureTopic(
 
 bool toolboxEnsureField(
     void* ctx, TopicHandle topic, PJ_string_view_t field_name, PJ_primitive_type_t type, FieldHandle* out_field,
-    PJ_error_t* out_error) {
+    PJ_error_t* out_error) noexcept {
   auto* impl = static_cast<DatastoreToolboxHostState*>(ctx);
   if (!impl->core.write.ensureField(topic, toStringView(field_name), type, out_field)) {
     propagateError(out_error, impl->core.write.lastError());
@@ -1093,7 +865,7 @@ bool toolboxEnsureField(
 
 bool toolboxAppendRecord(
     void* ctx, TopicHandle topic, int64_t timestamp, const PJ_named_field_value_t* fields, std::size_t field_count,
-    PJ_error_t* out_error) {
+    PJ_error_t* out_error) noexcept {
   auto* impl = static_cast<DatastoreToolboxHostState*>(ctx);
   if (!impl->core.write.appendRecord(topic, timestamp, fields, field_count)) {
     propagateError(out_error, impl->core.write.lastError());
@@ -1104,7 +876,7 @@ bool toolboxAppendRecord(
 
 bool toolboxAppendBoundRecord(
     void* ctx, TopicHandle topic, int64_t timestamp, const PJ_bound_field_value_t* fields, std::size_t field_count,
-    PJ_error_t* out_error) {
+    PJ_error_t* out_error) noexcept {
   auto* impl = static_cast<DatastoreToolboxHostState*>(ctx);
   if (!impl->core.write.appendBoundRecord(topic, timestamp, fields, field_count)) {
     propagateError(out_error, impl->core.write.lastError());
@@ -1113,18 +885,20 @@ bool toolboxAppendBoundRecord(
   return true;
 }
 
-bool toolboxAppendArrowIpc(
-    void* ctx, TopicHandle topic, PJ_bytes_view_t ipc_stream, PJ_string_view_t timestamp_column,
-    PJ_error_t* out_error) {
-  auto* impl = static_cast<DatastoreToolboxHostState*>(ctx);
-  if (!impl->core.write.appendArrowIpc(topic, ipc_stream, timestamp_column)) {
-    propagateError(out_error, impl->core.write.lastError());
-    return false;
-  }
-  return true;
+bool toolboxAppendArrowStream(
+    void* ctx, TopicHandle topic, struct ArrowArrayStream* stream, PJ_string_view_t timestamp_column,
+    PJ_error_t* out_error) noexcept {
+  (void)ctx;
+  (void)topic;
+  (void)timestamp_column;
+  (void)stream;
+  // Phase 1a: stub; Phase 1b wires through ArrowIpcArrayStreamReader / direct
+  // ArrowArrayStream ingest via nanoarrow.
+  propagateError(out_error, "append_arrow_stream: not yet implemented (Phase 1b)");
+  return false;
 }
 
-bool toolboxAcquireCatalogSnapshot(void* ctx, PJ_catalog_snapshot_t* out_snapshot, PJ_error_t* out_error) {
+bool toolboxAcquireCatalogSnapshot(void* ctx, PJ_catalog_snapshot_t* out_snapshot, PJ_error_t* out_error) noexcept {
   auto* impl = static_cast<DatastoreToolboxHostState*>(ctx);
   if (!impl->core.acquireCatalogSnapshot(out_snapshot)) {
     propagateError(out_error, impl->core.write.lastError());
@@ -1133,9 +907,11 @@ bool toolboxAcquireCatalogSnapshot(void* ctx, PJ_catalog_snapshot_t* out_snapsho
   return true;
 }
 
-bool toolboxReadSeries(void* ctx, FieldHandle field, PJ_materialized_series_t* out_series, PJ_error_t* out_error) {
+bool toolboxReadSeriesArrow(
+    void* ctx, FieldHandle field, struct ArrowSchema* out_schema, struct ArrowArray* out_array,
+    PJ_error_t* out_error) noexcept {
   auto* impl = static_cast<DatastoreToolboxHostState*>(ctx);
-  if (!impl->core.readSeries(field, out_series)) {
+  if (!impl->core.readSeriesArrow(field, out_schema, out_array)) {
     propagateError(out_error, impl->core.write.lastError());
     return false;
   }
@@ -1146,13 +922,12 @@ const PJ_source_write_host_vtable_t kSourceWriteVTable = {
     PJ_PLUGIN_DATA_API_VERSION, sizeof(PJ_source_write_host_vtable_t),
     sourceEnsureTopic,          sourceEnsureField,
     sourceAppendRecord,         sourceAppendBoundRecord,
-    sourceAppendArrowIpc,
+    sourceAppendArrowStream,
 };
 
 const PJ_parser_write_host_vtable_t kParserWriteVTable = {
-    PJ_PLUGIN_DATA_API_VERSION, sizeof(PJ_parser_write_host_vtable_t),
-    parserEnsureField,          parserAppendRecord,
-    parserAppendBoundRecord,    parserAppendArrowIpc,
+    PJ_PLUGIN_DATA_API_VERSION, sizeof(PJ_parser_write_host_vtable_t), parserEnsureField, parserAppendRecord,
+    parserAppendBoundRecord,
 };
 
 const PJ_toolbox_host_vtable_t kToolboxVTable = {
@@ -1163,9 +938,9 @@ const PJ_toolbox_host_vtable_t kToolboxVTable = {
     toolboxEnsureField,
     toolboxAppendRecord,
     toolboxAppendBoundRecord,
-    toolboxAppendArrowIpc,
+    toolboxAppendArrowStream,
     toolboxAcquireCatalogSnapshot,
-    toolboxReadSeries,
+    toolboxReadSeriesArrow,
 };
 
 DatastoreSourceWriteHost::DatastoreSourceWriteHost(DataEngine& engine, DataSourceHandle source)

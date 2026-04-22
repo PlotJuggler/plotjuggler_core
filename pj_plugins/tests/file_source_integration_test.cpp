@@ -38,27 +38,29 @@ struct RuntimeHostState {
   std::vector<std::string> messages;
 };
 
-// --- Source write-host callbacks (v3, typed) ---
+// --- Source write-host callbacks (v4, typed, noexcept) ---
 
-bool setErr(PJ_error_t* err, const char* msg) {
+bool setErr(PJ_error_t* err, const char* msg) noexcept {
   if (err != nullptr) {
     PJ::sdk::fillError(err, 1, "test", msg);
   }
   return false;
 }
 
-bool whEnsureTopic(void* ctx, PJ_string_view_t, PJ_topic_handle_t* out, PJ_error_t*) {
+bool whEnsureTopic(void* ctx, PJ_string_view_t, PJ_topic_handle_t* out, PJ_error_t*) noexcept {
   auto* s = static_cast<WriteHostState*>(ctx);
   s->topics_created++;
   *out = PJ_topic_handle_t{static_cast<uint32_t>(s->topics_created)};
   return true;
 }
 bool whEnsureField(
-    void*, PJ_topic_handle_t topic, PJ_string_view_t, PJ_primitive_type_t, PJ_field_handle_t* out, PJ_error_t*) {
+    void*, PJ_topic_handle_t topic, PJ_string_view_t, PJ_primitive_type_t, PJ_field_handle_t* out,
+    PJ_error_t*) noexcept {
   *out = PJ_field_handle_t{topic, 1};
   return true;
 }
-bool whAppendRecord(void* ctx, PJ_topic_handle_t, int64_t, const PJ_named_field_value_t*, size_t, PJ_error_t* err) {
+bool whAppendRecord(
+    void* ctx, PJ_topic_handle_t, int64_t, const PJ_named_field_value_t*, size_t, PJ_error_t* err) noexcept {
   auto* s = static_cast<WriteHostState*>(ctx);
   if (s->fail_next_append) {
     s->last_error = "mock append failure";
@@ -67,50 +69,56 @@ bool whAppendRecord(void* ctx, PJ_topic_handle_t, int64_t, const PJ_named_field_
   s->records_appended++;
   return true;
 }
-bool whAppendBoundRecord(void*, PJ_topic_handle_t, int64_t, const PJ_bound_field_value_t*, size_t, PJ_error_t*) {
+bool whAppendBoundRecord(
+    void*, PJ_topic_handle_t, int64_t, const PJ_bound_field_value_t*, size_t, PJ_error_t*) noexcept {
   return true;
 }
-bool whAppendArrowIpc(void*, PJ_topic_handle_t, PJ_bytes_view_t, PJ_string_view_t, PJ_error_t*) {
+bool whAppendArrowStream(
+    void*, PJ_topic_handle_t, struct ArrowArrayStream* stream, PJ_string_view_t, PJ_error_t*) noexcept {
+  if (stream != nullptr && stream->release != nullptr) {
+    stream->release(stream);
+  }
   return true;
 }
 
-// --- Runtime host callbacks (v3 — PJ_error_t* on fallible slots) ---
+// --- Runtime host callbacks (v4 — noexcept on all slots) ---
 
-void rhReportMessage(void* ctx, PJ_data_source_message_level_t, PJ_string_view_t msg) {
+void rhReportMessage(void* ctx, PJ_data_source_message_level_t, PJ_string_view_t msg) noexcept {
   auto* s = static_cast<RuntimeHostState*>(ctx);
   s->messages.emplace_back(msg.data, msg.size);
 }
-bool rhProgressStart(void* ctx, PJ_string_view_t, uint64_t, bool, PJ_error_t*) {
+bool rhProgressStart(void* ctx, PJ_string_view_t, uint64_t, bool, PJ_error_t*) noexcept {
   static_cast<RuntimeHostState*>(ctx)->progress_starts++;
   return true;
 }
-bool rhProgressUpdate(void* ctx, uint64_t step) {
+bool rhProgressUpdate(void* ctx, uint64_t step) noexcept {
   auto* s = static_cast<RuntimeHostState*>(ctx);
   s->progress_updates++;
   return s->cancel_at_step == 0 || step < s->cancel_at_step;
 }
-void rhProgressFinish(void* ctx) {
+void rhProgressFinish(void* ctx) noexcept {
   static_cast<RuntimeHostState*>(ctx)->progress_finishes++;
 }
-bool rhIsStopRequested(void* ctx) {
+bool rhIsStopRequested(void* ctx) noexcept {
   return static_cast<RuntimeHostState*>(ctx)->stop_requested;
 }
-void rhNotifyState(void* ctx, PJ_data_source_state_t state) {
+void rhNotifyState(void* ctx, PJ_data_source_state_t state) noexcept {
   static_cast<RuntimeHostState*>(ctx)->state_transitions.push_back(state);
 }
-void rhRequestStop(void* ctx, PJ_data_source_state_t terminal, PJ_string_view_t reason) {
+void rhRequestStop(void* ctx, PJ_data_source_state_t terminal, PJ_string_view_t reason) noexcept {
   auto* s = static_cast<RuntimeHostState*>(ctx);
   s->last_stop_state = terminal;
   s->last_stop_reason = std::string(reason.data, reason.size);
 }
-bool rhEnsureParserBinding(void*, const PJ_parser_binding_request_t*, PJ_parser_binding_handle_t* out, PJ_error_t*) {
+bool rhEnsureParserBinding(
+    void*, const PJ_parser_binding_request_t*, PJ_parser_binding_handle_t* out, PJ_error_t*) noexcept {
   *out = PJ_parser_binding_handle_t{1};
   return true;
 }
-bool rhPushRawMessage(void*, PJ_parser_binding_handle_t, int64_t, PJ_bytes_view_t, PJ_error_t*) {
+bool rhPushRawMessage(void*, PJ_parser_binding_handle_t, int64_t, PJ_bytes_view_t, PJ_error_t*) noexcept {
   return true;
 }
-int rhShowMessageBox(void*, PJ_message_box_type_t, PJ_string_view_t, PJ_string_view_t, int) {
+int rhShowMessageBox(void*, PJ_message_box_type_t, PJ_string_view_t, PJ_string_view_t, int) noexcept {
   return PJ_MSG_BTN_OK;
 }
 
@@ -126,7 +134,7 @@ PJ_source_write_host_t makeWriteHost(WriteHostState* state) {
       .ensure_field = whEnsureField,
       .append_record = whAppendRecord,
       .append_bound_record = whAppendBoundRecord,
-      .append_arrow_ipc = whAppendArrowIpc,
+      .append_arrow_stream = whAppendArrowStream,
   };
   return PJ_source_write_host_t{.ctx = state, .vtable = &vtable};
 }

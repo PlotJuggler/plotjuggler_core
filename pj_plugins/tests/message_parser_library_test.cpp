@@ -21,12 +21,12 @@ struct ParserWriteRecorder {
   double last_value = 0.0;
 };
 
-bool pwhEnsureField(void*, PJ_string_view_t, PJ_primitive_type_t, PJ_field_handle_t* out_field, PJ_error_t*) {
+bool pwhEnsureField(void*, PJ_string_view_t, PJ_primitive_type_t, PJ_field_handle_t* out_field, PJ_error_t*) noexcept {
   *out_field = PJ_field_handle_t{PJ_topic_handle_t{1}, 1};
   return true;
 }
 bool pwhAppendRecord(
-    void* ctx, int64_t timestamp, const PJ_named_field_value_t* fields, size_t field_count, PJ_error_t*) {
+    void* ctx, int64_t timestamp, const PJ_named_field_value_t* fields, size_t field_count, PJ_error_t*) noexcept {
   auto* self = static_cast<ParserWriteRecorder*>(ctx);
   ++self->append_record_calls;
   self->last_timestamp = timestamp;
@@ -35,12 +35,12 @@ bool pwhAppendRecord(
   }
   return true;
 }
-bool pwhAppendBoundRecord(void*, int64_t, const PJ_bound_field_value_t*, size_t, PJ_error_t*) {
+bool pwhAppendBoundRecord(void*, int64_t, const PJ_bound_field_value_t*, size_t, PJ_error_t*) noexcept {
   return true;
 }
-bool pwhAppendArrowIpc(void*, PJ_bytes_view_t, PJ_string_view_t, PJ_error_t*) {
-  return true;
-}
+
+// v4: parser_write vtable has no append_arrow_ipc / append_arrow_stream —
+// parsers are inherently per-record; the host batches internally.
 
 PJ_parser_write_host_t makeParserWriteHost(ParserWriteRecorder* recorder) {
   static const PJ_parser_write_host_vtable_t vtable = {
@@ -49,7 +49,6 @@ PJ_parser_write_host_t makeParserWriteHost(ParserWriteRecorder* recorder) {
       .ensure_field = pwhEnsureField,
       .append_record = pwhAppendRecord,
       .append_bound_record = pwhAppendBoundRecord,
-      .append_arrow_ipc = pwhAppendArrowIpc,
   };
   return PJ_parser_write_host_t{.ctx = recorder, .vtable = &vtable};
 }

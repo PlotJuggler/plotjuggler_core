@@ -12,7 +12,7 @@ namespace proto {
 
 namespace {
 
-void rhReportMessage(void* ctx, PJ_data_source_message_level_t level, PJ_string_view_t msg) {
+void rhReportMessage(void* ctx, PJ_data_source_message_level_t level, PJ_string_view_t msg) noexcept {
   auto* s = static_cast<RuntimeHostState*>(ctx);
   std::string m(msg.data, msg.size);
   std::lock_guard<std::mutex> lock(s->callback_mutex);
@@ -25,138 +25,153 @@ void rhReportMessage(void* ctx, PJ_data_source_message_level_t level, PJ_string_
   }
 }
 
-bool rhProgressStart(void* ctx, PJ_string_view_t label, uint64_t, bool, PJ_error_t* /*out_error*/) {
+bool rhProgressStart(void* ctx, PJ_string_view_t label, uint64_t, bool, PJ_error_t* /*out_error*/) noexcept {
   static_cast<RuntimeHostState*>(ctx)->progress_starts++;
-  std::cerr << "[progress] start: " << std::string(label.data, label.size) << "\n";
+  try {
+    std::cerr << "[progress] start: " << std::string(label.data, label.size) << "\n";
+  } catch (...) {}
   return true;
 }
 
-bool rhProgressUpdate(void* ctx, uint64_t) {
+bool rhProgressUpdate(void* ctx, uint64_t) noexcept {
   static_cast<RuntimeHostState*>(ctx)->progress_updates++;
   return !static_cast<RuntimeHostState*>(ctx)->stop_requested.load();
 }
 
-void rhProgressFinish(void* ctx) {
+void rhProgressFinish(void* ctx) noexcept {
   static_cast<RuntimeHostState*>(ctx)->progress_finishes++;
 }
 
-bool rhIsStopRequested(void* ctx) {
+bool rhIsStopRequested(void* ctx) noexcept {
   return static_cast<RuntimeHostState*>(ctx)->stop_requested.load();
 }
 
-void rhNotifyState(void* ctx, PJ_data_source_state_t state) {
+void rhNotifyState(void* ctx, PJ_data_source_state_t state) noexcept {
   auto* s = static_cast<RuntimeHostState*>(ctx);
-  std::lock_guard<std::mutex> lock(s->callback_mutex);
-  s->state_transitions.push_back(state);
+  try {
+    std::lock_guard<std::mutex> lock(s->callback_mutex);
+    s->state_transitions.push_back(state);
+  } catch (...) {}
 }
 
-void rhRequestStop(void*, PJ_data_source_state_t, PJ_string_view_t reason) {
-  std::cerr << "[plugin] requestStop: " << std::string(reason.data, reason.size) << "\n";
+void rhRequestStop(void*, PJ_data_source_state_t, PJ_string_view_t reason) noexcept {
+  try {
+    std::cerr << "[plugin] requestStop: " << std::string(reason.data, reason.size) << "\n";
+  } catch (...) {}
 }
 
 bool rhEnsureParserBinding(
-    void* ctx, const PJ_parser_binding_request_t* request, PJ_parser_binding_handle_t* out, PJ_error_t* /*out_error*/) {
-  auto* state = static_cast<RuntimeHostState*>(ctx);
-  if (state->registry == nullptr || state->engine == nullptr) {
-    return false;
-  }
+    void* ctx, const PJ_parser_binding_request_t* request, PJ_parser_binding_handle_t* out,
+    PJ_error_t* /*out_error*/) noexcept {
+  try {
+    auto* state = static_cast<RuntimeHostState*>(ctx);
+    if (state->registry == nullptr || state->engine == nullptr) {
+      return false;
+    }
 
-  std::string_view encoding(request->parser_encoding.data, request->parser_encoding.size);
-  std::string_view topic_name(request->topic_name.data, request->topic_name.size);
-  std::string_view type_name(request->type_name.data, request->type_name.size);
+    std::string_view encoding(request->parser_encoding.data, request->parser_encoding.size);
+    std::string_view topic_name(request->topic_name.data, request->topic_name.size);
+    std::string_view type_name(request->type_name.data, request->type_name.size);
 
-  auto* parser_entry = state->registry->findParserByEncoding(encoding);
-  if (parser_entry == nullptr) {
-    state->last_error = "no parser found for encoding '" + std::string(encoding) + "'";
-    std::cerr << "[bridge] " << state->last_error << "\n";
-    return false;
-  }
-
-  // Create parser instance
-  auto parser = std::make_unique<PJ::MessageParserHandle>(parser_entry->library.createHandle());
-  if (!parser->valid()) {
-    state->last_error = "failed to create parser instance for '" + std::string(encoding) + "'";
-    std::cerr << "[bridge] " << state->last_error << "\n";
-    return false;
-  }
-
-  // Create a topic in the datastore for this channel
-  auto topic_result =
-      state->engine->createTopic(state->dataset_id, PJ::TopicDescriptor{.name = std::string(topic_name)});
-  if (!topic_result) {
-    state->last_error = "failed to create topic '" + std::string(topic_name) + "': " + topic_result.error();
-    std::cerr << "[bridge] " << state->last_error << "\n";
-    return false;
-  }
-
-  PJ_topic_handle_t topic_handle{static_cast<uint32_t>(*topic_result)};
-
-  // Create parser write host scoped to this topic
-  auto write_host = std::make_unique<PJ::DatastoreParserWriteHost>(*state->engine, topic_handle);
-
-  // Bind parser via service registry. The builder must outlive this scope
-  // because the plugin may hold a view into it; we move it into ParserBinding.
-  auto registry_builder = std::make_unique<PJ::ServiceRegistryBuilder>();
-  registry_builder->registerService<PJ::sdk::ParserWriteHostService>(write_host->raw());
-  if (auto s = parser->bind(registry_builder->view()); !s) {
-    state->last_error = "failed to bind parser services: " + s.error();
-    std::cerr << "[bridge] " << state->last_error << "\n";
-    return false;
-  }
-
-  // Bind schema if provided by request
-  if (request->schema.size > 0) {
-    PJ::Span<const uint8_t> schema_span(request->schema.data, request->schema.size);
-    if (auto s = parser->bindSchema(type_name, schema_span); !s) {
-      state->last_error = "failed to bind schema for " + std::string(type_name) + ": " + s.error();
+    auto* parser_entry = state->registry->findParserByEncoding(encoding);
+    if (parser_entry == nullptr) {
+      state->last_error = "no parser found for encoding '" + std::string(encoding) + "'";
       std::cerr << "[bridge] " << state->last_error << "\n";
       return false;
     }
-  }
 
-  // Load parser config: prefer request config, fall back to dialog config
-  std::string_view parser_config;
-  if (request->parser_config_json.size > 0) {
-    parser_config = std::string_view(request->parser_config_json.data, request->parser_config_json.size);
-  } else if (!state->parser_config_json.empty()) {
-    parser_config = state->parser_config_json;
-  }
-
-  if (!parser_config.empty()) {
-    if (auto s = parser->loadConfig(parser_config); !s) {
-      state->last_error = "failed to load parser config: " + s.error();
+    // Create parser instance
+    auto parser = std::make_unique<PJ::MessageParserHandle>(parser_entry->library.createHandle());
+    if (!parser->valid()) {
+      state->last_error = "failed to create parser instance for '" + std::string(encoding) + "'";
       std::cerr << "[bridge] " << state->last_error << "\n";
       return false;
     }
+
+    // Create a topic in the datastore for this channel
+    auto topic_result =
+        state->engine->createTopic(state->dataset_id, PJ::TopicDescriptor{.name = std::string(topic_name)});
+    if (!topic_result) {
+      state->last_error = "failed to create topic '" + std::string(topic_name) + "': " + topic_result.error();
+      std::cerr << "[bridge] " << state->last_error << "\n";
+      return false;
+    }
+
+    PJ_topic_handle_t topic_handle{static_cast<uint32_t>(*topic_result)};
+
+    // Create parser write host scoped to this topic
+    auto write_host = std::make_unique<PJ::DatastoreParserWriteHost>(*state->engine, topic_handle);
+
+    // Bind parser via service registry. The builder must outlive this scope
+    // because the plugin may hold a view into it; we move it into ParserBinding.
+    auto registry_builder = std::make_unique<PJ::ServiceRegistryBuilder>();
+    registry_builder->registerService<PJ::sdk::ParserWriteHostService>(write_host->raw());
+    if (auto s = parser->bind(registry_builder->view()); !s) {
+      state->last_error = "failed to bind parser services: " + s.error();
+      std::cerr << "[bridge] " << state->last_error << "\n";
+      return false;
+    }
+
+    // Bind schema if provided by request
+    if (request->schema.size > 0) {
+      PJ::Span<const uint8_t> schema_span(request->schema.data, request->schema.size);
+      if (auto s = parser->bindSchema(type_name, schema_span); !s) {
+        state->last_error = "failed to bind schema for " + std::string(type_name) + ": " + s.error();
+        std::cerr << "[bridge] " << state->last_error << "\n";
+        return false;
+      }
+    }
+
+    // Load parser config: prefer request config, fall back to dialog config
+    std::string_view parser_config;
+    if (request->parser_config_json.size > 0) {
+      parser_config = std::string_view(request->parser_config_json.data, request->parser_config_json.size);
+    } else if (!state->parser_config_json.empty()) {
+      parser_config = state->parser_config_json;
+    }
+
+    if (!parser_config.empty()) {
+      if (auto s = parser->loadConfig(parser_config); !s) {
+        state->last_error = "failed to load parser config: " + s.error();
+        std::cerr << "[bridge] " << state->last_error << "\n";
+        return false;
+      }
+    }
+
+    uint32_t binding_id = state->next_binding_id++;
+    state->parser_bindings.emplace(
+        binding_id, ParserBinding{std::move(registry_builder), std::move(write_host), std::move(parser)});
+
+    *out = PJ_parser_binding_handle_t{binding_id};
+    std::cerr << "[bridge] bound parser '" << parser_entry->name << "' for topic '" << topic_name << "'\n";
+    return true;
+  } catch (...) {
+    return false;
   }
-
-  uint32_t binding_id = state->next_binding_id++;
-  state->parser_bindings.emplace(
-      binding_id, ParserBinding{std::move(registry_builder), std::move(write_host), std::move(parser)});
-
-  *out = PJ_parser_binding_handle_t{binding_id};
-  std::cerr << "[bridge] bound parser '" << parser_entry->name << "' for topic '" << topic_name << "'\n";
-  return true;
 }
 
 bool rhPushRawMessage(
     void* ctx, PJ_parser_binding_handle_t handle, int64_t timestamp_ns, PJ_bytes_view_t payload,
-    PJ_error_t* /*out_error*/) {
-  auto* state = static_cast<RuntimeHostState*>(ctx);
-  auto it = state->parser_bindings.find(handle.id);
-  if (it == state->parser_bindings.end()) {
-    state->last_error = "invalid parser binding handle";
+    PJ_error_t* /*out_error*/) noexcept {
+  try {
+    auto* state = static_cast<RuntimeHostState*>(ctx);
+    auto it = state->parser_bindings.find(handle.id);
+    if (it == state->parser_bindings.end()) {
+      state->last_error = "invalid parser binding handle";
+      return false;
+    }
+    if (auto s = it->second.parser->parse(timestamp_ns, PJ::Span<const uint8_t>(payload.data, payload.size)); !s) {
+      state->last_error = s.error();
+      return false;
+    }
+    return true;
+  } catch (...) {
     return false;
   }
-  if (auto s = it->second.parser->parse(timestamp_ns, PJ::Span<const uint8_t>(payload.data, payload.size)); !s) {
-    state->last_error = s.error();
-    return false;
-  }
-  return true;
 }
 
 int rhShowMessageBox(
-    void* ctx, PJ_message_box_type_t type, PJ_string_view_t title, PJ_string_view_t message, int buttons) {
+    void* ctx, PJ_message_box_type_t type, PJ_string_view_t title, PJ_string_view_t message, int buttons) noexcept {
   auto* state = static_cast<RuntimeHostState*>(ctx);
   if (!state->show_message_box_callback) {
     // No callback bound - return positive default (headless mode)
@@ -172,13 +187,17 @@ int rhShowMessageBox(
       type, std::string_view(title.data, title.size), std::string_view(message.data, message.size), buttons);
 }
 
-const char* rhListAvailableEncodings(void* ctx) {
-  auto* state = static_cast<RuntimeHostState*>(ctx);
-  if (state->registry == nullptr) {
+const char* rhListAvailableEncodings(void* ctx) noexcept {
+  try {
+    auto* state = static_cast<RuntimeHostState*>(ctx);
+    if (state->registry == nullptr) {
+      return nullptr;
+    }
+    state->available_encodings_cache = state->registry->listAvailableEncodings();
+    return state->available_encodings_cache.c_str();
+  } catch (...) {
     return nullptr;
   }
-  state->available_encodings_cache = state->registry->listAvailableEncodings();
-  return state->available_encodings_cache.c_str();
 }
 
 }  // namespace

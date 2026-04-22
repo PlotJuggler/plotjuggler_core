@@ -1,12 +1,13 @@
 /**
  * @file message_parser_plugin_base.hpp
- * @brief C++ SDK for implementing MessageParser plugins (protocol v3).
+ * @brief C++ SDK for implementing MessageParser plugins (protocol v4).
  *
  * Plugin authors subclass MessageParserPluginBase, override `parse()`, and
  * export with PJ_MESSAGE_PARSER_PLUGIN(ClassName, manifest).
  *
  * The default `bind()` implementation acquires the parser write host from
  * the service registry. Override to additionally acquire optional services.
+ * All trampolines are noexcept at the ABI boundary.
  */
 #pragma once
 
@@ -112,31 +113,32 @@ class MessageParserPluginBase {
     sdk::fillError(out_error, code, domain, message);
   }
 
-  static void trampoline_destroy(void* ctx);
-  static bool trampoline_bind(void* ctx, PJ_service_registry_t registry, PJ_error_t* out_error);
+  static void trampoline_destroy(void* ctx) noexcept;
+  static bool trampoline_bind(void* ctx, PJ_service_registry_t registry, PJ_error_t* out_error) noexcept;
   static bool trampoline_bind_schema(
-      void* ctx, PJ_string_view_t type_name, PJ_bytes_view_t schema, PJ_error_t* out_error);
-  static bool trampoline_save_config(void* ctx, PJ_string_view_t* out_json, PJ_error_t* out_error);
-  static bool trampoline_load_config(void* ctx, PJ_string_view_t config_json, PJ_error_t* out_error);
-  static bool trampoline_parse(void* ctx, int64_t timestamp_ns, PJ_bytes_view_t payload, PJ_error_t* out_error);
-  static const void* trampoline_get_plugin_extension(void* ctx, PJ_string_view_t id);
+      void* ctx, PJ_string_view_t type_name, PJ_bytes_view_t schema, PJ_error_t* out_error) noexcept;
+  static bool trampoline_save_config(void* ctx, PJ_string_view_t* out_json, PJ_error_t* out_error) noexcept;
+  static bool trampoline_load_config(void* ctx, PJ_string_view_t config_json, PJ_error_t* out_error) noexcept;
+  static bool trampoline_parse(
+      void* ctx, int64_t timestamp_ns, PJ_bytes_view_t payload, PJ_error_t* out_error) noexcept;
+  static const void* trampoline_get_plugin_extension(void* ctx, PJ_string_view_t id) noexcept;
 };
 
 }  // namespace PJ
 
 #include "pj_base/sdk/detail/message_parser_trampolines.hpp"
 
-#define PJ_MESSAGE_PARSER_PLUGIN(ClassName, manifest)                                                    \
-  extern "C" PJ_MESSAGE_PARSER_EXPORT const uint32_t pj_plugin_abi_version = PJ_ABI_VERSION;             \
-  extern "C" PJ_MESSAGE_PARSER_EXPORT const PJ_message_parser_vtable_t* PJ_get_message_parser_vtable() { \
-    static const PJ_message_parser_vtable_t* vt = PJ::MessageParserPluginBase::vtableWithCreate(         \
-        []() -> void* {                                                                                  \
-          try {                                                                                          \
-            return new ClassName();                                                                      \
-          } catch (...) {                                                                                \
-            return nullptr;                                                                              \
-          }                                                                                              \
-        },                                                                                               \
-        manifest);                                                                                       \
-    return vt;                                                                                           \
+#define PJ_MESSAGE_PARSER_PLUGIN(ClassName, manifest)                                                             \
+  extern "C" PJ_MESSAGE_PARSER_EXPORT const uint32_t pj_plugin_abi_version = PJ_ABI_VERSION;                      \
+  extern "C" PJ_MESSAGE_PARSER_EXPORT const PJ_message_parser_vtable_t* PJ_get_message_parser_vtable() noexcept { \
+    static const PJ_message_parser_vtable_t* vt = PJ::MessageParserPluginBase::vtableWithCreate(                  \
+        []() noexcept -> void* {                                                                                  \
+          try {                                                                                                   \
+            return new ClassName();                                                                               \
+          } catch (...) {                                                                                         \
+            return nullptr;                                                                                       \
+          }                                                                                                       \
+        },                                                                                                        \
+        manifest);                                                                                                \
+    return vt;                                                                                                    \
   }

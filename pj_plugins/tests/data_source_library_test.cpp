@@ -16,23 +16,30 @@
 
 namespace {
 
-// Fake source-write host.
-bool fwsEnsureTopic(void*, PJ_string_view_t, PJ_topic_handle_t* out, PJ_error_t*) {
+// Fake source-write host (v4: all trampolines noexcept, append_arrow_stream).
+bool fwsEnsureTopic(void*, PJ_string_view_t, PJ_topic_handle_t* out, PJ_error_t*) noexcept {
   *out = PJ_topic_handle_t{1};
   return true;
 }
 bool fwsEnsureField(
-    void*, PJ_topic_handle_t topic, PJ_string_view_t, PJ_primitive_type_t, PJ_field_handle_t* out, PJ_error_t*) {
+    void*, PJ_topic_handle_t topic, PJ_string_view_t, PJ_primitive_type_t, PJ_field_handle_t* out,
+    PJ_error_t*) noexcept {
   *out = PJ_field_handle_t{topic, 1};
   return true;
 }
-bool fwsAppendRecord(void*, PJ_topic_handle_t, int64_t, const PJ_named_field_value_t*, size_t, PJ_error_t*) {
+bool fwsAppendRecord(void*, PJ_topic_handle_t, int64_t, const PJ_named_field_value_t*, size_t, PJ_error_t*) noexcept {
   return true;
 }
-bool fwsAppendBoundRecord(void*, PJ_topic_handle_t, int64_t, const PJ_bound_field_value_t*, size_t, PJ_error_t*) {
+bool fwsAppendBoundRecord(
+    void*, PJ_topic_handle_t, int64_t, const PJ_bound_field_value_t*, size_t, PJ_error_t*) noexcept {
   return true;
 }
-bool fwsAppendArrowIpc(void*, PJ_topic_handle_t, PJ_bytes_view_t, PJ_string_view_t, PJ_error_t*) {
+bool fwsAppendArrowStream(
+    void*, PJ_topic_handle_t, struct ArrowArrayStream* stream, PJ_string_view_t, PJ_error_t*) noexcept {
+  // Stub: consume ownership by releasing the stream (success path contract).
+  if (stream != nullptr && stream->release != nullptr) {
+    stream->release(stream);
+  }
   return true;
 }
 
@@ -44,36 +51,37 @@ PJ_source_write_host_t makeSourceWriteHost() {
       .ensure_field = fwsEnsureField,
       .append_record = fwsAppendRecord,
       .append_bound_record = fwsAppendBoundRecord,
-      .append_arrow_ipc = fwsAppendArrowIpc,
+      .append_arrow_stream = fwsAppendArrowStream,
   };
   return PJ_source_write_host_t{.ctx = reinterpret_cast<void*>(0x1), .vtable = &vtable};
 }
 
-// Fake runtime host.
-void rhReportMessage(void*, PJ_data_source_message_level_t, PJ_string_view_t) {}
-bool rhProgressStart(void*, PJ_string_view_t, uint64_t, bool, PJ_error_t*) {
+// Fake runtime host (v4: every slot noexcept).
+void rhReportMessage(void*, PJ_data_source_message_level_t, PJ_string_view_t) noexcept {}
+bool rhProgressStart(void*, PJ_string_view_t, uint64_t, bool, PJ_error_t*) noexcept {
   return true;
 }
-bool rhProgressUpdate(void*, uint64_t) {
+bool rhProgressUpdate(void*, uint64_t) noexcept {
   return true;
 }
-void rhProgressFinish(void*) {}
-bool rhIsStopRequested(void*) {
+void rhProgressFinish(void*) noexcept {}
+bool rhIsStopRequested(void*) noexcept {
   return false;
 }
-void rhNotifyState(void*, PJ_data_source_state_t) {}
-void rhRequestStop(void*, PJ_data_source_state_t, PJ_string_view_t) {}
-bool rhEnsureParserBinding(void*, const PJ_parser_binding_request_t*, PJ_parser_binding_handle_t* out, PJ_error_t*) {
+void rhNotifyState(void*, PJ_data_source_state_t) noexcept {}
+void rhRequestStop(void*, PJ_data_source_state_t, PJ_string_view_t) noexcept {}
+bool rhEnsureParserBinding(
+    void*, const PJ_parser_binding_request_t*, PJ_parser_binding_handle_t* out, PJ_error_t*) noexcept {
   *out = PJ_parser_binding_handle_t{11};
   return true;
 }
-bool rhPushRawMessage(void*, PJ_parser_binding_handle_t, int64_t, PJ_bytes_view_t, PJ_error_t*) {
+bool rhPushRawMessage(void*, PJ_parser_binding_handle_t, int64_t, PJ_bytes_view_t, PJ_error_t*) noexcept {
   return true;
 }
-int rhShowMessageBox(void*, PJ_message_box_type_t, PJ_string_view_t, PJ_string_view_t, int) {
+int rhShowMessageBox(void*, PJ_message_box_type_t, PJ_string_view_t, PJ_string_view_t, int) noexcept {
   return PJ_MSG_BTN_OK;
 }
-const char* rhListEncodings(void*) {
+const char* rhListEncodings(void*) noexcept {
   return R"(["json","cbor","protobuf"])";
 }
 

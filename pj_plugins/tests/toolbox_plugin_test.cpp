@@ -23,36 +23,43 @@ struct RuntimeState {
   int notify_data_changed_calls = 0;
 };
 
-bool tbCreate(void* ctx, PJ_string_view_t, PJ_data_source_handle_t* out, PJ_error_t*) {
+bool tbCreate(void* ctx, PJ_string_view_t, PJ_data_source_handle_t* out, PJ_error_t*) noexcept {
   auto* s = static_cast<ToolboxState*>(ctx);
   ++s->create_data_source_calls;
   *out = PJ_data_source_handle_t{1};
   return true;
 }
-bool tbEnsureTopic(void*, PJ_data_source_handle_t, PJ_string_view_t, PJ_topic_handle_t* out, PJ_error_t*) {
+bool tbEnsureTopic(void*, PJ_data_source_handle_t, PJ_string_view_t, PJ_topic_handle_t* out, PJ_error_t*) noexcept {
   *out = PJ_topic_handle_t{1};
   return true;
 }
 bool tbEnsureField(
-    void*, PJ_topic_handle_t topic, PJ_string_view_t, PJ_primitive_type_t, PJ_field_handle_t* out, PJ_error_t*) {
+    void*, PJ_topic_handle_t topic, PJ_string_view_t, PJ_primitive_type_t, PJ_field_handle_t* out,
+    PJ_error_t*) noexcept {
   *out = PJ_field_handle_t{topic, 1};
   return true;
 }
-bool tbAppendRecord(void* ctx, PJ_topic_handle_t, int64_t, const PJ_named_field_value_t*, size_t, PJ_error_t*) {
+bool tbAppendRecord(
+    void* ctx, PJ_topic_handle_t, int64_t, const PJ_named_field_value_t*, size_t, PJ_error_t*) noexcept {
   auto* s = static_cast<ToolboxState*>(ctx);
   ++s->append_record_calls;
   return true;
 }
-bool tbAppendBoundRecord(void*, PJ_topic_handle_t, int64_t, const PJ_bound_field_value_t*, size_t, PJ_error_t*) {
+bool tbAppendBoundRecord(
+    void*, PJ_topic_handle_t, int64_t, const PJ_bound_field_value_t*, size_t, PJ_error_t*) noexcept {
   return true;
 }
-bool tbAppendArrowIpc(void*, PJ_topic_handle_t, PJ_bytes_view_t, PJ_string_view_t, PJ_error_t*) {
+bool tbAppendArrowStream(
+    void*, PJ_topic_handle_t, struct ArrowArrayStream* stream, PJ_string_view_t, PJ_error_t*) noexcept {
+  if (stream != nullptr && stream->release != nullptr) {
+    stream->release(stream);
+  }
   return true;
 }
-bool tbCatalog(void*, PJ_catalog_snapshot_t*, PJ_error_t*) {
+bool tbCatalog(void*, PJ_catalog_snapshot_t*, PJ_error_t*) noexcept {
   return false;
 }
-bool tbReadSeries(void*, PJ_field_handle_t, PJ_materialized_series_t*, PJ_error_t*) {
+bool tbReadSeriesArrow(void*, PJ_field_handle_t, struct ArrowSchema*, struct ArrowArray*, PJ_error_t*) noexcept {
   return false;
 }
 
@@ -65,15 +72,15 @@ PJ_toolbox_host_t makeToolboxHost(ToolboxState* state) {
       .ensure_field = tbEnsureField,
       .append_record = tbAppendRecord,
       .append_bound_record = tbAppendBoundRecord,
-      .append_arrow_ipc = tbAppendArrowIpc,
+      .append_arrow_stream = tbAppendArrowStream,
       .acquire_catalog_snapshot = tbCatalog,
-      .read_series = tbReadSeries,
+      .read_series_arrow = tbReadSeriesArrow,
   };
   return PJ_toolbox_host_t{.ctx = state, .vtable = &vtable};
 }
 
-void rhReportMessage(void*, PJ_toolbox_message_level_t, PJ_string_view_t) {}
-void rhNotifyDataChanged(void* ctx) {
+void rhReportMessage(void*, PJ_toolbox_message_level_t, PJ_string_view_t) noexcept {}
+void rhNotifyDataChanged(void* ctx) noexcept {
   auto* s = static_cast<RuntimeState*>(ctx);
   ++s->notify_data_changed_calls;
 }

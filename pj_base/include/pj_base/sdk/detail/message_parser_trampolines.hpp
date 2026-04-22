@@ -1,20 +1,22 @@
 /**
  * @file detail/message_parser_trampolines.hpp
- * @brief Out-of-line C ABI trampolines for MessageParserPluginBase (v3).
+ * @brief Out-of-line C ABI trampolines for MessageParserPluginBase (v4).
  *
  * Included automatically by message_parser_plugin_base.hpp.
+ * Every trampoline is `noexcept` — the v4 vtable requires it.
  */
 #pragma once
 
 namespace PJ {
 
-inline void MessageParserPluginBase::trampoline_destroy(void* ctx) {
+inline void MessageParserPluginBase::trampoline_destroy(void* ctx) noexcept {
   try {
     delete static_cast<MessageParserPluginBase*>(ctx);
   } catch (...) {}
 }
 
-inline bool MessageParserPluginBase::trampoline_bind(void* ctx, PJ_service_registry_t registry, PJ_error_t* out_error) {
+inline bool MessageParserPluginBase::trampoline_bind(
+    void* ctx, PJ_service_registry_t registry, PJ_error_t* out_error) noexcept {
   auto* self = static_cast<MessageParserPluginBase*>(ctx);
   try {
     auto status = self->bind(sdk::ServiceRegistry(registry));
@@ -33,7 +35,7 @@ inline bool MessageParserPluginBase::trampoline_bind(void* ctx, PJ_service_regis
 }
 
 inline bool MessageParserPluginBase::trampoline_bind_schema(
-    void* ctx, PJ_string_view_t type_name, PJ_bytes_view_t schema, PJ_error_t* out_error) {
+    void* ctx, PJ_string_view_t type_name, PJ_bytes_view_t schema, PJ_error_t* out_error) noexcept {
   auto* self = static_cast<MessageParserPluginBase*>(ctx);
   try {
     auto name_sv = type_name.data == nullptr ? std::string_view{} : std::string_view(type_name.data, type_name.size);
@@ -54,7 +56,7 @@ inline bool MessageParserPluginBase::trampoline_bind_schema(
 }
 
 inline bool MessageParserPluginBase::trampoline_save_config(
-    void* ctx, PJ_string_view_t* out_json, PJ_error_t* out_error) {
+    void* ctx, PJ_string_view_t* out_json, PJ_error_t* out_error) noexcept {
   auto* self = static_cast<MessageParserPluginBase*>(ctx);
   if (out_json == nullptr) {
     self->storeError(out_error, 2, "plugin", "save_config called with null out_json");
@@ -75,7 +77,7 @@ inline bool MessageParserPluginBase::trampoline_save_config(
 }
 
 inline bool MessageParserPluginBase::trampoline_load_config(
-    void* ctx, PJ_string_view_t config_json, PJ_error_t* out_error) {
+    void* ctx, PJ_string_view_t config_json, PJ_error_t* out_error) noexcept {
   auto* self = static_cast<MessageParserPluginBase*>(ctx);
   try {
     std::string_view sv =
@@ -96,7 +98,7 @@ inline bool MessageParserPluginBase::trampoline_load_config(
 }
 
 inline bool MessageParserPluginBase::trampoline_parse(
-    void* ctx, int64_t timestamp_ns, PJ_bytes_view_t payload, PJ_error_t* out_error) {
+    void* ctx, int64_t timestamp_ns, PJ_bytes_view_t payload, PJ_error_t* out_error) noexcept {
   auto* self = static_cast<MessageParserPluginBase*>(ctx);
   try {
     Span<const uint8_t> payload_span(payload.data, payload.size);
@@ -115,7 +117,7 @@ inline bool MessageParserPluginBase::trampoline_parse(
   }
 }
 
-inline const void* MessageParserPluginBase::trampoline_get_plugin_extension(void* ctx, PJ_string_view_t id) {
+inline const void* MessageParserPluginBase::trampoline_get_plugin_extension(void* ctx, PJ_string_view_t id) noexcept {
   auto* self = static_cast<MessageParserPluginBase*>(ctx);
   try {
     std::string_view sv = id.data == nullptr ? std::string_view{} : std::string_view(id.data, id.size);
