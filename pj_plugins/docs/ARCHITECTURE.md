@@ -318,7 +318,8 @@ Each family has a move-only RAII handle:
 **Borrowed handles:** `DialogHandle` supports a `borrowed()` factory for
 dialogs that are members of another plugin (e.g. a DataSource's dialog).
 A borrowed handle does NOT call `create()` or `destroy()` — it wraps a
-pre-existing context pointer obtained via `dialogContext()`.
+pre-existing context pointer obtained via `getDialog()` (which plugin
+authors implement with the SDK helper `PJ::borrowDialog(dialog_member_)`).
 
 ## 7. Dialog Engine
 

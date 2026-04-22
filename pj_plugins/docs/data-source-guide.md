@@ -597,38 +597,37 @@ file readers, Arrow Flight streams, MCAP-to-Arrow shims), use
 Data Interface). The host pulls batches via the stream's `get_next()`
 callback and takes ownership on success — no row-at-a-time overhead.
 
+The recommended overload takes an `ArrowStreamHolder` by rvalue
+reference and disarms the holder on success, so the ownership-transfer
+contract is unforgettable:
+
 ```cpp
 #include <pj_base/sdk/arrow.hpp>
 
 // Plugin builds the stream (e.g. via nanoarrow or arrow::RecordBatchReader).
 PJ::sdk::ArrowStreamHolder stream(buildMyArrowStream());
 
-// Hand it off. The timestamp_column arg names an int64 column in the
-// stream's schema whose values are nanoseconds since Unix epoch.
-auto status = writeHost().appendArrowStream(*topic, stream.out(), "timestamp");
-if (status) {
-  // Success: host already called stream->release. Release from the
-  // holder so its destructor doesn't double-release.
-  (void)stream.release();
-} else {
-  // Failure: ownership retained. Holder's destructor will release the
-  // stream at scope exit.
+// Hand it off. The host takes ownership on success, plugin retains
+// on failure — either way, no manual release() call.
+auto status = writeHost().appendArrowStream(*topic, std::move(stream), "timestamp");
+if (!status) {
   return PJ::unexpected(status.error());
 }
 ```
 
-**Ownership rule:** on success the host has already called
-`stream->release()`; on failure the plugin retains the stream. The
-`ArrowStreamHolder` RAII wrapper in `pj_base/sdk/arrow.hpp` handles
-both paths automatically — call `.release()` on the holder after a
-successful append to mark it inert, skip that call after a failure
-and the destructor does the cleanup.
+`timestamp_column` names an int64 column in the stream's schema whose
+values are nanoseconds since Unix epoch. Pass an empty view to have the
+host synthesise a monotonic timestamp per row.
 
 If your data is already in an Arrow **IPC** byte buffer (file or
 Flight wire format), wrap it with nanoarrow's
 `ArrowIpcArrayStreamReaderInit` to obtain an `ArrowArrayStream*` and
 feed that through `appendArrowStream()` — v4 no longer exposes a
 separate IPC-bytes write slot.
+
+A raw-pointer overload (`appendArrowStream(topic, ArrowArrayStream*,
+...)`) is kept as an ABI escape hatch, but the rvalue-ref form above
+is the documented default.
 
 ## Threading Model
 
@@ -717,18 +716,18 @@ with no JSON serialization needed at runtime.
 
 ```
      Plugin .so
-┌──────────────────────────────────┐
-│  class MyDialog                  │  ← PJ::DialogPluginTyped
-│    (UI logic, event handlers)    │
-│                                  │
-│  class MySource                  │  ← PJ::StreamSourceBase
-│    MyDialog dialog_;  ← member   │
-│    (business logic)              │
-│    dialogContext() → &dialog_    │
-│                                  │
-│  PJ_DATA_SOURCE_PLUGIN(MySource) │  → exports DataSource vtable
-│  PJ_DIALOG_PLUGIN(MyDialog)      │  → exports Dialog vtable
-└──────────────────────────────────┘
+┌──────────────────────────────────────┐
+│  class MyDialog                      │  ← PJ::DialogPluginTyped
+│    (UI logic, event handlers)        │
+│                                      │
+│  class MySource                      │  ← PJ::StreamSourceBase
+│    MyDialog dialog_;  ← member       │
+│    (business logic)                  │
+│    getDialog() → borrowDialog(...)   │
+│                                      │
+│  PJ_DATA_SOURCE_PLUGIN(MySource)     │  → exports DataSource vtable
+│  PJ_DIALOG_PLUGIN(MyDialog)          │  → exports Dialog vtable
+└──────────────────────────────────────┘
 ```
 
 One `.so`, two vtables, one DataSource instance. The dialog instance is a
@@ -759,7 +758,9 @@ class MyDialog : public PJ::DialogPluginTyped {
 ```cpp
 class MySource : public PJ::StreamSourceBase {
  public:
-  void* dialogContext() override { return &dialog_; }
+  PJ_borrowed_dialog_t getDialog() override {
+    return PJ::borrowDialog(dialog_);
+  }
 
   uint64_t extraCapabilities() const override {
     return PJ::kCapabilityDirectIngest | PJ::kCapabilityHasDialog;
@@ -798,7 +799,7 @@ PJ_DIALOG_PLUGIN(MyDialog)
 2. lib.createHandle()  →  DataSourceHandle
 3. source.capabilities() & kCapabilityHasDialog?
 4. lib.resolveDialogVtable()  →  dialog vtable from same .so
-5. source.dialogContext()  →  borrowed pointer to source's internal dialog
+5. source.getDialog()  →  typed PJ_borrowed_dialog_t {ctx, vtable}
 6. DialogHandle::borrowed(dialog_vt, dialog_ctx)  →  non-owning handle
 7. DialogEngine(borrowed_handle).showDialog()
    → dialog modifies source's internal state directly

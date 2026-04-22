@@ -145,7 +145,8 @@ controls inside a DataSource dialog via the `pj_parser_slot` placeholder.
 ### Ownership and Lifecycle
 
 - **DataSource dialog**: member of the source class. Host obtains a borrowed
-  reference via `dialogContext()`. Dialog and source share state directly.
+  reference via `getDialog()` (using `PJ::borrowDialog(dialog_)` from the
+  SDK). Dialog and source share state directly.
 - **Parser dialog**: independent owned instance created by the host. Config
   flows via JSON — dialog and parser share a JSON schema contract but are
   otherwise decoupled.

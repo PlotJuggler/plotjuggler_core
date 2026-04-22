@@ -248,7 +248,7 @@ The host resolves the dialog via `MessageParserLibrary::resolveDialogVtable()`.
 #### Ownership model — independent owned instance
 
 Unlike a DataSource dialog (which is a member of the source, accessed via a
-borrowed handle through `dialogContext()`), a **parser dialog is an independent
+borrowed handle through `getDialog()`), a **parser dialog is an independent
 owned instance**. The host creates it via `dialog_vt->create()`, runs it
 through `DialogEngine`, and feeds the resulting config JSON to parser instances
 via `load_config()`. The dialog and parser classes share a JSON config schema
@@ -419,6 +419,38 @@ DataSource                        Host                         MessageParser
 
 The parser is topic-scoped — the host binds a separate write host per topic,
 so `ensureField("x")` in the parser creates `"sensor/imu/x"` in the datastore.
+
+## Testing
+
+Use `PJ::sdk::testing::ParserWriteRecorder` from
+`pj_base/include/pj_base/sdk/testing/parser_write_recorder.hpp` to write
+parser unit tests without re-implementing the fake write-host vtable:
+
+```cpp
+#include <pj_base/sdk/testing/parser_write_recorder.hpp>
+
+TEST(MyParserTest, Basic) {
+  auto library = PJ::MessageParserLibrary::load(PJ_MY_PARSER_PLUGIN_PATH);
+  auto handle = library->createHandle();
+
+  PJ::sdk::testing::ParserWriteRecorder recorder;
+  PJ::ServiceRegistryBuilder registry;
+  registry.registerService<PJ::sdk::ParserWriteHostService>(recorder.makeHost());
+  ASSERT_TRUE(handle.bind(registry.view()));
+
+  const uint8_t payload[] = { /* ... */ };
+  ASSERT_TRUE(handle.parse(1000, payload));
+
+  ASSERT_EQ(recorder.rows().size(), 1u);
+  EXPECT_EQ(recorder.rows()[0].fields[0].name, "temperature");
+  EXPECT_DOUBLE_EQ(recorder.rows()[0].fields[0].numeric, 23.5);
+}
+```
+
+Each `RecordedField` exposes the primitive type plus `.numeric` (for all
+integer/float types, plus `1.0/0.0` for bools), `.bool_value`, and
+`.string_value`, so tests can assert uniformly without writing type
+dispatch code.
 
 ## Examples
 
