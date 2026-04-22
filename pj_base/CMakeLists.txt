@@ -55,6 +55,7 @@ if(PJ_BUILD_TESTS)
     tests/abi_layout_sentinels_test.cpp
     tests/platform_test.cpp
     tests/arrow_holders_test.cpp
+    tests/media_metadata_test.cpp
   )
 
   foreach(test_src ${PJ_BASE_TESTS})
