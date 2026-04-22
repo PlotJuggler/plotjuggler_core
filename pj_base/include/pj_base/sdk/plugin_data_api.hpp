@@ -11,6 +11,7 @@
 
 #include "pj_base/expected.hpp"
 #include "pj_base/plugin_data_api.h"
+#include "pj_base/sdk/arrow.hpp"
 #include "pj_base/span.hpp"
 #include "pj_base/type_tree.hpp"
 #include "pj_base/types.hpp"
@@ -483,6 +484,127 @@ class ParserWriteHostView {
   PJ_parser_write_host_t host_{};
 };
 
+namespace detail {
+inline PrimitiveType formatToPrimitiveType(const char* fmt) noexcept {
+  if (fmt == nullptr || fmt[0] == '\0') {
+    return PrimitiveType::kUnspecified;
+  }
+  // Arrow format string grammar — single-char codes cover the primitive set.
+  switch (fmt[0]) {
+    case 'b':
+      return PrimitiveType::kBool;
+    case 'c':
+      return PrimitiveType::kInt8;
+    case 'C':
+      return PrimitiveType::kUint8;
+    case 's':
+      return PrimitiveType::kInt16;
+    case 'S':
+      return PrimitiveType::kUint16;
+    case 'i':
+      return PrimitiveType::kInt32;
+    case 'I':
+      return PrimitiveType::kUint32;
+    case 'l':
+      return PrimitiveType::kInt64;
+    case 'L':
+      return PrimitiveType::kUint64;
+    case 'f':
+      return PrimitiveType::kFloat32;
+    case 'g':
+      return PrimitiveType::kFloat64;
+    case 'u':
+    case 'U':
+    case 'z':
+    case 'Z':
+      return PrimitiveType::kString;
+    default:
+      return PrimitiveType::kUnspecified;
+  }
+}
+}  // namespace detail
+
+/// Typed view over the two-column Arrow struct returned by
+/// `ToolboxHostView::readSeriesArrow`.
+///
+/// Owns the `ArrowSchema` + `ArrowArray` (move-only — destructor calls
+/// `release` on both) and exposes `rowCount()`, `type()`, `timestamps()`, and
+/// typed `valuesAs*()` pointers directly into the Arrow buffers. This lets
+/// toolbox plugins keep a familiar "materialised series" API without
+/// reimplementing the Arrow-format walk every time.
+///
+/// Column layout: children[0] = int64 timestamp (ns epoch),
+/// children[1] = typed field value. Validity bitmap is per Arrow spec.
+class MaterializedSeriesView {
+ public:
+  MaterializedSeriesView() = default;
+  MaterializedSeriesView(ArrowSchemaHolder schema, ArrowArrayHolder array) noexcept
+      : schema_(std::move(schema)), array_(std::move(array)) {}
+
+  MaterializedSeriesView(MaterializedSeriesView&&) noexcept = default;
+  MaterializedSeriesView& operator=(MaterializedSeriesView&&) noexcept = default;
+
+  [[nodiscard]] bool valid() const noexcept {
+    return schema_.valid() && array_.valid() && schema_.get()->n_children >= 2 && array_.get()->n_children >= 2;
+  }
+
+  /// Number of samples.
+  [[nodiscard]] size_t rowCount() const noexcept {
+    return array_.valid() ? static_cast<size_t>(array_.get()->length) : 0;
+  }
+
+  /// Primitive type of the value column.
+  [[nodiscard]] PrimitiveType type() const noexcept {
+    if (!valid()) {
+      return PrimitiveType::kUnspecified;
+    }
+    return detail::formatToPrimitiveType(schema_.get()->children[1]->format);
+  }
+
+  /// Int64 nanoseconds-since-epoch timestamps. Span aliases the Arrow
+  /// buffer; valid until the holder is moved-from or destroyed.
+  [[nodiscard]] Span<const int64_t> timestamps() const noexcept {
+    if (!valid()) {
+      return {};
+    }
+    const auto* ts = array_.get()->children[0];
+    if (ts == nullptr || ts->n_buffers < 2) {
+      return {};
+    }
+    const auto* ptr = static_cast<const int64_t*>(ts->buffers[1]);
+    return {ptr, static_cast<size_t>(ts->length)};
+  }
+
+  /// Typed value-column pointer. Returns nullptr if the actual column
+  /// type doesn't match the requested one.
+#define PJ_SDK_VALUES_AS(CppT, PjT, SuffixMethod)                     \
+  [[nodiscard]] const CppT* valuesAs##SuffixMethod() const noexcept { \
+    if (type() != PrimitiveType::PjT)                                 \
+      return nullptr;                                                 \
+    const auto* col = array_.get()->children[1];                      \
+    if (col == nullptr || col->n_buffers < 2)                         \
+      return nullptr;                                                 \
+    return static_cast<const CppT*>(col->buffers[1]);                 \
+  }
+
+  PJ_SDK_VALUES_AS(double, kFloat64, Float64)
+  PJ_SDK_VALUES_AS(float, kFloat32, Float32)
+  PJ_SDK_VALUES_AS(int8_t, kInt8, Int8)
+  PJ_SDK_VALUES_AS(int16_t, kInt16, Int16)
+  PJ_SDK_VALUES_AS(int32_t, kInt32, Int32)
+  PJ_SDK_VALUES_AS(int64_t, kInt64, Int64)
+  PJ_SDK_VALUES_AS(uint8_t, kUint8, Uint8)
+  PJ_SDK_VALUES_AS(uint16_t, kUint16, Uint16)
+  PJ_SDK_VALUES_AS(uint32_t, kUint32, Uint32)
+  PJ_SDK_VALUES_AS(uint64_t, kUint64, Uint64)
+
+#undef PJ_SDK_VALUES_AS
+
+ private:
+  ArrowSchemaHolder schema_;
+  ArrowArrayHolder array_;
+};
+
 /// View over PJ_toolbox_host_t. Multi-source read+write + catalog.
 class ToolboxHostView {
  public:
@@ -612,6 +734,26 @@ class ToolboxHostView {
       return unexpected(errorToString(err));
     }
     return okStatus();
+  }
+
+  /// Convenience wrapper over `readSeriesArrow`. Returns a
+  /// `MaterializedSeriesView` that owns the `ArrowSchema` + `ArrowArray`
+  /// pair and exposes typed `rowCount()`, `timestamps()`, and
+  /// `valuesAs*()` accessors directly into the Arrow buffers.
+  ///
+  /// The returned view is move-only; its destructor calls `release` on
+  /// both Arrow structs.
+  [[nodiscard]] Expected<MaterializedSeriesView> readSeries(FieldHandle field) const {
+    if (!valid()) {
+      return unexpected("toolbox host is not bound");
+    }
+    ArrowSchemaHolder schema;
+    ArrowArrayHolder array;
+    PJ_error_t err{};
+    if (!host_.vtable->read_series_arrow(host_.ctx, field, schema.out(), array.out(), &err)) {
+      return unexpected(errorToString(err));
+    }
+    return MaterializedSeriesView(std::move(schema), std::move(array));
   }
 
   [[nodiscard]] const PJ_toolbox_host_t& raw() const noexcept {
