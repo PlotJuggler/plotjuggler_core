@@ -554,6 +554,80 @@ typedef struct {
   const PJ_object_write_host_vtable_t* vtable;
 } PJ_object_write_host_t;
 
+/* ==========================================================================
+ * Object-store read host (protocol v4)
+ *
+ * Exposed to Toolbox plugins that want to read back ObjectStore entries —
+ * typically transformer-style plugins that consume bytes and emit results.
+ * Read access uses an opaque OWNING handle model: each successful
+ * read_latest_at allocates a refcounted box that keeps the bytes alive
+ * independent of the store's internal state (matches
+ * `shared_ptr<const vector<uint8_t>>` in the C++ API).
+ *
+ * Lifetime contract: a handle remains valid until the consumer calls
+ * release_bytes(handle). Eviction, concurrent writes, even topic removal
+ * cannot invalidate a handle that is already held.
+ * ========================================================================== */
+
+/* Opaque handle. The host allocates one per successful read; the plugin
+ * releases via vtable->release_bytes. The pointer value is never
+ * dereferenced by the plugin. */
+struct PJ_object_bytes_handle_s;
+typedef struct PJ_object_bytes_handle_s* PJ_object_bytes_handle_t;
+
+/* ABI-APPENDABLE: new slots may be added at the tail; struct_size gates read.
+ *
+ * get_bytes / release_bytes take the handle directly (no ctx) because the
+ * handle itself is a heap-allocated box the host owns; its internal state
+ * is all the free/read operation needs. */
+typedef struct PJ_object_read_host_vtable_t {
+  uint32_t abi_version;
+  uint32_t struct_size;
+
+  /* [main-thread] Look up a topic by name. Returns {id=0} on miss. */
+  PJ_object_topic_handle_t (*lookup_topic)(void* ctx, PJ_string_view_t topic_name) PJ_NOEXCEPT;
+
+  /* [main-thread] Enumerate all object topics the toolbox can see. The
+   * caller passes a buffer of capacity `buffer_capacity`; the host writes
+   * up to that many handles and always sets *out_count to the TOTAL number
+   * of topics (so the caller can detect truncation and resize). */
+  bool (*list_topics)(
+      void* ctx, PJ_object_topic_handle_t* out_buffer, size_t buffer_capacity, size_t* out_count,
+      PJ_error_t* out_error) PJ_NOEXCEPT;
+
+  /* [main-thread] Return the topic's metadata JSON — a pointer stable for
+   * the topic's lifetime. Returns NULL on bad handle. */
+  const char* (*topic_metadata)(void* ctx, PJ_object_topic_handle_t topic)PJ_NOEXCEPT;
+
+  /* [main-thread] Fetch the entry at-or-before `timestamp_ns`. On success
+   * allocates an owning handle; caller releases via release_bytes.
+   * out_timestamp (optional) receives the entry's actual timestamp. On
+   * miss returns false with *out_handle=NULL and out_error populated. */
+  bool (*read_latest_at)(
+      void* ctx, PJ_object_topic_handle_t topic, int64_t timestamp_ns, PJ_object_bytes_handle_t* out_handle,
+      int64_t* out_timestamp, PJ_error_t* out_error) PJ_NOEXCEPT;
+
+  /* [thread-safe] Expose the bytes behind an owning handle. View is valid
+   * until release_bytes(handle). Safe to call from decoder worker threads. */
+  void (*get_bytes)(PJ_object_bytes_handle_t handle, const uint8_t** out_data, size_t* out_size) PJ_NOEXCEPT;
+
+  /* [thread-safe] Release an owning handle. Idempotent on NULL. */
+  void (*release_bytes)(PJ_object_bytes_handle_t handle) PJ_NOEXCEPT;
+
+  /* [main-thread] Entry count for a topic. 0 on bad handle. */
+  size_t (*entry_count)(void* ctx, PJ_object_topic_handle_t topic) PJ_NOEXCEPT;
+
+  /* [main-thread] Time range [min, max] for a topic. Returns false if the
+   * topic is unknown or empty. */
+  bool (*time_range)(void* ctx, PJ_object_topic_handle_t topic, int64_t* out_min_ts, int64_t* out_max_ts) PJ_NOEXCEPT;
+} PJ_object_read_host_vtable_t;
+
+/* ABI-FROZEN: fat pointer layout permanent. */
+typedef struct {
+  void* ctx;
+  const PJ_object_read_host_vtable_t* vtable;
+} PJ_object_read_host_t;
+
 /**
  * Colormap registry service (v4).
  *

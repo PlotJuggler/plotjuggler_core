@@ -91,9 +91,10 @@ class ToolboxPluginBase {
   /// Acquire host-provided services.
   ///
   /// Default implementation pulls:
-  ///   - "pj.toolbox_write.v1"   → ToolboxHost   (mandatory)
-  ///   - "pj.toolbox_runtime.v1" → RuntimeHost   (mandatory)
-  ///   - "pj.colormap.v1"        → ColorMap      (optional)
+  ///   - "pj.toolbox_write.v1"       → ToolboxHost          (mandatory)
+  ///   - "pj.toolbox_runtime.v1"     → RuntimeHost          (mandatory)
+  ///   - "pj.colormap.v1"            → ColorMap             (optional)
+  ///   - "pj.toolbox_object_read.v1" → ObjectReadHost       (optional)
   ///
   /// Override to acquire additional services or relax defaults.
   virtual Status bind(sdk::ServiceRegistry services) {
@@ -112,6 +113,11 @@ class ToolboxPluginBase {
     // Colormap is optional — acquire opportunistically.
     if (auto cm = services.get<sdk::ColorMapRegistryService>()) {
       colormap_view_ = *cm;
+    }
+
+    // Object read is optional — transformer-style toolboxes resolve it.
+    if (auto obj = services.get<sdk::ToolboxObjectReadHostService>()) {
+      object_read_host_view_ = *obj;
     }
 
     service_registry_ = services;
@@ -182,6 +188,13 @@ class ToolboxPluginBase {
     return colormap_view_;
   }
 
+  /// Optional — returns nullptr when the host does not register
+  /// `pj.toolbox_object_read.v1`. Transformer-style toolboxes check this
+  /// before touching ObjectStore; scalar-only toolboxes never call it.
+  [[nodiscard]] const sdk::ToolboxObjectReadHostView* objectReadHost() const {
+    return object_read_host_view_.valid() ? &object_read_host_view_ : nullptr;
+  }
+
   [[nodiscard]] bool toolboxHostBound() const {
     return toolbox_host_view_.valid();
   }
@@ -197,6 +210,7 @@ class ToolboxPluginBase {
   sdk::ToolboxHostView toolbox_host_view_{PJ_toolbox_host_t{}};
   ToolboxRuntimeHostView runtime_host_view_{};
   sdk::ColorMapRegistryView colormap_view_{};
+  sdk::ToolboxObjectReadHostView object_read_host_view_{};
   std::string config_buf_;
 
   static void storeError(PJ_error_t* out_error, int32_t code, std::string_view domain, std::string_view message) {

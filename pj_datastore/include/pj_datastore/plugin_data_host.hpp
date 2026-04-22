@@ -13,6 +13,7 @@ struct DatastoreSourceWriteHostState;
 struct DatastoreSourceObjectWriteHostState;
 struct DatastoreParserWriteHostState;
 struct DatastoreToolboxHostState;
+struct DatastoreToolboxObjectReadHostState;
 
 class DatastoreSourceWriteHost {
  public:
@@ -66,6 +67,27 @@ class DatastoreParserWriteHost {
 
  private:
   std::unique_ptr<DatastoreParserWriteHostState> state_;
+};
+
+/// Host-side implementation of the toolbox object-read surface exposed as
+/// `pj.toolbox_object_read.v1`. Bridges the C ABI onto
+/// `pj_datastore::ObjectStore`, allocating an owning handle per successful
+/// `read_latest_at`. The handle keeps bytes alive independent of the
+/// store's internal state, matching the `shared_ptr` model.
+class DatastoreToolboxObjectReadHost {
+ public:
+  explicit DatastoreToolboxObjectReadHost(ObjectStore& store);
+  ~DatastoreToolboxObjectReadHost();
+
+  DatastoreToolboxObjectReadHost(const DatastoreToolboxObjectReadHost&) = delete;
+  DatastoreToolboxObjectReadHost& operator=(const DatastoreToolboxObjectReadHost&) = delete;
+  DatastoreToolboxObjectReadHost(DatastoreToolboxObjectReadHost&&) noexcept;
+  DatastoreToolboxObjectReadHost& operator=(DatastoreToolboxObjectReadHost&&) noexcept;
+
+  [[nodiscard]] PJ_object_read_host_t raw() noexcept;
+
+ private:
+  std::unique_ptr<DatastoreToolboxObjectReadHostState> state_;
 };
 
 class DatastoreToolboxHost {

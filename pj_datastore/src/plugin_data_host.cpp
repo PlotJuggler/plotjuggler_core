@@ -932,6 +932,16 @@ struct DatastoreSourceObjectWriteHostState {
   }
 };
 
+struct DatastoreToolboxObjectReadHostState {
+  explicit DatastoreToolboxObjectReadHostState(ObjectStore& s) : store(s) {}
+  ObjectStore& store;
+  std::string last_error;
+
+  void setError(std::string msg) {
+    last_error = std::move(msg);
+  }
+};
+
 void propagateError(PJ_error_t* out_error, const char* msg) {
   sdk::fillError(out_error, 1, "datastore", msg != nullptr ? std::string_view(msg) : std::string_view{});
 }
@@ -1267,6 +1277,164 @@ void sourceObjectSetRetentionBudget(
   }
 }
 
+// ---------------------------------------------------------------------------
+// Toolbox object read host trampolines
+// ---------------------------------------------------------------------------
+
+/// Box holding the shared_ptr that keeps ObjectStore bytes alive. One
+/// allocated per successful read_latest_at; freed by release_bytes.
+struct ObjectBytesBox {
+  std::shared_ptr<const std::vector<uint8_t>> bytes;
+};
+
+PJ_object_topic_handle_t toolboxObjectLookupTopic(void* ctx, PJ_string_view_t topic_name) noexcept {
+  auto* impl = static_cast<DatastoreToolboxObjectReadHostState*>(ctx);
+  try {
+    const auto needle = toStringView(topic_name);
+    for (const auto id : impl->store.listTopics()) {
+      if (impl->store.descriptor(id).topic_name == needle) {
+        return PJ_object_topic_handle_t{id.id};
+      }
+    }
+  } catch (...) {
+    // Fall through to invalid handle.
+  }
+  return PJ_object_topic_handle_t{0};
+}
+
+bool toolboxObjectListTopics(
+    void* ctx, PJ_object_topic_handle_t* out_buffer, std::size_t buffer_capacity, std::size_t* out_count,
+    PJ_error_t* out_error) noexcept {
+  auto* impl = static_cast<DatastoreToolboxObjectReadHostState*>(ctx);
+  if (out_count == nullptr) {
+    propagateError(out_error, "out_count must not be null");
+    return false;
+  }
+  try {
+    const auto ids = impl->store.listTopics();
+    *out_count = ids.size();
+    if (out_buffer != nullptr) {
+      const std::size_t n = std::min(buffer_capacity, ids.size());
+      for (std::size_t i = 0; i < n; ++i) {
+        out_buffer[i] = PJ_object_topic_handle_t{ids[i].id};
+      }
+    }
+    return true;
+  } catch (const std::exception& e) {
+    impl->setError(e.what());
+    propagateError(out_error, impl->last_error.c_str());
+    return false;
+  } catch (...) {
+    impl->setError("listTopics: unknown exception");
+    propagateError(out_error, impl->last_error.c_str());
+    return false;
+  }
+}
+
+const char* toolboxObjectTopicMetadata(void* ctx, PJ_object_topic_handle_t topic) noexcept {
+  auto* impl = static_cast<DatastoreToolboxObjectReadHostState*>(ctx);
+  try {
+    const auto& desc = impl->store.descriptor(ObjectTopicId{topic.id});
+    // Descriptor is stored in the series and lives as long as the topic;
+    // the pointer remains stable until the topic is removed.
+    return desc.metadata_json.c_str();
+  } catch (...) {
+    return nullptr;
+  }
+}
+
+bool toolboxObjectReadLatestAt(
+    void* ctx, PJ_object_topic_handle_t topic, int64_t timestamp_ns, PJ_object_bytes_handle_t* out_handle,
+    int64_t* out_timestamp, PJ_error_t* out_error) noexcept {
+  auto* impl = static_cast<DatastoreToolboxObjectReadHostState*>(ctx);
+  if (out_handle == nullptr) {
+    propagateError(out_error, "out_handle must not be null");
+    return false;
+  }
+  *out_handle = nullptr;
+  try {
+    auto entry = impl->store.latestAt(ObjectTopicId{topic.id}, timestamp_ns);
+    if (!entry.has_value() || entry->data == nullptr) {
+      impl->setError("no entry at-or-before timestamp");
+      propagateError(out_error, impl->last_error.c_str());
+      return false;
+    }
+    auto* box = new ObjectBytesBox{std::move(entry->data)};
+    *out_handle = reinterpret_cast<PJ_object_bytes_handle_t>(box);
+    if (out_timestamp != nullptr) {
+      *out_timestamp = entry->timestamp;
+    }
+    impl->last_error.clear();
+    return true;
+  } catch (const std::exception& e) {
+    impl->setError(e.what());
+    propagateError(out_error, impl->last_error.c_str());
+    return false;
+  } catch (...) {
+    impl->setError("readLatestAt: unknown exception");
+    propagateError(out_error, impl->last_error.c_str());
+    return false;
+  }
+}
+
+void toolboxObjectGetBytes(PJ_object_bytes_handle_t handle, const uint8_t** out_data, std::size_t* out_size) noexcept {
+  if (out_data != nullptr) {
+    *out_data = nullptr;
+  }
+  if (out_size != nullptr) {
+    *out_size = 0;
+  }
+  if (handle == nullptr) {
+    return;
+  }
+  auto* box = reinterpret_cast<ObjectBytesBox*>(handle);
+  if (!box->bytes) {
+    return;
+  }
+  if (out_data != nullptr) {
+    *out_data = box->bytes->data();
+  }
+  if (out_size != nullptr) {
+    *out_size = box->bytes->size();
+  }
+}
+
+void toolboxObjectReleaseBytes(PJ_object_bytes_handle_t handle) noexcept {
+  if (handle == nullptr) {
+    return;
+  }
+  delete reinterpret_cast<ObjectBytesBox*>(handle);
+}
+
+std::size_t toolboxObjectEntryCount(void* ctx, PJ_object_topic_handle_t topic) noexcept {
+  auto* impl = static_cast<DatastoreToolboxObjectReadHostState*>(ctx);
+  try {
+    return impl->store.entryCount(ObjectTopicId{topic.id});
+  } catch (...) {
+    return 0;
+  }
+}
+
+bool toolboxObjectTimeRange(
+    void* ctx, PJ_object_topic_handle_t topic, int64_t* out_min_ts, int64_t* out_max_ts) noexcept {
+  auto* impl = static_cast<DatastoreToolboxObjectReadHostState*>(ctx);
+  try {
+    if (impl->store.entryCount(ObjectTopicId{topic.id}) == 0) {
+      return false;
+    }
+    const auto range = impl->store.timeRange(ObjectTopicId{topic.id});
+    if (out_min_ts != nullptr) {
+      *out_min_ts = range.first;
+    }
+    if (out_max_ts != nullptr) {
+      *out_max_ts = range.second;
+    }
+    return true;
+  } catch (...) {
+    return false;
+  }
+}
+
 const PJ_source_write_host_vtable_t kSourceWriteVTable = {
     PJ_PLUGIN_DATA_API_VERSION, sizeof(PJ_source_write_host_vtable_t),
     sourceEnsureTopic,          sourceEnsureField,
@@ -1295,6 +1463,14 @@ const PJ_toolbox_host_vtable_t kToolboxVTable = {
 const PJ_object_write_host_vtable_t kSourceObjectWriteVTable = {
     PJ_PLUGIN_DATA_API_VERSION, sizeof(PJ_object_write_host_vtable_t), sourceObjectRegisterTopic, sourceObjectPushOwned,
     sourceObjectPushLazy,       sourceObjectSetRetentionBudget,
+};
+
+const PJ_object_read_host_vtable_t kToolboxObjectReadVTable = {
+    PJ_PLUGIN_DATA_API_VERSION, sizeof(PJ_object_read_host_vtable_t),
+    toolboxObjectLookupTopic,   toolboxObjectListTopics,
+    toolboxObjectTopicMetadata, toolboxObjectReadLatestAt,
+    toolboxObjectGetBytes,      toolboxObjectReleaseBytes,
+    toolboxObjectEntryCount,    toolboxObjectTimeRange,
 };
 
 DatastoreSourceWriteHost::DatastoreSourceWriteHost(DataEngine& engine, DataSourceHandle source)
@@ -1348,6 +1524,17 @@ DatastoreSourceObjectWriteHost& DatastoreSourceObjectWriteHost::operator=(Datast
 
 PJ_object_write_host_t DatastoreSourceObjectWriteHost::raw() noexcept {
   return PJ_object_write_host_t{.ctx = state_.get(), .vtable = &kSourceObjectWriteVTable};
+}
+
+DatastoreToolboxObjectReadHost::DatastoreToolboxObjectReadHost(ObjectStore& store)
+    : state_(std::make_unique<DatastoreToolboxObjectReadHostState>(store)) {}
+DatastoreToolboxObjectReadHost::~DatastoreToolboxObjectReadHost() = default;
+DatastoreToolboxObjectReadHost::DatastoreToolboxObjectReadHost(DatastoreToolboxObjectReadHost&&) noexcept = default;
+DatastoreToolboxObjectReadHost& DatastoreToolboxObjectReadHost::operator=(DatastoreToolboxObjectReadHost&&) noexcept =
+    default;
+
+PJ_object_read_host_t DatastoreToolboxObjectReadHost::raw() noexcept {
+  return PJ_object_read_host_t{.ctx = state_.get(), .vtable = &kToolboxObjectReadVTable};
 }
 
 }  // namespace PJ

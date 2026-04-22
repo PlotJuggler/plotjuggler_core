@@ -4,6 +4,7 @@
 #include <functional>
 #include <initializer_list>
 #include <memory>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <type_traits>
@@ -14,6 +15,7 @@
 #include "pj_base/expected.hpp"
 #include "pj_base/plugin_data_api.h"
 #include "pj_base/sdk/arrow.hpp"
+#include "pj_base/sdk/object_bytes.hpp"
 #include "pj_base/span.hpp"
 #include "pj_base/type_tree.hpp"
 #include "pj_base/types.hpp"
@@ -513,6 +515,116 @@ class ParserWriteHostView {
 
  private:
   PJ_parser_write_host_t host_{};
+};
+
+// ---------------------------------------------------------------------------
+// Object read host view (protocol v4)
+//
+// Read-only access to `pj_datastore::ObjectStore`. Exposes lookup / list /
+// latestAt with owning `ObjectBytes` handles. Transformer-style toolbox
+// plugins that consume bytes (e.g. object detection on image topics) use
+// this view; plugins that only publish scalars ignore it.
+// ---------------------------------------------------------------------------
+
+class ToolboxObjectReadHostView {
+ public:
+  ToolboxObjectReadHostView() = default;
+  explicit ToolboxObjectReadHostView(PJ_object_read_host_t host) : host_(host) {}
+
+  [[nodiscard]] bool valid() const {
+    return host_.ctx != nullptr && host_.vtable != nullptr;
+  }
+
+  /// Look up a topic by name. Returns nullopt on miss.
+  [[nodiscard]] std::optional<ObjectTopicHandle> lookupTopic(std::string_view name) const {
+    if (!valid() || host_.vtable->lookup_topic == nullptr) {
+      return std::nullopt;
+    }
+    ObjectTopicHandle h = host_.vtable->lookup_topic(host_.ctx, toAbiString(name));
+    if (h.id == 0) {
+      return std::nullopt;
+    }
+    return h;
+  }
+
+  /// Enumerate all object topics visible to this host.
+  [[nodiscard]] Expected<std::vector<ObjectTopicHandle>> listTopics() const {
+    if (!valid() || host_.vtable->list_topics == nullptr) {
+      return unexpected("toolbox object read host is not bound");
+    }
+    // First pass: ask for the count.
+    std::size_t count = 0;
+    PJ_error_t err{};
+    if (!host_.vtable->list_topics(host_.ctx, nullptr, 0, &count, &err)) {
+      return unexpected(errorToString(err));
+    }
+    std::vector<ObjectTopicHandle> out(count);
+    if (count == 0) {
+      return out;
+    }
+    if (!host_.vtable->list_topics(host_.ctx, out.data(), out.size(), &count, &err)) {
+      return unexpected(errorToString(err));
+    }
+    out.resize(count);
+    return out;
+  }
+
+  /// Return topic metadata — empty string on bad handle.
+  [[nodiscard]] std::string_view topicMetadata(ObjectTopicHandle topic) const {
+    if (!valid() || host_.vtable->topic_metadata == nullptr) {
+      return {};
+    }
+    const char* meta = host_.vtable->topic_metadata(host_.ctx, topic);
+    return meta != nullptr ? std::string_view(meta) : std::string_view{};
+  }
+
+  /// Fetch the entry at-or-before `timestamp`. Returns an owning
+  /// `ObjectBytes`; consumer may hold it across decoder-worker threads.
+  ///
+  /// `out_timestamp` (optional) receives the entry's actual timestamp.
+  [[nodiscard]] Expected<ObjectBytes> readLatestAt(
+      ObjectTopicHandle topic, Timestamp ts, Timestamp* out_timestamp = nullptr) const {
+    if (!valid() || host_.vtable->read_latest_at == nullptr) {
+      return unexpected("toolbox object read host is not bound");
+    }
+    PJ_object_bytes_handle_t handle = nullptr;
+    int64_t actual_ts = 0;
+    PJ_error_t err{};
+    if (!host_.vtable->read_latest_at(host_.ctx, topic, ts, &handle, &actual_ts, &err)) {
+      return unexpected(errorToString(err));
+    }
+    if (out_timestamp != nullptr) {
+      *out_timestamp = actual_ts;
+    }
+    return ObjectBytes(handle, host_.vtable);
+  }
+
+  [[nodiscard]] std::size_t entryCount(ObjectTopicHandle topic) const {
+    if (!valid() || host_.vtable->entry_count == nullptr) {
+      return 0;
+    }
+    return host_.vtable->entry_count(host_.ctx, topic);
+  }
+
+  /// Returns {min_ts, max_ts}. Both zero when the topic is empty/unknown.
+  [[nodiscard]] std::pair<Timestamp, Timestamp> timeRange(ObjectTopicHandle topic) const {
+    if (!valid() || host_.vtable->time_range == nullptr) {
+      return {0, 0};
+    }
+    int64_t lo = 0;
+    int64_t hi = 0;
+    if (!host_.vtable->time_range(host_.ctx, topic, &lo, &hi)) {
+      return {0, 0};
+    }
+    return {lo, hi};
+  }
+
+  [[nodiscard]] const PJ_object_read_host_t& raw() const noexcept {
+    return host_;
+  }
+
+ private:
+  PJ_object_read_host_t host_{};
 };
 
 // ---------------------------------------------------------------------------

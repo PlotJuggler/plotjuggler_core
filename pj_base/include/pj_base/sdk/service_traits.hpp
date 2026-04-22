@@ -105,6 +105,20 @@ struct ParserWriteHostService {
   static_assert(detail::isValidServiceName(kName), "kName must match the pj naming rule");
 };
 
+/// Object read host for Toolbox plugins — reads from ObjectStore. Optional:
+/// toolboxes that consume only scalar data (via ToolboxHostService) never
+/// resolve this. Transformer-style toolboxes that process bytes from object
+/// topics (object-detection on images, point-cloud filtering, etc.) resolve
+/// it alongside the scalar host.
+struct ToolboxObjectReadHostService {
+  static constexpr const char* kName = "pj.toolbox_object_read.v1";
+  static constexpr uint32_t kMinVersion = 1;
+  using Raw = PJ_object_read_host_t;
+  using Vtable = PJ_object_read_host_vtable_t;
+  using View = ToolboxObjectReadHostView;
+  static_assert(detail::isValidServiceName(kName), "kName must match the pj naming rule");
+};
+
 struct ToolboxHostService {
   // "pj.toolbox_write.v1" for symmetry with "pj.source_write.v1" and
   // "pj.parser_write.v1" — this service IS the toolbox write surface
