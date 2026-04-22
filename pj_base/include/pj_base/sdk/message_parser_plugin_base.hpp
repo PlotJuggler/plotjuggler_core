@@ -32,13 +32,28 @@ class MessageParserPluginBase {
  public:
   virtual ~MessageParserPluginBase() = default;
 
-  /// Acquire host-provided services. Default acquires "pj.parser_write.v1".
+  /// Acquire host-provided services.
+  ///
+  /// Default implementation pulls:
+  ///   - "pj.parser_write.v1"        → ParserWriteHost       (mandatory)
+  ///   - "pj.parser_object_write.v1" → ObjectWriteHost       (optional)
+  ///
+  /// A media-capable parser checks `objectWriteHost()` inside parse() and
+  /// writes the scalar portion of the message to `writeHost()` and the
+  /// media payload to `objectWriteHost()` from a single parse() call.
   virtual Status bind(sdk::ServiceRegistry services) {
     auto write = services.require<sdk::ParserWriteHostService>();
     if (!write) {
       return unexpected(std::move(write).error());
     }
     write_host_view_ = *write;
+
+    // Object-write is optional — only registered by the host when the
+    // parser is bound to a media topic alongside a scalar one.
+    if (auto obj = services.get<sdk::ParserObjectWriteHostService>()) {
+      object_write_host_view_ = *obj;
+    }
+
     service_registry_ = services;
     return okStatus();
   }
@@ -100,6 +115,15 @@ class MessageParserPluginBase {
     return write_host_view_;
   }
 
+  /// Optional — returns nullptr when the host did not register
+  /// `pj.parser_object_write.v1` for this parser's binding (scalar-only
+  /// case). Media-capable parsers check this and, if non-null, emit the
+  /// payload via `objectWriteHost()->pushOwned(ts, bytes)` alongside the
+  /// scalar fields written through `writeHost()`.
+  [[nodiscard]] const sdk::ParserObjectWriteHostView* objectWriteHost() const {
+    return object_write_host_view_.valid() ? &object_write_host_view_ : nullptr;
+  }
+
   [[nodiscard]] bool writeHostBound() const {
     return write_host_view_.valid();
   }
@@ -107,6 +131,7 @@ class MessageParserPluginBase {
  private:
   sdk::ServiceRegistry service_registry_{};
   sdk::ParserWriteHostView write_host_view_{PJ_parser_write_host_t{}};
+  sdk::ParserObjectWriteHostView object_write_host_view_{};
   std::string config_buf_;
 
   static void storeError(PJ_error_t* out_error, int32_t code, std::string_view domain, std::string_view message) {

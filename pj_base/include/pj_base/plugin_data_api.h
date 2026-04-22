@@ -555,6 +555,50 @@ typedef struct {
 } PJ_object_write_host_t;
 
 /* ==========================================================================
+ * Parser-scoped object write host (protocol v4)
+ *
+ * The MessageParser analogue of PJ_parser_write_host_vtable_t for the object
+ * path. Topic is bound once by the host at service-creation time (just like
+ * the scalar parser write host); the parser never names topics. Delivered
+ * only when the host has an object-capable target for the parser's binding —
+ * typically delegated ingest from a DataSource that registered an object
+ * topic alongside the scalar topic.
+ *
+ * A media-capable parser resolves both "pj.parser_write.v1" and
+ * "pj.parser_object_write.v1" at bind time and writes scalar portions to the
+ * former + media payload to the latter from a single parse() call. No
+ * protocol-version bump needed.
+ * ========================================================================== */
+
+/* ABI-APPENDABLE: new slots may be added at the tail; struct_size gates read.
+ *
+ * Same lifetime contract for fetch_ctx / fetch_ctx_destroy as
+ * PJ_object_write_host_vtable_t::push_lazy: the store retains the ctx until
+ * the entry is evicted, then runs fetch_ctx_destroy exactly once. */
+typedef struct PJ_parser_object_write_host_vtable_t {
+  uint32_t abi_version;
+  uint32_t struct_size;
+
+  /* [stream-thread] Eager push of serialized payload bytes into the bound
+   * object topic. Store copies the bytes. */
+  bool (*push_owned)(void* ctx, int64_t timestamp_ns, const uint8_t* data, size_t size, PJ_error_t* out_error)
+      PJ_NOEXCEPT;
+
+  /* [stream-thread] Lazy push. Rarely used from parsers (a delegated parser
+   * is given already-available bytes by the host), but exposed for
+   * transform-style parsers that produce fetch closures. */
+  bool (*push_lazy)(
+      void* ctx, int64_t timestamp_ns, PJ_lazy_fetch_fn_t fetch_fn, void* fetch_ctx, void (*fetch_ctx_destroy)(void*),
+      PJ_error_t* out_error) PJ_NOEXCEPT;
+} PJ_parser_object_write_host_vtable_t;
+
+/* ABI-FROZEN: fat pointer layout permanent. */
+typedef struct {
+  void* ctx;
+  const PJ_parser_object_write_host_vtable_t* vtable;
+} PJ_parser_object_write_host_t;
+
+/* ==========================================================================
  * Object-store read host (protocol v4)
  *
  * Exposed to Toolbox plugins that want to read back ObjectStore entries —

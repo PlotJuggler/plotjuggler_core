@@ -12,6 +12,7 @@ class ObjectStore;
 struct DatastoreSourceWriteHostState;
 struct DatastoreSourceObjectWriteHostState;
 struct DatastoreParserWriteHostState;
+struct DatastoreParserObjectWriteHostState;
 struct DatastoreToolboxHostState;
 struct DatastoreToolboxObjectReadHostState;
 
@@ -88,6 +89,28 @@ class DatastoreToolboxObjectReadHost {
 
  private:
   std::unique_ptr<DatastoreToolboxObjectReadHostState> state_;
+};
+
+/// Host-side implementation of the parser-scoped object write surface
+/// exposed as `pj.parser_object_write.v1`. The target ObjectTopic is bound
+/// at construction time (matching the scalar `DatastoreParserWriteHost`
+/// pattern); the parser never names topics.
+///
+/// @param topic_id the raw `ObjectTopicId::id` of the bound topic.
+class DatastoreParserObjectWriteHost {
+ public:
+  DatastoreParserObjectWriteHost(ObjectStore& store, uint32_t topic_id);
+  ~DatastoreParserObjectWriteHost();
+
+  DatastoreParserObjectWriteHost(const DatastoreParserObjectWriteHost&) = delete;
+  DatastoreParserObjectWriteHost& operator=(const DatastoreParserObjectWriteHost&) = delete;
+  DatastoreParserObjectWriteHost(DatastoreParserObjectWriteHost&&) noexcept;
+  DatastoreParserObjectWriteHost& operator=(DatastoreParserObjectWriteHost&&) noexcept;
+
+  [[nodiscard]] PJ_parser_object_write_host_t raw() noexcept;
+
+ private:
+  std::unique_ptr<DatastoreParserObjectWriteHostState> state_;
 };
 
 class DatastoreToolboxHost {

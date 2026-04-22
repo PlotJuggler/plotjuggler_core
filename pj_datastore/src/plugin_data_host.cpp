@@ -942,6 +942,17 @@ struct DatastoreToolboxObjectReadHostState {
   }
 };
 
+struct DatastoreParserObjectWriteHostState {
+  DatastoreParserObjectWriteHostState(ObjectStore& s, ObjectTopicId topic) : store(s), bound_topic(topic) {}
+  ObjectStore& store;
+  ObjectTopicId bound_topic;
+  std::string last_error;
+
+  void setError(std::string msg) {
+    last_error = std::move(msg);
+  }
+};
+
 void propagateError(PJ_error_t* out_error, const char* msg) {
   sdk::fillError(out_error, 1, "datastore", msg != nullptr ? std::string_view(msg) : std::string_view{});
 }
@@ -1435,6 +1446,70 @@ bool toolboxObjectTimeRange(
   }
 }
 
+// ---------------------------------------------------------------------------
+// Parser object write host trampolines — topic bound at service-create time.
+// ---------------------------------------------------------------------------
+
+bool parserObjectPushOwned(
+    void* ctx, int64_t timestamp_ns, const uint8_t* data, std::size_t size, PJ_error_t* out_error) noexcept {
+  auto* impl = static_cast<DatastoreParserObjectWriteHostState*>(ctx);
+  try {
+    std::vector<uint8_t> bytes;
+    if (data != nullptr && size > 0) {
+      bytes.assign(data, data + size);
+    }
+    auto result = impl->store.pushOwned(impl->bound_topic, timestamp_ns, std::move(bytes));
+    if (!result) {
+      impl->setError(result.error());
+      propagateError(out_error, impl->last_error.c_str());
+      return false;
+    }
+    impl->last_error.clear();
+    return true;
+  } catch (const std::exception& e) {
+    impl->setError(e.what());
+    propagateError(out_error, impl->last_error.c_str());
+    return false;
+  } catch (...) {
+    impl->setError("parser pushOwned: unknown exception");
+    propagateError(out_error, impl->last_error.c_str());
+    return false;
+  }
+}
+
+bool parserObjectPushLazy(
+    void* ctx, int64_t timestamp_ns, PJ_lazy_fetch_fn_t fetch_fn, void* fetch_ctx, void (*fetch_ctx_destroy)(void*),
+    PJ_error_t* out_error) noexcept {
+  auto* impl = static_cast<DatastoreParserObjectWriteHostState*>(ctx);
+  if (fetch_fn == nullptr) {
+    if (fetch_ctx_destroy != nullptr) {
+      fetch_ctx_destroy(fetch_ctx);
+    }
+    propagateError(out_error, "fetch_fn must not be null");
+    return false;
+  }
+  try {
+    auto holder = std::make_shared<PluginFetchCtx>(fetch_fn, fetch_ctx, fetch_ctx_destroy);
+    auto closure = [holder]() -> std::vector<uint8_t> { return holder->invoke(); };
+    auto result = impl->store.pushLazy(impl->bound_topic, timestamp_ns, std::move(closure));
+    if (!result) {
+      impl->setError(result.error());
+      propagateError(out_error, impl->last_error.c_str());
+      return false;
+    }
+    impl->last_error.clear();
+    return true;
+  } catch (const std::exception& e) {
+    impl->setError(e.what());
+    propagateError(out_error, impl->last_error.c_str());
+    return false;
+  } catch (...) {
+    impl->setError("parser pushLazy: unknown exception");
+    propagateError(out_error, impl->last_error.c_str());
+    return false;
+  }
+}
+
 const PJ_source_write_host_vtable_t kSourceWriteVTable = {
     PJ_PLUGIN_DATA_API_VERSION, sizeof(PJ_source_write_host_vtable_t),
     sourceEnsureTopic,          sourceEnsureField,
@@ -1471,6 +1546,13 @@ const PJ_object_read_host_vtable_t kToolboxObjectReadVTable = {
     toolboxObjectTopicMetadata, toolboxObjectReadLatestAt,
     toolboxObjectGetBytes,      toolboxObjectReleaseBytes,
     toolboxObjectEntryCount,    toolboxObjectTimeRange,
+};
+
+const PJ_parser_object_write_host_vtable_t kParserObjectWriteVTable = {
+    PJ_PLUGIN_DATA_API_VERSION,
+    sizeof(PJ_parser_object_write_host_vtable_t),
+    parserObjectPushOwned,
+    parserObjectPushLazy,
 };
 
 DatastoreSourceWriteHost::DatastoreSourceWriteHost(DataEngine& engine, DataSourceHandle source)
@@ -1535,6 +1617,17 @@ DatastoreToolboxObjectReadHost& DatastoreToolboxObjectReadHost::operator=(Datast
 
 PJ_object_read_host_t DatastoreToolboxObjectReadHost::raw() noexcept {
   return PJ_object_read_host_t{.ctx = state_.get(), .vtable = &kToolboxObjectReadVTable};
+}
+
+DatastoreParserObjectWriteHost::DatastoreParserObjectWriteHost(ObjectStore& store, uint32_t topic_id)
+    : state_(std::make_unique<DatastoreParserObjectWriteHostState>(store, ObjectTopicId{topic_id})) {}
+DatastoreParserObjectWriteHost::~DatastoreParserObjectWriteHost() = default;
+DatastoreParserObjectWriteHost::DatastoreParserObjectWriteHost(DatastoreParserObjectWriteHost&&) noexcept = default;
+DatastoreParserObjectWriteHost& DatastoreParserObjectWriteHost::operator=(DatastoreParserObjectWriteHost&&) noexcept =
+    default;
+
+PJ_parser_object_write_host_t DatastoreParserObjectWriteHost::raw() noexcept {
+  return PJ_parser_object_write_host_t{.ctx = state_.get(), .vtable = &kParserObjectWriteVTable};
 }
 
 }  // namespace PJ

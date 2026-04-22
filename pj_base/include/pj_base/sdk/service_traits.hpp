@@ -105,6 +105,19 @@ struct ParserWriteHostService {
   static_assert(detail::isValidServiceName(kName), "kName must match the pj naming rule");
 };
 
+/// Parser-scoped object write host. Optional: registered by the host only
+/// when the parser is bound to a media topic. A media-capable parser
+/// resolves both ParserWriteHostService (scalars) and this one (object
+/// payload) at bind time and writes both from a single parse() call.
+struct ParserObjectWriteHostService {
+  static constexpr const char* kName = "pj.parser_object_write.v1";
+  static constexpr uint32_t kMinVersion = 1;
+  using Raw = PJ_parser_object_write_host_t;
+  using Vtable = PJ_parser_object_write_host_vtable_t;
+  using View = ParserObjectWriteHostView;
+  static_assert(detail::isValidServiceName(kName), "kName must match the pj naming rule");
+};
+
 /// Object read host for Toolbox plugins — reads from ObjectStore. Optional:
 /// toolboxes that consume only scalar data (via ToolboxHostService) never
 /// resolve this. Transformer-style toolboxes that process bytes from object

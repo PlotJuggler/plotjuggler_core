@@ -751,6 +751,86 @@ class SourceObjectWriteHostView {
   };
 };
 
+// ---------------------------------------------------------------------------
+// Parser object write host view (protocol v4)
+//
+// Topic bound by the host at service-creation time; the parser never names
+// topics (mirrors the scalar ParserWriteHostView contract). Media-capable
+// parsers resolve this alongside the scalar ParserWriteHost, writing header
+// scalars to one and the media payload to the other from a single parse()
+// call.
+// ---------------------------------------------------------------------------
+
+class ParserObjectWriteHostView {
+ public:
+  using FetchFn = std::function<std::vector<uint8_t>()>;
+
+  ParserObjectWriteHostView() = default;
+  explicit ParserObjectWriteHostView(PJ_parser_object_write_host_t host) : host_(host) {}
+
+  [[nodiscard]] bool valid() const {
+    return host_.ctx != nullptr && host_.vtable != nullptr;
+  }
+
+  [[nodiscard]] Status pushOwned(Timestamp ts, Span<const uint8_t> payload) const {
+    if (!valid()) {
+      return unexpected("parser object write host is not bound");
+    }
+    PJ_error_t err{};
+    if (!host_.vtable->push_owned(host_.ctx, ts, payload.data(), payload.size(), &err)) {
+      return unexpected(errorToString(err));
+    }
+    return okStatus();
+  }
+
+  /// Lazy push (uncommon for parsers; SDK hides the closure ABI dance). See
+  /// SourceObjectWriteHostView::pushLazy for the ownership contract.
+  template <class Fetch>
+  [[nodiscard]] Status pushLazy(Timestamp ts, Fetch&& fetch) const {
+    if (!valid()) {
+      return unexpected("parser object write host is not bound");
+    }
+    auto* box = new LazyBox{FetchFn(std::forward<Fetch>(fetch)), std::vector<uint8_t>{}};
+    PJ_error_t err{};
+    if (!host_.vtable->push_lazy(host_.ctx, ts, &LazyBox::trampoline, box, &LazyBox::destroy, &err)) {
+      delete box;
+      return unexpected(errorToString(err));
+    }
+    return okStatus();
+  }
+
+  [[nodiscard]] const PJ_parser_object_write_host_t& raw() const noexcept {
+    return host_;
+  }
+
+ private:
+  PJ_parser_object_write_host_t host_{};
+
+  struct LazyBox {
+    FetchFn fetch;
+    std::vector<uint8_t> last_bytes;
+
+    static bool trampoline(void* ctx, const uint8_t** out_data, size_t* out_size) noexcept {
+      if (ctx == nullptr || out_data == nullptr || out_size == nullptr) {
+        return false;
+      }
+      auto* self = static_cast<LazyBox*>(ctx);
+      try {
+        self->last_bytes = self->fetch();
+      } catch (...) {
+        return false;
+      }
+      *out_data = self->last_bytes.data();
+      *out_size = self->last_bytes.size();
+      return true;
+    }
+
+    static void destroy(void* ctx) noexcept {
+      delete static_cast<LazyBox*>(ctx);
+    }
+  };
+};
+
 namespace detail {
 inline PrimitiveType formatToPrimitiveType(const char* fmt) noexcept {
   if (fmt == nullptr || fmt[0] == '\0') {
