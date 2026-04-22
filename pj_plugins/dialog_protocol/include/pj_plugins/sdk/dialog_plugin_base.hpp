@@ -210,9 +210,41 @@ class DialogPluginBase {
   }
 };
 
+/// Per-dialog-type vtable accessor. Specialised by `PJ_DIALOG_PLUGIN`.
+/// Plugin authors don't call this directly; they call `borrowDialog(member)`
+/// from their host's `getDialog()` override, and the compiler picks the
+/// right specialisation from the dialog member's static type.
+template <class DialogT>
+const PJ_dialog_vtable_t* dialogVtableFor() noexcept;
+
+/// Build a `PJ_borrowed_dialog_t` fat pointer from an embedded dialog
+/// member. This is what hosts with embedded dialogs should return from
+/// their `getDialog()` override — no `extern "C"` forward declaration
+/// required in the plugin source.
+///
+///   class MySource : public PJ::FileSourceBase {
+///     PJ_borrowed_dialog_t getDialog() override {
+///       return PJ::borrowDialog(dialog_);
+///     }
+///    private:
+///     MyDialog dialog_;
+///   };
+template <class DialogT>
+PJ_borrowed_dialog_t borrowDialog(DialogT& dialog) noexcept {
+  return PJ_borrowed_dialog_t{&dialog, dialogVtableFor<DialogT>()};
+}
+
 }  // namespace PJ
 
 /// Macro to export the vtable entry point for a plugin class.
+///
+/// Emits two things:
+///   1. The `PJ_get_dialog_vtable()` C symbol the host loader resolves
+///      via `dlsym`. Always present, same shape since v1.
+///   2. A specialisation of `PJ::dialogVtableFor<ClassName>()` that lets
+///      other plugin code (notably a host's `getDialog()` override) obtain
+///      the vtable pointer type-safely via `PJ::borrowDialog(member)` —
+///      no `extern "C"` forward declaration required in the plugin source.
 #define PJ_DIALOG_PLUGIN(ClassName)                                                                       \
   extern "C" PJ_DIALOG_EXPORT const PJ_dialog_vtable_t* PJ_get_dialog_vtable() noexcept {                 \
     static const PJ_dialog_vtable_t* vt = PJ::DialogPluginBase::vtableWithCreate([]() noexcept -> void* { \
@@ -223,4 +255,10 @@ class DialogPluginBase {
       }                                                                                                   \
     });                                                                                                   \
     return vt;                                                                                            \
+  }                                                                                                       \
+  namespace PJ {                                                                                          \
+  template <>                                                                                             \
+  inline const PJ_dialog_vtable_t* dialogVtableFor<ClassName>() noexcept {                                \
+    return PJ_get_dialog_vtable();                                                                        \
+  }                                                                                                       \
   }

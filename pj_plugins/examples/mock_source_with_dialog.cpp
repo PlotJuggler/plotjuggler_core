@@ -323,17 +323,11 @@ class MockStreamerDialog : public PJ::DialogPluginTyped {
   std::vector<std::string> selected_topics_;
 };
 
-// Forward declaration of the dialog vtable accessor emitted by
-// PJ_DIALOG_PLUGIN(MockStreamerDialog) at the bottom of this TU. Lets
-// MockStreamerSource::getDialog() pair its embedded dialog member with
-// the matching vtable into a typed PJ_borrowed_dialog_t.
-extern "C" PJ_DIALOG_EXPORT const PJ_dialog_vtable_t* PJ_get_dialog_vtable() noexcept;
-
 /// DataSource class — business logic, owns the dialog as a member.
 class MockStreamerSource : public PJ::StreamSourceBase {
  public:
   PJ_borrowed_dialog_t getDialog() override {
-    return PJ_borrowed_dialog_t{&dialog_, PJ_get_dialog_vtable()};
+    return PJ::borrowDialog(dialog_);
   }
 
   uint64_t extraCapabilities() const override {
