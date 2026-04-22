@@ -205,6 +205,18 @@ target_compile_options(plugin_catalog_test PRIVATE ${PJ_WARNING_FLAGS})
 target_link_libraries(plugin_catalog_test PRIVATE
   pj_data_source_host pj_base GTest::gtest_main
 )
+# If the ported plugins are part of this build, point the integration test
+# at their output directory so it can scan real sidecars. Deferred via a
+# generator expression because csv_source_plugin is added later in the
+# top-level CMakeLists traversal (pj_ported_plugins/ after pj_plugins/).
+if(PJ_BUILD_PORTED_PLUGINS)
+  target_compile_definitions(plugin_catalog_test PRIVATE
+    PJ_PORTED_PLUGINS_BIN_DIR="$<TARGET_FILE_DIR:csv_source_plugin>"
+  )
+  # Ensure the test waits for plugins to be built so their sidecars exist.
+  add_dependencies(plugin_catalog_test csv_source_plugin mcap_source_plugin
+                   parquet_source_plugin ulog_source_plugin)
+endif()
 add_test(NAME plugin_catalog_test COMMAND plugin_catalog_test)
 
 endif() # PJ_BUILD_TESTS

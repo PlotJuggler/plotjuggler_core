@@ -141,3 +141,30 @@ TEST_F(PluginCatalogTest, FamilyToStringRoundTrip) {
 
 }  // namespace
 }  // namespace PJ
+
+// ---------------------------------------------------------------------------
+// Integration test: scan the actual build-tree plugin directory if present.
+// Lets us verify that the pj_emit_plugin_manifest CMake helper produces
+// sidecars that scanPluginSidecars actually consumes correctly.
+// ---------------------------------------------------------------------------
+
+#ifdef PJ_PORTED_PLUGINS_BIN_DIR
+TEST(PluginCatalogIntegration, ScansPortedPluginsBinDir) {
+  const std::filesystem::path bin_dir = PJ_PORTED_PLUGINS_BIN_DIR;
+  if (!std::filesystem::exists(bin_dir)) {
+    GTEST_SKIP() << "ported plugins bin dir not present: " << bin_dir;
+  }
+
+  auto result = PJ::scanPluginSidecars(bin_dir);
+  ASSERT_TRUE(result.has_value()) << result.error();
+
+  // Every entry must parse cleanly and have abi_major == 4.
+  EXPECT_FALSE(result->empty()) << "no sidecars found in " << bin_dir;
+  for (const auto& d : *result) {
+    EXPECT_EQ(d.abi_major, 4U) << "sidecar " << d.sidecar_path << " has abi_major != 4";
+    EXPECT_NE(d.family, PJ::PluginFamily::kUnknown);
+    EXPECT_FALSE(d.name.empty());
+    EXPECT_FALSE(d.version.empty());
+  }
+}
+#endif
