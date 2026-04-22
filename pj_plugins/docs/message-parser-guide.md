@@ -129,7 +129,16 @@ topic.
 | `ensureField(name, type)` | Optional: pre-register a field. Enables `appendBoundRecord`. Returns a `FieldHandle`. |
 | `appendRecord(timestamp, fields)` | Write a row of named field values. Auto-creates new fields. |
 | `appendBoundRecord(timestamp, fields)` | Write using pre-resolved field handles (faster). |
-| `appendArrowIpc(ipc_stream, timestamp_col)` | Write an Arrow IPC stream directly. |
+
+The parser write surface is **per-record only** in v4. There is no
+`appendArrowStream` / `appendArrowIpc` slot on the parser write host:
+one `parse()` call decodes one message, so batch boundaries are the
+host's concern, not the parser's. The host coalesces per-record
+writes into Arrow batches internally before committing them to
+storage. If you are porting a plugin that used to emit whole IPC
+streams directly (a Parquet-to-Arrow bulk loader, for example), it
+belongs as a **DataSource** plugin instead — see
+`data-source-guide.md` for the `appendArrowStream` contract.
 
 ### Named vs bound writes
 
@@ -159,20 +168,6 @@ const PJ::sdk::BoundFieldValue fields[] = {
     {.field = *hum_field, .value = 61.0}};
 writeHost().appendBoundRecord(timestamp_ns, PJ::Span(fields));
 ```
-
-### Arrow IPC bulk writes
-
-For parsers that decode into Arrow columnar format (e.g. a Parquet-to-Arrow
-parser), use `appendArrowIpc()` to write an entire IPC stream in one call:
-
-```cpp
-// ipc_buffer is a Span<const uint8_t> containing a valid Arrow IPC stream.
-auto status = writeHost().appendArrowIpc(ipc_buffer, "_timestamp");
-```
-
-The `timestamp_column` parameter names the column holding nanosecond
-timestamps (defaults to `"_timestamp"`). Prefer this when your decoded data
-is already columnar — it avoids per-row overhead.
 
 ## Optional Features
 

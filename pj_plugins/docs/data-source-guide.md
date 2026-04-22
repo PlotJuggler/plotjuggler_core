@@ -398,7 +398,7 @@ engine.
 | `ensureField(topic, name, type)` | Optional: pre-register a field. Enables `appendBoundRecord`. |
 | `appendRecord(topic, timestamp, fields)` | Write a row of named field values. Auto-creates new fields. |
 | `appendBoundRecord(topic, timestamp, fields)` | Write using pre-resolved field handles (faster). |
-| `appendArrowIpc(topic, ipc_stream, ts_col)` | Write an Arrow IPC stream directly (bulk columnar). |
+| `appendArrowStream(topic, stream, ts_col)` | Hand an `ArrowArrayStream*` (Arrow C Data Interface) to the host for bulk ingest. Host drains and releases on success. |
 
 ### Runtime host — control plane
 
@@ -589,21 +589,46 @@ const PJ::sdk::BoundFieldValue fields[] = {
 writeHost().appendBoundRecord(*topic, timestamp, fields);
 ```
 
-### Arrow IPC bulk writes
+### Bulk Arrow writes
 
 For sources that already hold data in Arrow columnar format (e.g. Parquet
-file readers, Arrow Flight streams), use `appendArrowIpc()` to write an
-entire IPC stream buffer in one call — avoiding per-row overhead:
+file readers, Arrow Flight streams, MCAP-to-Arrow shims), use
+`appendArrowStream()` to hand the host an `ArrowArrayStream*` (Arrow C
+Data Interface). The host pulls batches via the stream's `get_next()`
+callback and takes ownership on success — no row-at-a-time overhead.
 
 ```cpp
-// ipc_buffer is a Span<const uint8_t> containing a valid Arrow IPC stream.
-auto status = writeHost().appendArrowIpc(*topic, ipc_buffer, "_timestamp");
+#include <pj_base/sdk/arrow.hpp>
+
+// Plugin builds the stream (e.g. via nanoarrow or arrow::RecordBatchReader).
+PJ::sdk::ArrowStreamHolder stream(buildMyArrowStream());
+
+// Hand it off. The timestamp_column arg names an int64 column in the
+// stream's schema whose values are nanoseconds since Unix epoch.
+auto status = writeHost().appendArrowStream(*topic, stream.out(), "timestamp");
+if (status) {
+  // Success: host already called stream->release. Release from the
+  // holder so its destructor doesn't double-release.
+  (void)stream.release();
+} else {
+  // Failure: ownership retained. Holder's destructor will release the
+  // stream at scope exit.
+  return PJ::unexpected(status.error());
+}
 ```
 
-The `timestamp_column` parameter names the column within the IPC stream that
-holds nanosecond timestamps (defaults to `"_timestamp"`). The host reads the
-Arrow schema to discover field names and types. Prefer this over
-record-at-a-time writes when your data is already columnar.
+**Ownership rule:** on success the host has already called
+`stream->release()`; on failure the plugin retains the stream. The
+`ArrowStreamHolder` RAII wrapper in `pj_base/sdk/arrow.hpp` handles
+both paths automatically — call `.release()` on the holder after a
+successful append to mark it inert, skip that call after a failure
+and the destructor does the cleanup.
+
+If your data is already in an Arrow **IPC** byte buffer (file or
+Flight wire format), wrap it with nanoarrow's
+`ArrowIpcArrayStreamReaderInit` to obtain an `ArrowArrayStream*` and
+feed that through `appendArrowStream()` — v4 no longer exposes a
+separate IPC-bytes write slot.
 
 ## Threading Model
 

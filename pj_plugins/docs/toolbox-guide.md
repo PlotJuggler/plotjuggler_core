@@ -136,9 +136,9 @@ data store.
 | `ensureField(topic, name, type)` | Optional: pre-register a field. Enables `appendBoundRecord`. |
 | `appendRecord(topic, timestamp, fields)` | Write a row of named field values. Auto-creates new fields. |
 | `appendBoundRecord(topic, timestamp, fields)` | Write using pre-resolved field handles (faster). |
-| `appendArrowIpc(topic, ipc_stream, ts_col)` | Write an Arrow IPC stream directly (bulk columnar). |
+| `appendArrowStream(topic, stream, ts_col)` | Hand an `ArrowArrayStream*` (Arrow C Data Interface) to the host for bulk ingest. Same ownership rule as the source write path: success transfers, failure retains. |
 | `catalogSnapshot()` | Acquire a read-only snapshot of all data sources, topics, and fields. |
-| `readSeries(field)` | Read the full time series for a field. |
+| `readSeriesArrow(field, schema*, array*)` | Read one field's full time series into host-owned `ArrowSchema` + `ArrowArray` out-params (two columns: `timestamp` int64 ns, then the typed field value). |
 
 ### Runtime host — control plane
 
@@ -149,6 +149,45 @@ Access via `runtimeHost()`. Use this for diagnostics and UI refresh.
 | `reportMessage(level, text)` | Send info/warning/error to the host UI log. |
 | `notifyDataChanged()` | Tell the host that data was modified; refresh UI. |
 | `lastError()` | Read the last host-side error message. |
+
+### Reading a series via Arrow
+
+`readSeriesArrow()` is the only read path in v4 — it returns
+`ArrowSchema` + `ArrowArray` out-params populated by the host.
+Wrap the out-params in the RAII holders from `pj_base/sdk/arrow.hpp`
+so they are released automatically at scope exit:
+
+```cpp
+#include <pj_base/sdk/arrow.hpp>
+
+void MyToolbox::runFft(PJ::sdk::FieldHandle field) {
+  PJ::sdk::ArrowSchemaHolder schema;
+  PJ::sdk::ArrowArrayHolder  array;
+
+  auto status = toolboxHost().readSeriesArrow(field, schema.out(), array.out());
+  if (!status) {
+    runtimeHost().reportMessage(PJ::ToolboxMessageLevel::kError,
+                                "readSeriesArrow failed: " + status.error());
+    return;
+  }
+
+  // array.get() now points to a two-column Arrow struct:
+  //   column 0: "timestamp"   — int64 nanoseconds since Unix epoch
+  //   column 1: <field name>  — typed to the field's primitive type
+  // Walk children[0]->buffers / children[1]->buffers per Arrow spec,
+  // or hand array.get() directly to analytics code that speaks Arrow
+  // (DuckDB, Polars, pandas via PyCapsule, …).
+}
+// schema and array are released here by their destructors.
+```
+
+**Bulk-write output:** pair `readSeriesArrow` with `appendArrowStream`
+to round-trip data through a transform. The same RAII holders work on
+the write side too — construct an `ArrowStreamHolder` from whatever
+library produces your output, then pass `stream.out()` to
+`appendArrowStream(topic, stream.out(), "timestamp")`. On success call
+`stream.release()` on the holder (the host already released the
+stream); on failure the destructor handles it.
 
 ## Configuration Persistence
 
