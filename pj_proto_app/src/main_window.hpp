@@ -70,6 +70,7 @@ class MainWindow : public QMainWindow {
   QTreeView* tree_view_ = nullptr;
   ChartPanel* chart_panel_ = nullptr;
   QSpinBox* buffer_spinbox_ = nullptr;
+  QMenu* tools_menu_ = nullptr;
   QTimer refresh_timer_;
   int refresh_tick_ = 0;
   bool streaming_active_ = false;

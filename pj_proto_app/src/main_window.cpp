@@ -195,8 +195,8 @@ MainWindow::MainWindow(const std::string& plugin_dir, QWidget* parent)
   connect(&refresh_timer_, &QTimer::timeout, this, &MainWindow::onRefreshTimer);
 
   // --- Tools menu ---
-  auto* tools_menu = menuBar()->addMenu("&Tools");
-  setupToolboxPanels(tools_menu);
+  tools_menu_ = menuBar()->addMenu("&Tools");
+  setupToolboxPanels(tools_menu_);
 
   setWindowTitle("PlotJuggler Proto");
 }
@@ -699,7 +699,10 @@ void MainWindow::onOpenMarketplace() {
   window.resize(700, 500);
   window.exec();
   if (window.installationsChanged()) {
+    toolbox_sessions_.clear();
     registry_.reload();
+    tools_menu_->clear();
+    setupToolboxPanels(tools_menu_);
   }
 }
 
