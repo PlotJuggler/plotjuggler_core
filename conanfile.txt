@@ -14,6 +14,7 @@ jsoncons/1.5.0
 zstd/1.5.5
 date/3.0.4
 libarchive/3.7.4
+libjpeg-turbo/3.1.0
 
 [options]
 arrow/*:parquet=True
