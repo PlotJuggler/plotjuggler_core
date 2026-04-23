@@ -37,6 +37,13 @@ target_compile_features(pj_media_core PUBLIC cxx_std_20)
 target_compile_options(pj_media_core PRIVATE
   ${PJ_WARNING_FLAGS} ${PJ_SANITIZER_FLAGS}
 )
+if(MSVC)
+  # libpng uses setjmp/longjmp for error handling, which MSVC warns
+  # about via C4611 (non-portable interaction with C++ destruction).
+  # The decoder paths that call setjmp here do not construct RAII
+  # objects in the longjmp scope, so the warning is safe to silence.
+  target_compile_options(pj_media_core PRIVATE /wd4611)
+endif()
 target_link_libraries(pj_media_core
   PUBLIC pj_base pj_datastore
   PRIVATE libjpeg-turbo::libjpeg-turbo PNG::PNG
