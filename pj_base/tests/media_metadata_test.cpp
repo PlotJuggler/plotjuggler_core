@@ -41,8 +41,12 @@ TEST(MediaMetadataBuilderTest, ExtraRawJsonIsPassedThrough) {
 }
 
 TEST(MediaMetadataBuilderTest, EscapesQuotesAndBackslashes) {
-  const auto json = MediaMetadataBuilder().schema(R"(weird"name\with)").build();
-  EXPECT_EQ(json, R"({"schema":"weird\"name\\with"})");
+  // Use a custom raw-string delimiter (@) because MSVC's preprocessor
+  // mishandles the default '(' ')' delimiters when the content ends
+  // with a backslash immediately before the closing quote, tokenizing
+  // the tail as a user-defined literal suffix.
+  const auto json = MediaMetadataBuilder().schema(R"@(weird"name\with)@").build();
+  EXPECT_EQ(json, R"@({"schema":"weird\"name\\with"})@");
 }
 
 TEST(MediaMetadataBuilderTest, EscapesControlChars) {
