@@ -3,9 +3,9 @@
 # ---------------------------------------------------------------------------
 
 find_package(libjpeg-turbo REQUIRED)
+find_package(PNG REQUIRED)
 find_package(PkgConfig QUIET)
 if(PkgConfig_FOUND)
-  pkg_check_modules(LIBPNG IMPORTED_TARGET libpng)
   pkg_check_modules(LIBAVCODEC IMPORTED_TARGET libavcodec)
   pkg_check_modules(LIBAVFORMAT IMPORTED_TARGET libavformat)
   pkg_check_modules(LIBAVUTIL IMPORTED_TARGET libavutil)
@@ -39,7 +39,7 @@ target_compile_options(pj_media_core PRIVATE
 )
 target_link_libraries(pj_media_core
   PUBLIC pj_base pj_datastore
-  PRIVATE libjpeg-turbo::libjpeg-turbo PkgConfig::LIBPNG
+  PRIVATE libjpeg-turbo::libjpeg-turbo PNG::PNG
 )
 
 if(LIBAVCODEC_FOUND AND LIBAVFORMAT_FOUND)
@@ -67,7 +67,7 @@ if(PJ_BUILD_TESTS)
   foreach(test_src ${PJ_MEDIA_CORE_TESTS})
     get_filename_component(test_name ${test_src} NAME_WE)
     add_executable(${test_name} ${test_src})
-    target_link_libraries(${test_name} PRIVATE pj_media_core libjpeg-turbo::libjpeg-turbo PkgConfig::LIBPNG GTest::gtest_main)
+    target_link_libraries(${test_name} PRIVATE pj_media_core libjpeg-turbo::libjpeg-turbo PNG::PNG GTest::gtest_main)
     target_compile_options(${test_name} PRIVATE ${PJ_WARNING_FLAGS} ${PJ_SANITIZER_FLAGS})
     add_test(NAME ${test_name} COMMAND ${test_name})
   endforeach()
