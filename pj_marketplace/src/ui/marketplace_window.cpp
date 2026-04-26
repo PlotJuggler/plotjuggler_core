@@ -12,6 +12,7 @@
 #include <QLineEdit>
 #include <QMouseEvent>
 #include <QPlainTextEdit>
+#include <QMessageBox>
 #include <QPushButton>
 #include <QSettings>
 #include <QVBoxLayout>
@@ -55,7 +56,8 @@ MarketplaceWindow::MarketplaceWindow(const QUrl& registry_url, QWidget* parent)
     : QDialog(parent), ui_(new Ui::MarketplaceWindow) {
   download_mgr_ = new DownloadManager(this);
   registry_mgr_ = new RegistryManager(this);
-  ext_mgr_ = new ExtensionManager(download_mgr_, PlatformUtils::extensionsDir(), PlatformUtils::pendingDir(), this);
+  ext_mgr_ = new ExtensionManager(
+      download_mgr_, PlatformUtils::extensionsDir(), PlatformUtils::pendingDir(), /*sink*/ {}, this);
   QSettings settings("PlotJuggler", "Marketplace");
   const QString saved = settings.value("registry_url").toString();
   registry_url_ = saved.isEmpty() ? registry_url : QUrl(saved);
@@ -65,8 +67,7 @@ MarketplaceWindow::MarketplaceWindow(const QUrl& registry_url, QWidget* parent)
   setupSignals();
   updateDiagnosticsButton();
   showLatestDiagnostic();
-  ext_mgr_->applyPendingUninstalls();
-  ext_mgr_->applyPendingInstalls();
+  // applyPendingUninstalls/applyPendingInstalls already ran in ExtensionManager::initComponents().
   registry_mgr_->fetchRegistry(registry_url_);
 }
 
@@ -119,8 +120,8 @@ void MarketplaceWindow::setupUi() {
 
   ui_->category_combo_->addItem("All categories", "");
   ui_->category_combo_->addItem("Data Loader", "data_loader");
-  ui_->category_combo_->addItem("Data Streamer", "data_stream");
-  ui_->category_combo_->addItem("Message Parser", "message_parser");
+  ui_->category_combo_->addItem("Data Streamer", "data_streamer");
+  ui_->category_combo_->addItem("Message Parser", "parser");
   ui_->category_combo_->addItem("Toolbox", "toolbox");
 
   connect(ui_->search_edit_, &QLineEdit::textChanged, this, &MarketplaceWindow::onSearchChanged);
@@ -144,6 +145,9 @@ void MarketplaceWindow::setupSignals() {
       setStatus("Failed to load registry", true);
       return;
     }
+    // A successful refresh is a strong "things are working" signal; let it
+    // override any old sticky error so progress messages aren't suppressed.
+    clearStickyStatus();
     extensions_ = registry_mgr_->extensions();
     applyFilters();
     setStatus("Ready — " + QString::number(extensions_.size()) + " extensions loaded");
@@ -207,7 +211,8 @@ void MarketplaceWindow::setupSignals() {
   connect(ext_mgr_, &ExtensionManager::installError, this, [this](const QString& /*id*/, const QString& error) {
     ui_->progress_bar_->setVisible(false);
     setStatus("Installation failed: " + error, true);
-    processInstallQueue();
+    // Queue advance lives in installFinished only — installError + installFinished both
+    // fire from emitInstallFailure, so advancing here would double-pop the queue.
   });
 
   connect(ext_mgr_, &ExtensionManager::uninstallFinished, this, [this](const QString& id, bool success) {
@@ -516,7 +521,15 @@ void MarketplaceWindow::onSettingsClicked() {
     return;
   }
 
-  const QUrl new_url(url_edit->text().trimmed());
+  const QString text = url_edit->text().trimmed();
+  const QUrl new_url(text);
+  if (text.isEmpty() || !new_url.isValid() || (new_url.scheme() != "http" && new_url.scheme() != "https"
+                                               && new_url.scheme() != "file")) {
+    QMessageBox::warning(
+        this, "Invalid registry URL",
+        QString("\"%1\" is not a valid http(s) or file URL. The registry URL was not changed.").arg(text));
+    return;
+  }
   if (new_url == registry_url_) {
     return;
   }

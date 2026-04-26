@@ -303,6 +303,28 @@ Loaders also provide `resolveDialogVtable()` to find the dialog vtable in a
 plugin `.so` that exports both a family vtable and a dialog vtable (e.g. a
 DataSource with an embedded dialog).
 
+### 5.1 Host-side diagnostic propagation
+
+Host code that loads plugins (e.g. `pj_proto_app::PluginRegistry`) accepts an
+optional `PJ::DiagnosticSink` (`pj_base/include/pj_base/diagnostic_sink.hpp`)
+in its constructor. The sink is a `std::function<void(const PJ::Diagnostic&)>`
+the host invokes for every plugin-load lifecycle event — failed `dlopen`,
+missing required manifest fields, malformed JSON, successful loads,
+hot-reload detection, etc. Each event carries a level
+(`kInfo`/`kWarning`/`kError`), a `source` string, an optional plugin id, a
+message, and a timestamp.
+
+Embedding apps wire one sink into both their host loaders and
+`pj_marketplace::ExtensionManager` so the GUI shows one chronological
+diagnostic stream covering both module families. Pure-C++ host loaders
+remain Qt-free; the embedding app provides a thin Qt adapter (e.g.
+`pj_proto_app::QtDiagnosticBridge`) that marshals each event onto the Qt
+event loop via `Qt::QueuedConnection` and emits a Qt signal the GUI can
+connect to.
+
+A default-constructed sink discards events at zero cost, so loaders that
+take no sink behave as before.
+
 ## 6. RAII Handles
 
 Each family has a move-only RAII handle:

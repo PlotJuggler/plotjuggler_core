@@ -7,6 +7,7 @@ add_executable(pj_proto_app
   src/main.cpp
   src/main_window.cpp
   src/plugin_registry.cpp
+  src/qt_diagnostic_bridge.cpp
   src/data_source_session.cpp
   src/toolbox_session.cpp
   src/series_tree_model.cpp

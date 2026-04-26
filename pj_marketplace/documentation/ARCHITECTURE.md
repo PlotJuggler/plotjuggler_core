@@ -114,26 +114,31 @@ This means a simple JSON file is more than sufficient as a registry. We don't ne
 
 ### 3.1 Core Components
 
+Public headers live under `include/pj_marketplace/`; sources are split between `src/core/` (CamelCase) and `src/ui/` (snake_case to match `.ui` filenames).
+
 ```
-marketplace/
+pj_marketplace/
 ├── CMakeLists.txt
 ├── main.cpp
-├── src/
-│   ├── models/
-│   │   ├── Extension.h           # Extension metadata struct
-│   │   ├── InstalledExtension.h  # Local installation info
-│   │   └── Registry.h            # Full registry model
-│   ├── core/
-│   │   ├── RegistryManager.h/cpp # Fetch, parse, cache registry
-│   │   ├── ExtensionManager.h/cpp # Install, uninstall, update, staged promotion
-│   │   ├── DownloadManager.h/cpp  # HTTP download, checksum, libarchive extraction
-│   │   └── PlatformUtils.h/cpp    # OS detection, paths
-│   ├── ui/
-│   │   ├── MarketplaceWindow.h/cpp       # Main window/dialog
-│   │   └── ExtensionDetailDialog.h/cpp   # Detail dialog
-└── resources/
-    ├── icons/
-    └── marketplace.qrc
+├── include/
+│   └── pj_marketplace/
+│       ├── extension.hpp                 # Extension metadata struct
+│       ├── installed_extension.hpp       # Local installation record
+│       ├── extension_manager.hpp         # Install/uninstall/update API + signals
+│       ├── registry_manager.hpp          # Registry fetch/parse API
+│       ├── download_manager.hpp          # HTTP + checksum + libarchive extraction
+│       ├── platform_utils.hpp            # OS detection, standard paths
+│       ├── marketplace_window.hpp        # Main dialog
+│       └── extension_detail_dialog.hpp   # Per-extension detail dialog
+└── src/
+    ├── core/
+    │   ├── ExtensionManager.cpp
+    │   ├── RegistryManager.cpp
+    │   ├── DownloadManager.cpp
+    │   └── PlatformUtils.cpp
+    └── ui/
+        ├── marketplace_window.{cpp,ui}
+        └── extension_detail_dialog.{cpp,ui}
 ```
 
 ### 3.2 Data Models
@@ -200,14 +205,38 @@ ExtensionManager(DownloadManager* downloader,
 - No `detectPlatform()` private method — delegated to `PlatformUtils::currentPlatform()`
 - Local installation state (`QMap<QString, InstalledExtension>`) is a private cache in `ExtensionManager` — populated at construction by scanning `extensions_dir`, loading plugin DSOs, and reading their embedded manifests; testability is preserved via the `extensions_dir` parameter pointing to a temp directory
 - No local installed-state sidecars — disk is scanned, but `id` and `version` come from the embedded DSO manifest
-- Windows staged updates write a transient `.pj_pending_install` intent containing the registry id/version. It is deleted after promotion and exists only so restart-time validation can compare the staged DSO against the registry request that created it.
+- Windows staged updates write a transient `.pj_pending_install` intent containing the registry id/version. It is deleted after promotion and exists only so restart-time validation can compare the staged DSO against the registry request that created it. Both the id and the version inside the intent file are validated against the same safe-path/regex rules used elsewhere, so a tampered intent cannot escape `extensions_dir`.
 - Embedding apps may seed the marketplace with a loaded-plugin snapshot before first render. That snapshot is initialization data, not a second source of truth; the embedded manifest remains the authority for installed state.
+- **Pending queues drained at construction.** `ExtensionManager::initComponents()` runs `applyPendingUninstalls()` then `applyPendingInstalls()` before computing the installed snapshot, so restart-deferred work is processed regardless of which `MarketplaceWindow` constructor (or host wiring) ends up using the manager.
+- **Restart-cleanup marker honors write failures.** `schedulePendingUninstall` returns `bool`; if the marker file cannot be written the in-memory entry is left intact and `uninstallError` is emitted, so a Windows uninstall that cannot mark the directory does not silently revert on the next start.
+- **Broken staged installs are quarantined, not retried forever.** When `applyPendingInstalls` fails to remove a rejected stage, the directory is renamed to `.pj_quarantine_<name>_<uuid>/` next to it. The next startup ignores quarantine entries and reports the path in the diagnostic so the user can inspect and clean it up.
+
+#### ExtensionManager — Diagnostic propagation
+
+`ExtensionManager` exposes its diagnostics three ways simultaneously:
+
+| Channel | Audience | Notes |
+|---------|----------|-------|
+| `diagnostics()` accessor + 50-entry ring buffer | UI snapshot at any time | The marketplace window's "Diagnostics" dialog reads this. |
+| `diagnosticReported(QString id, QString message, bool is_error)` Qt signal | Standalone marketplace UI | Pushes into the status bar. |
+| Optional `PJ::DiagnosticSink` constructor parameter | Embedding hosts | Lets `PluginRegistry`, `ExtensionManager`, and any other module feed one chronological stream into a single GUI sink. |
+
+See `pj_base/include/pj_base/diagnostic_sink.hpp` for the sink contract; the standalone `pj_marketplace_app` does not pass a sink, preserving the previous behavior unchanged.
 
 ---
 
 ## 4. Key Flows
 
 ### 4.1 Installation Flow
+
+Both the immediate (Linux/macOS) and deferred (Windows) paths extract the
+download into a hidden transaction directory (`.pj_install_<id>_<uuid>/`) on
+the same filesystem as its final destination, so the eventual rename is
+atomic. The DSO is **dlopened and its embedded manifest validated** inside
+the transaction directory before promotion, then **re-validated at the final
+location** after the rename — this catches DSOs that depend on rpath/relative
+paths that hold in the staging area but break in `extensions/`. On failure
+the transaction directory is removed and no partial state survives.
 
 ![Installation Flow](diagrams/installation-flow.png)
 
@@ -225,12 +254,12 @@ start
 :Download ZIP;
 :Verify SHA256;
 if (Checksum OK?) then (yes)
-  :Extract to extensions/;
-  :Load DSO manifest;
-  :Validate registry id/version;
   if (Is update?) then (yes)
     :Backup current;
   endif
+  :Extract to extensions/;
+  :Load DSO manifest;
+  :Validate registry id/version;
   :Register discovery cache;
 else (no)
   :Error: invalid checksum;
@@ -255,7 +284,7 @@ title Windows Staging Flow
 
 start
 :Download ZIP;
-:Extract to .extension_windows_staging/{id}/;
+:Extract to .extension_staging/{id}/;
 :Load DSO manifest;
 :Validate registry id/version;
 :Write .pj_pending_install intent;
@@ -267,7 +296,7 @@ start
 :Read .pj_pending_install intent;
 :Validate staged DSO manifest;
 if (Valid?) then (yes)
-:Move .extension_windows_staging/{id}/ to extensions/{id}/;
+:Move .extension_staging/{id}/ to extensions/{id}/;
   :Plugin active;
 else (no)
   :Remove broken stage;
@@ -321,21 +350,21 @@ stop
 
 ### 5.1 Installation Directories
 
+The root is `QStandardPaths::GenericDataLocation` + `/plotjuggler` (Linux: `~/.local/share/plotjuggler/`, macOS: `~/Library/Application Support/plotjuggler/`, Windows: `%LOCALAPPDATA%/plotjuggler/`).
+
 ```
-~/.plotjuggler/
-├── extensions/              # Active plugins
+<config-root>/
+├── extensions/                      # Active plugins
 │   ├── ros2-streaming/
 │   │   ├── libros2_streaming.so
 │   │   └── ros2_streaming.ui
 │   └── csv-loader/
 │       └── libcsv_loader.so
-├── .extension_windows_staging/ # Staging area (Windows)
-│   └── ros2-streaming/      # Ready to install on restart
-├── .backup/                 # Non-Windows update backups; automatic rollback deferred
-│   ├── ros2-streaming-1.2.2/
-│   └── csv-loader-0.9.0/
-└── .cache/                  # Registry cache
-    └── registry.json
+├── .extension_staging/      # Staging area (Windows)
+│   └── ros2-streaming/              # Ready to install on restart
+└── .backup/                         # Non-Windows update backups; automatic rollback deferred
+    ├── ros2-streaming-1.2.2/
+    └── csv-loader-0.9.0/
 ```
 
 ### 5.2 Extension ZIP Structure
@@ -404,41 +433,12 @@ Binary compatibility (ABI) is the biggest technical challenge:
 
 ### 7.1 CMakeLists.txt (Marketplace)
 
-```cmake
-cmake_minimum_required(VERSION 3.16)
-project(pj_marketplace VERSION 1.0.0 LANGUAGES CXX)
+The actual CMakeLists.txt is the source of truth — see `pj_marketplace/CMakeLists.txt`. Notable points:
 
-set(CMAKE_CXX_STANDARD 17)
-set(CMAKE_CXX_STANDARD_REQUIRED ON)
-set(CMAKE_AUTOMOC ON)
-set(CMAKE_AUTORCC ON)
-set(CMAKE_AUTOUIC ON)
-
-find_package(Qt6 REQUIRED COMPONENTS Widgets Network)
-find_package(LibArchive REQUIRED)
-
-add_library(pj_marketplace SHARED
-    src/models/Extension.cpp
-    src/core/RegistryManager.cpp
-    src/core/ExtensionManager.cpp
-    src/core/DownloadManager.cpp
-    src/core/PlatformUtils.cpp
-    src/ui/MarketplaceWindow.cpp
-    src/ui/marketplace_window.cpp
-    src/ui/extension_detail_dialog.cpp
-    resources/marketplace.qrc
-)
-
-target_link_libraries(pj_marketplace PRIVATE
-    Qt6::Widgets
-    Qt6::Network
-    LibArchive::LibArchive
-)
-
-target_include_directories(pj_marketplace PUBLIC
-    ${CMAKE_CURRENT_SOURCE_DIR}/src
-)
-```
+- The marketplace splits into two static libs: `pj_marketplace` (core: ExtensionManager, RegistryManager, DownloadManager, PlatformUtils) and `pj_marketplace_ui` (MarketplaceWindow, ExtensionDetailDialog).
+- `pj_marketplace` depends on `pj_plugin_catalog` (from `pj_plugins/`) for embedded-DSO-manifest discovery; the standalone build inlines the same `plugin_catalog.cpp` source.
+- C++20, `-Wall -Wextra -Werror -Wshadow -Wnon-virtual-dtor -Wold-style-cast -Wcast-qual -Wconversion -Woverloaded-virtual -Wpedantic`.
+- Tests built only when fixture plugin targets exist (`mock_data_source_plugin`, `mock_file_source_plugin`, `mock_data_source_v2_plugin`, `missing_id_data_source_plugin`).
 
 ### 7.2 Dummy Plugin CMakeLists.txt (POC)
 

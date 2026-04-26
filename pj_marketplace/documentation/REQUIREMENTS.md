@@ -40,11 +40,12 @@ PlotJuggler has grown significantly, evolving from an internal tool to a de fact
 |                    | Automatic backup     | Backup of previous version before updating                    |
 | **Uninstallation** | Clean removal        | Directory deletion + local state update                       |
 |                    | Confirmation         | Confirmation dialog before uninstalling                       |
-| **Management**     | Enable/Disable       | Activate/deactivate extensions without uninstalling           |
+| **Management**     | Enable/Disable       | Activate/deactivate extensions without uninstalling (planned — see TODO.md) |
 |                    | Backup diagnostics   | Report retained backup paths when an update install fails     |
 |                    | Persistent state     | Installed state derived from plugin DSOs; each embedded plugin manifest is the source of truth |
-|                    | Registry URL settings | Configure registry URL at runtime via ⚙ settings dialog; change triggers immediate refresh |
+|                    | Registry URL settings | Configure registry URL at runtime via ⚙ settings dialog; rejects URLs with non-http(s)/file scheme; change triggers immediate refresh |
 |                    | Registry URL persistence | Last configured registry URL saved and restored between sessions |
+|                    | Unified diagnostics  | All lifecycle events (install / staged-promotion / quarantine / uninstall failures, registry-fetch errors) are surfaced through `ExtensionManager::diagnosticReported`, the in-memory ring buffer, AND an optional `PJ::DiagnosticSink` so embedding hosts can fold marketplace events into their own diagnostic stream |
 | **UI/UX**          | Download progress    | Progress bar in status bar                                    |
 |                    | Notifications        | Status messages and available update alerts                   |
 |                    | Context menu         | Quick actions per installed extension                         |

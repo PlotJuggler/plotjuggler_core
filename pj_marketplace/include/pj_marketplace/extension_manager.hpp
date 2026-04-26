@@ -7,6 +7,7 @@
 #include <QObject>
 #include <QString>
 
+#include "pj_base/diagnostic_sink.hpp"
 #include "pj_marketplace/extension.hpp"
 #include "pj_marketplace/installed_extension.hpp"
 #include "pj_marketplace/platform_utils.hpp"
@@ -33,9 +34,12 @@ class ExtensionManager : public QObject {
   ExtensionManager();
 
   // Uses the supplied downloader and directories; tests pass isolated temp paths.
+  // The optional sink receives the same diagnostics as diagnosticReported() —
+  // hosts can subscribe to one stream that also carries non-marketplace events.
   explicit ExtensionManager(
       DownloadManager* downloader, const QString& extensions_dir = PlatformUtils::extensionsDir(),
-      const QString& pending_dir = PlatformUtils::pendingDir(), QObject* parent = nullptr);
+      const QString& pending_dir = PlatformUtils::pendingDir(), DiagnosticSink sink = {},
+      QObject* parent = nullptr);
 
   // Starts an async install for the current platform.
   void install(const Extension& ext);
@@ -129,7 +133,9 @@ class ExtensionManager : public QObject {
   void disconnectDlConns();
 
   // Writes the restart-cleanup marker into an installed extension directory.
-  void schedulePendingUninstall(const QString& path);
+  // Returns false if the marker file could not be created — caller must NOT remove
+  // the in-memory entry in that case, otherwise the directory will leak.
+  bool schedulePendingUninstall(const QString& path);
 
   // Appends a diagnostic and notifies observers.
   void reportDiagnostic(const QString& id, const QString& message, bool is_error);
@@ -143,6 +149,7 @@ class ExtensionManager : public QObject {
   DownloadManager* downloader_ = nullptr;
   QString extensions_dir_;
   QString pending_dir_;
+  DiagnosticSink sink_;
 
   QMap<QString, InstalledExtension> installed_;
 

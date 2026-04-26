@@ -80,22 +80,26 @@ target_link_libraries(pj_marketplace_ui PUBLIC
 )
 
 # pj_base provides expected.hpp (header-only for our usage).
-# When built as part of plotjuggler_core the target already exists;
-# in standalone mode we expose the include directory directly.
+# When built as part of plotjuggler_core the targets already exist;
+# in standalone mode we synthesize a pj_plugin_catalog target so downstream
+# consumers always link a single, non-duplicated symbol set regardless of build mode.
 if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
   find_package(nlohmann_json REQUIRED)
-  target_sources(pj_marketplace PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/../pj_plugins/src/plugin_catalog.cpp
-  )
-  target_include_directories(pj_marketplace PUBLIC
-    ${CMAKE_CURRENT_SOURCE_DIR}/../pj_base/include
-    ${CMAKE_CURRENT_SOURCE_DIR}/../pj_plugins/include
-    ${CMAKE_CURRENT_SOURCE_DIR}/../pj_plugins/dialog_protocol/include
-  )
-  target_link_libraries(pj_marketplace PUBLIC
-    nlohmann_json::nlohmann_json
-    ${CMAKE_DL_LIBS}
-  )
+  if(NOT TARGET pj_plugin_catalog)
+    add_library(pj_plugin_catalog STATIC
+      ${CMAKE_CURRENT_SOURCE_DIR}/../pj_plugins/src/plugin_catalog.cpp
+    )
+    target_include_directories(pj_plugin_catalog PUBLIC
+      ${CMAKE_CURRENT_SOURCE_DIR}/../pj_base/include
+      ${CMAKE_CURRENT_SOURCE_DIR}/../pj_plugins/include
+      ${CMAKE_CURRENT_SOURCE_DIR}/../pj_plugins/dialog_protocol/include
+    )
+    target_link_libraries(pj_plugin_catalog PUBLIC
+      nlohmann_json::nlohmann_json
+      ${CMAKE_DL_LIBS}
+    )
+  endif()
+  target_link_libraries(pj_marketplace PUBLIC pj_plugin_catalog)
 else()
   target_link_libraries(pj_marketplace PUBLIC pj_base pj_plugin_catalog)
 endif()

@@ -5,7 +5,7 @@ title Windows Staging Flow
 
 start
 :Download ZIP;
-:Extract to .extension_windows_staging/{id}/;
+:Extract to .extension_staging/{id}/;
 :Load DSO manifest;
 :Validate registry id/version;
 :Write .pj_pending_install intent;
@@ -17,7 +17,7 @@ start
 :Read .pj_pending_install intent;
 :Validate staged DSO manifest;
 if (Valid?) then (yes)
-:Move .extension_windows_staging/{id}/ to extensions/{id}/;
+:Move .extension_staging/{id}/ to extensions/{id}/;
   :Plugin active;
 else (no)
   :Remove broken stage;

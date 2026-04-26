@@ -131,7 +131,11 @@ This architecture has an additional advantage: **any company can have their own 
 
 ![System Architecture](diagrams/architecture.png)
 
-### 3.3 Design Principles
+### 3.3 Diagnostic propagation
+
+`ExtensionManager` exposes its lifecycle events through three channels at once: a 50-entry ring buffer accessible via `diagnostics()`, the existing `diagnosticReported(QString id, QString message, bool is_error)` Qt signal, and an optional `PJ::DiagnosticSink` (declared in `pj_base/include/pj_base/diagnostic_sink.hpp`) that is fed in addition to the other two when the host passes one to the constructor. The sink is a `std::function<void(const PJ::Diagnostic&)>` carrying a level (Info / Warning / Error), a `source` ("ExtensionManager", "PluginRegistry", …), an optional plugin/extension `id`, a message, and a timestamp. Hosts that wire the same sink into both `ExtensionManager` and any non-marketplace component (e.g. a plugin loader in the embedding app) see one unified, ordered diagnostic stream they can render in a status bar, dialog, or log file. Modules in pure C++ remain Qt-free; a Qt-aware bridge in the embedding app converts each event into a queued signal emission.
+
+### 3.4 Design Principles
 
 The design is guided by several principles that emerged from previous experiences with plugin systems:
 
@@ -606,30 +610,32 @@ The solution is a staging system similar to what Windows installers use:
 The flow is:
 
 1. User clicks "Update"
-2. New version downloads to a temporary folder (`.extension_windows_staging/`)
+2. New version downloads to a transaction folder under `.extension_staging/`
 3. The staged DSO is loaded and its embedded manifest is validated against the registry id/version
 4. A transient `.pj_pending_install` intent is written with the registry id/version
 5. Message shown: "Update will be applied when PlotJuggler restarts"
 6. When PlotJuggler starts:
-   - Detects pending updates
    - Reads `.pj_pending_install`
-   - Revalidates the staged DSO against that registry intent
-   - Moves new version from `.extension_windows_staging/` to `extensions/`
-7. If validation fails, the broken stage is removed and the active install is left untouched
+   - Validates the intent's id/version against safe-path/regex rules (rejects path traversal or non-semver tokens)
+   - Revalidates the staged DSO against that intent
+   - Moves the new version from `.extension_staging/` to `extensions/`
+   - Re-validates the DSO from its final location (catches rpath/dep issues that hold in staging but break in `extensions/`)
+7. If any validation step fails the active install is left untouched. The broken stage is removed; if removal also fails (file lock), the directory is renamed to `.pj_quarantine_<name>_<uuid>/` and the path is included in the diagnostic so the user can clean it up manually instead of facing the same error every startup.
 
 ### 11.3 Directory Structure
 
+The root is `QStandardPaths::GenericDataLocation` + `/plotjuggler` (Linux: `~/.local/share/plotjuggler/`, macOS: `~/Library/Application Support/plotjuggler/`, Windows: `%LOCALAPPDATA%/plotjuggler/`).
+
 ```
-~/.plotjuggler/
+<config-root>/
 ├── extensions/              ← Active plugins
 │   ├── ros2-streaming/
 │   └── csv-loader/
-├── .extension_windows_staging/ ← Staging (Windows)
+├── .extension_staging/      ← Staging (Windows)
 │   └── plugin-id/.pj_pending_install
-├── .backup/                 ← Non-Windows update backups; automatic rollback deferred
-│   ├── ros2-streaming-1.2.2/
-│   └── csv-loader-0.9.0/
-└── .cache/                  ← Registry cache
+└── .backup/                 ← Non-Windows update backups; automatic rollback deferred
+    ├── ros2-streaming-1.2.2/
+    └── csv-loader-0.9.0/
 ```
 
 ---

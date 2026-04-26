@@ -9,6 +9,7 @@
 #include <QMap>
 #include <QString>
 
+#include "pj_base/diagnostic_sink.hpp"
 #include "pj_marketplace/installed_extension.hpp"
 #include "pj_plugins/host/data_source_library.hpp"
 #include "pj_plugins/host/message_parser_library.hpp"
@@ -49,7 +50,10 @@ struct LoadedToolbox {
 
 class PluginRegistry {
  public:
-  explicit PluginRegistry(std::string_view plugin_dir);
+  /// `sink` (optional) receives info/warning/error events about plugin load
+  /// lifecycle. If unset, events are silently discarded — useful for tests
+  /// that don't care.
+  explicit PluginRegistry(std::string_view plugin_dir, PJ::DiagnosticSink sink = {});
 
   void scanDirectory();
   void reload();
@@ -85,7 +89,11 @@ class PluginRegistry {
   /// Try to load a Toolbox plugin and register it. Returns true on success.
   bool loadAndRegisterToolbox(const std::filesystem::path& so_path);
 
+  /// Forwards a one-shot diagnostic to sink_ if it is set.
+  void report(PJ::DiagnosticLevel level, const std::string& id, std::string message) const;
+
   std::string plugin_dir_;
+  PJ::DiagnosticSink sink_;
   std::vector<LoadedDataSource> data_sources_;
   std::vector<LoadedMessageParser> message_parsers_;
   std::vector<LoadedToolbox> toolbox_plugins_;

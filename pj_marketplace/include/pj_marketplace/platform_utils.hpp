@@ -33,7 +33,7 @@ class PlatformUtils {
   // ~/.plotjuggler/extensions/ — active, loaded extensions.
   static QString extensionsDir();
 
-  // ~/.plotjuggler/.extension_windows_staging/ - restart staging for Windows updates.
+  // <config-root>/.extension_staging/ — restart staging for Windows updates.
   static QString pendingDir();
 
   // ~/.plotjuggler/.backup/ — pre-update backups (F-12, deferred to April+).

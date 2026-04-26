@@ -1,22 +1,30 @@
 #include "plugin_registry.hpp"
 
 #include <algorithm>
+#include <utility>
 
 #include "pj_marketplace/platform_utils.hpp"
 #include <QFileInfo>
 #include <filesystem>
-#include <iostream>
 #include <nlohmann/json.hpp>
 
 namespace proto {
 
-PluginRegistry::PluginRegistry(std::string_view plugin_dir) : plugin_dir_(plugin_dir) {}
+PluginRegistry::PluginRegistry(std::string_view plugin_dir, PJ::DiagnosticSink sink)
+    : plugin_dir_(plugin_dir), sink_(std::move(sink)) {}
+
+void PluginRegistry::report(PJ::DiagnosticLevel level, const std::string& id, std::string message) const {
+  if (!sink_) {
+    return;
+  }
+  sink_(PJ::Diagnostic{level, "PluginRegistry", id, std::move(message), std::chrono::system_clock::now()});
+}
 
 bool PluginRegistry::loadAndRegisterDataSource(const std::filesystem::path& so_path) {
   auto result = PJ::DataSourceLibrary::load(so_path.string());
   if (!result) {
-    std::cerr << "  [DataSourceLibrary::load] " << so_path.filename().string() << " -> "
-              << result.error() << "\n";
+    report(PJ::DiagnosticLevel::kError, /*id*/ {},
+         "DataSourceLibrary::load failed for " + so_path.filename().string() + ": " + result.error());
     return false;
   }
   LoadedDataSource loaded;
@@ -28,18 +36,27 @@ bool PluginRegistry::loadAndRegisterDataSource(const std::filesystem::path& so_p
   loaded.capabilities = handle.capabilities();
   try {
     auto manifest = nlohmann::json::parse(handle.manifest());
-    loaded.id = manifest.value("id", so_path.stem().string());
-    loaded.name = manifest.value("name", so_path.stem().string());
-    loaded.version = manifest.value("version", so_path.stem().string());
+    if (!manifest.contains("id") || !manifest["id"].is_string() || manifest["id"].get<std::string>().empty()
+        || !manifest.contains("version") || !manifest["version"].is_string()
+        || manifest["version"].get<std::string>().empty()) {
+      report(PJ::DiagnosticLevel::kError, /*id*/ {},
+           "DataSource " + so_path.string() + ": embedded manifest missing required string fields 'id' and/or 'version'");
+      return false;
+    }
+    loaded.id = manifest["id"].get<std::string>();
+    loaded.name = manifest.value("name", loaded.id);
+    loaded.version = manifest["version"].get<std::string>();
     if (manifest.contains("file_extensions")) {
       for (const auto& ext : manifest["file_extensions"]) {
         loaded.file_extensions.push_back(ext.get<std::string>());
       }
     }
-  } catch (...) {
-    loaded.name = so_path.stem().string();
+  } catch (const nlohmann::json::exception& e) {
+    report(PJ::DiagnosticLevel::kError, /*id*/ {},
+         std::string("DataSource ") + so_path.string() + ": manifest parse failed: " + e.what());
+    return false;
   }
-  std::cerr << "Loaded DataSource: " << loaded.name << " from " << loaded.path << "\n";
+  report(PJ::DiagnosticLevel::kInfo, loaded.id, "Loaded DataSource " + loaded.name + " from " + loaded.path);
   data_sources_.push_back(std::move(loaded));
   return true;
 }
@@ -47,8 +64,8 @@ bool PluginRegistry::loadAndRegisterDataSource(const std::filesystem::path& so_p
 bool PluginRegistry::loadAndRegisterMessageParser(const std::filesystem::path& so_path) {
   auto result = PJ::MessageParserLibrary::load(so_path.string());
   if (!result) {
-    std::cerr << "  [MessageParserLibrary::load] " << so_path.filename().string() << " -> "
-              << result.error() << "\n";
+    report(PJ::DiagnosticLevel::kError, /*id*/ {},
+         "MessageParserLibrary::load failed for " + so_path.filename().string() + ": " + result.error());
     return false;
   }
   LoadedMessageParser loaded;
@@ -59,30 +76,36 @@ bool PluginRegistry::loadAndRegisterMessageParser(const std::filesystem::path& s
   auto handle = loaded.library.createHandle();
   try {
     auto manifest = nlohmann::json::parse(handle.manifest());
-    loaded.id = manifest.value("id", so_path.stem().string());
-    loaded.name = manifest.value("name", so_path.stem().string());
-    loaded.version = manifest.value("version", so_path.stem().string());
-    // Helper to push encoding(s) from a JSON value (string or array of strings)
-    auto push_encodings = [&](const nlohmann::json& enc) {
-    if (enc.is_array()) {
-        for (const auto& e : enc) {
-          if (e.is_string()) {
-            loaded.encodings.push_back(e.get<std::string>());
-          }
+    if (!manifest.contains("id") || !manifest["id"].is_string() || manifest["id"].get<std::string>().empty()
+        || !manifest.contains("version") || !manifest["version"].is_string()
+        || manifest["version"].get<std::string>().empty()) {
+      report(PJ::DiagnosticLevel::kError, /*id*/ {},
+           "MessageParser " + so_path.string() +
+               ": embedded manifest missing required string fields 'id' and/or 'version'");
+      return false;
+    }
+    loaded.id = manifest["id"].get<std::string>();
+    loaded.name = manifest.value("name", loaded.id);
+    loaded.version = manifest["version"].get<std::string>();
+    if (manifest.contains("encoding")) {
+      const auto& enc = manifest["encoding"];
+      if (!enc.is_array()) {
+        report(PJ::DiagnosticLevel::kError, loaded.id,
+             "MessageParser " + so_path.string() + ": 'encoding' must be an array of strings");
+        return false;
+      }
+      for (const auto& e : enc) {
+        if (e.is_string()) {
+          loaded.encodings.push_back(e.get<std::string>());
         }
       }
-      else {
-        std::cerr << "Error: 'encoding' field must be an array in plugin '" << loaded.name << "' (" << so_path.string() << "). Single string format is no longer supported." << std::endl;
-      }
-    };
-    // Primary encoding field
-    if (manifest.contains("encoding")) {
-      push_encodings(manifest["encoding"]);
     }
-  } catch (...) {
-    loaded.name = so_path.stem().string();
+  } catch (const nlohmann::json::exception& e) {
+    report(PJ::DiagnosticLevel::kError, /*id*/ {},
+         std::string("MessageParser ") + so_path.string() + ": manifest parse failed: " + e.what());
+    return false;
   }
-  std::cerr << "Loaded MessageParser: " << loaded.name << " from " << loaded.path << "\n";
+  report(PJ::DiagnosticLevel::kInfo, loaded.id, "Loaded MessageParser " + loaded.name + " from " + loaded.path);
   message_parsers_.push_back(std::move(loaded));
   return true;
 }
@@ -90,8 +113,8 @@ bool PluginRegistry::loadAndRegisterMessageParser(const std::filesystem::path& s
 bool PluginRegistry::loadAndRegisterToolbox(const std::filesystem::path& so_path) {
   auto result = PJ::ToolboxLibrary::load(so_path.string());
   if (!result) {
-    std::cerr << "  [ToolboxLibrary::load] " << so_path.filename().string() << " -> "
-              << result.error() << "\n";
+    report(PJ::DiagnosticLevel::kError, /*id*/ {},
+         "ToolboxLibrary::load failed for " + so_path.filename().string() + ": " + result.error());
     return false;
   }
   LoadedToolbox loaded;
@@ -103,13 +126,22 @@ bool PluginRegistry::loadAndRegisterToolbox(const std::filesystem::path& so_path
   loaded.capabilities = handle.capabilities();
   try {
     auto manifest = nlohmann::json::parse(handle.manifest());
-    loaded.id = manifest.value("id", so_path.stem().string());
-    loaded.name = manifest.value("name", so_path.stem().string());
-    loaded.version = manifest.value("version", so_path.stem().string());
-  } catch (...) {
-    loaded.name = so_path.stem().string();
+    if (!manifest.contains("id") || !manifest["id"].is_string() || manifest["id"].get<std::string>().empty()
+        || !manifest.contains("version") || !manifest["version"].is_string()
+        || manifest["version"].get<std::string>().empty()) {
+      report(PJ::DiagnosticLevel::kError, /*id*/ {},
+           "Toolbox " + so_path.string() + ": embedded manifest missing required string fields 'id' and/or 'version'");
+      return false;
+    }
+    loaded.id = manifest["id"].get<std::string>();
+    loaded.name = manifest.value("name", loaded.id);
+    loaded.version = manifest["version"].get<std::string>();
+  } catch (const nlohmann::json::exception& e) {
+    report(PJ::DiagnosticLevel::kError, /*id*/ {},
+         std::string("Toolbox ") + so_path.string() + ": manifest parse failed: " + e.what());
+    return false;
   }
-  std::cerr << "Loaded Toolbox: " << loaded.name << " from " << loaded.path << "\n";
+  report(PJ::DiagnosticLevel::kInfo, loaded.id, "Loaded Toolbox " + loaded.name + " from " + loaded.path);
   toolbox_plugins_.push_back(std::move(loaded));
   return true;
 }
@@ -118,28 +150,19 @@ void PluginRegistry::scanDirectory() {
   namespace fs = std::filesystem;
 
   std::error_code ec;
-  const auto abs = fs::absolute(plugin_dir_, ec);
-  std::cerr << "[scanDirectory] plugin_dir_ = '" << plugin_dir_ << "' absolute = '"
-            << abs.string() << "' (ec=" << ec.message() << ")\n";
-
   if (!fs::is_directory(plugin_dir_, ec)) {
-    std::cerr << "Plugin directory not found: " << plugin_dir_
-              << " (is_directory ec=" << ec.message() << ")\n";
+    report(PJ::DiagnosticLevel::kError, /*id*/ {},
+         "Plugin directory not found: " + plugin_dir_ + " (" + ec.message() + ")");
     return;
   }
 
   const std::string expected_ext = PJ::PlatformUtils::pluginExtension();
-  std::cerr << "[scanDirectory] expected extension = '" << expected_ext << "'\n";
 
   std::size_t walked = 0;
   std::size_t matched = 0;
   for (const auto& entry : fs::recursive_directory_iterator(plugin_dir_, ec)) {
     ++walked;
-    const bool is_file = entry.is_regular_file();
-    const auto ext = entry.path().extension().string();
-    std::cerr << "[scanDirectory] visit: " << entry.path() << " (regular_file=" << is_file
-              << " ext='" << ext << "')\n";
-    if (!is_file || ext != expected_ext) {
+    if (!entry.is_regular_file() || entry.path().extension().string() != expected_ext) {
       continue;
     }
     ++matched;
@@ -147,18 +170,19 @@ void PluginRegistry::scanDirectory() {
     const bool ok_mp = !ok_ds && loadAndRegisterMessageParser(entry.path());
     const bool ok_tb = !ok_ds && !ok_mp && loadAndRegisterToolbox(entry.path());
     if (!ok_ds && !ok_mp && !ok_tb) {
-      std::cerr << "Failed to load plugin: " << entry.path() << "\n";
+      report(PJ::DiagnosticLevel::kError, /*id*/ {}, "Failed to load plugin: " + entry.path().string());
     }
   }
-  std::cerr << "[scanDirectory] done. walked=" << walked << " matched=" << matched
-            << " (iter ec=" << ec.message() << ")\n";
+  report(PJ::DiagnosticLevel::kInfo, /*id*/ {},
+       "Plugin scan done: walked=" + std::to_string(walked) + " matched=" + std::to_string(matched)
+           + (ec ? std::string(" (iter ec=") + ec.message() + ")" : std::string{}));
 }
 
 void PluginRegistry::reload() {
   namespace fs = std::filesystem;
 
   if (!fs::is_directory(plugin_dir_)) {
-    std::cerr << "Plugin directory not found: " << plugin_dir_ << "\n";
+    report(PJ::DiagnosticLevel::kError, /*id*/ {}, "Plugin directory not found: " + plugin_dir_);
     return;
   }
 
@@ -178,21 +202,21 @@ void PluginRegistry::reload() {
   };
   std::erase_if(data_sources_, [&](const LoadedDataSource& ds) {
     if (is_gone(ds.path)) {
-      std::cerr << "Unloaded DataSource (removed): " << ds.path << "\n";
+      report(PJ::DiagnosticLevel::kInfo, ds.id, "Unloaded DataSource (removed from disk): " + ds.path);
       return true;
     }
     return false;
   });
   std::erase_if(message_parsers_, [&](const LoadedMessageParser& mp) {
     if (is_gone(mp.path)) {
-      std::cerr << "Unloaded MessageParser (removed): " << mp.path << "\n";
+      report(PJ::DiagnosticLevel::kInfo, mp.id, "Unloaded MessageParser (removed from disk): " + mp.path);
       return true;
     }
     return false;
   });
   std::erase_if(toolbox_plugins_, [&](const LoadedToolbox& tb) {
     if (is_gone(tb.path)) {
-      std::cerr << "Unloaded Toolbox (removed): " << tb.path << "\n";
+      report(PJ::DiagnosticLevel::kInfo, tb.id, "Unloaded Toolbox (removed from disk): " + tb.path);
       return true;
     }
     return false;
@@ -209,7 +233,7 @@ void PluginRegistry::reload() {
       if (disk_mtime <= ds_it->loaded_mtime) {
         continue;
       }
-      std::cerr << "Reloading updated DataSource: " << path_str << "\n";
+      report(PJ::DiagnosticLevel::kInfo, ds_it->id, "Reloading updated DataSource: " + path_str);
       data_sources_.erase(ds_it);
     } else {
       auto mp_it = std::find_if(message_parsers_.begin(), message_parsers_.end(),
@@ -218,7 +242,7 @@ void PluginRegistry::reload() {
         if (disk_mtime <= mp_it->loaded_mtime) {
           continue;
         }
-        std::cerr << "Reloading updated MessageParser: " << path_str << "\n";
+        report(PJ::DiagnosticLevel::kInfo, mp_it->id, "Reloading updated MessageParser: " + path_str);
         message_parsers_.erase(mp_it);
       } else {
         auto tb_it = std::find_if(toolbox_plugins_.begin(), toolbox_plugins_.end(),
@@ -227,7 +251,7 @@ void PluginRegistry::reload() {
           if (disk_mtime <= tb_it->loaded_mtime) {
             continue;
           }
-          std::cerr << "Reloading updated Toolbox: " << path_str << "\n";
+          report(PJ::DiagnosticLevel::kInfo, tb_it->id, "Reloading updated Toolbox: " + path_str);
           toolbox_plugins_.erase(tb_it);
         }
       }
@@ -236,7 +260,7 @@ void PluginRegistry::reload() {
     if (!loadAndRegisterDataSource(so_path) &&
         !loadAndRegisterMessageParser(so_path) &&
         !loadAndRegisterToolbox(so_path)) {
-      std::cerr << "Failed to load plugin: " << path_str << "\n";
+      report(PJ::DiagnosticLevel::kError, /*id*/ {}, "Failed to load plugin: " + path_str);
     }
   }
 }

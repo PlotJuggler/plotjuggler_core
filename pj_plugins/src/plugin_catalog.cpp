@@ -319,23 +319,36 @@ Expected<PluginScanResult> scanPluginDsos(const std::filesystem::path& directory
   }
 
   PluginScanResult result;
-  for (const auto& entry : std::filesystem::recursive_directory_iterator(directory, ec)) {
-    if (ec) {
-      result.diagnostics.push_back({directory, "directory iteration failed: " + ec.message()});
-      break;
+  // Use the increment-with-error-code overload so a single inaccessible subtree
+  // (e.g. one extension dir owned by another user) doesn't terminate the entire
+  // scan and silently hide every later extension from the marketplace.
+  std::filesystem::recursive_directory_iterator it(directory, ec);
+  if (ec) {
+    result.diagnostics.push_back({directory, "directory iteration failed: " + ec.message()});
+    return result;
+  }
+  const std::filesystem::recursive_directory_iterator end;
+  while (it != end) {
+    const auto entry = *it;
+    std::error_code entry_ec;
+    const bool is_file = entry.is_regular_file(entry_ec);
+    if (!entry_ec && is_file && hasDsoSuffix(entry.path())) {
+      auto descriptor = inspectPluginDso(entry.path());
+      if (descriptor) {
+        result.plugins.push_back(std::move(*descriptor));
+      } else {
+        result.diagnostics.push_back({entry.path(), descriptor.error()});
+      }
+    } else if (entry_ec) {
+      result.diagnostics.push_back({entry.path(), "stat failed: " + entry_ec.message()});
     }
-    if (!entry.is_regular_file()) {
-      continue;
-    }
-    const auto path = entry.path();
-    if (!hasDsoSuffix(path)) {
-      continue;
-    }
-    auto descriptor = inspectPluginDso(path);
-    if (descriptor) {
-      result.plugins.push_back(std::move(*descriptor));
-    } else {
-      result.diagnostics.push_back({path, descriptor.error()});
+
+    std::error_code inc_ec;
+    it.increment(inc_ec);
+    if (inc_ec) {
+      result.diagnostics.push_back({entry.path(), "directory iteration failed: " + inc_ec.message()});
+      // Skip the unreadable subtree but continue with the rest of the scan.
+      it.pop();
     }
   }
 

@@ -61,7 +61,7 @@ TEST(ExtensionManagerIntegrationTest, InstallCanBusParserUsingRegistry) {
   // 3. Prepare destination directories
   // ---------------------------------------------------------------------------
   const QString ext_dir = QStringLiteral(RESULTS_DIR) + "/extensions";
-  const QString pending_dir = QStringLiteral(RESULTS_DIR) + "/.extension_windows_staging";
+  const QString pending_dir = QStringLiteral(RESULTS_DIR) + "/.extension_staging";
   ASSERT_TRUE(QDir().mkpath(ext_dir)) << "Could not create extensions directory: " << ext_dir.toStdString();
   ASSERT_TRUE(QDir().mkpath(pending_dir)) << "Could not create pending directory: " << pending_dir.toStdString();
 

@@ -2,6 +2,7 @@
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
+#include <QRegularExpression>
 #include <QStorageInfo>
 #include <QUuid>
 #include <QVersionNumber>
@@ -18,6 +19,7 @@ namespace {
 
 static constexpr const char* kPendingUninstallMarker = ".pj_pending_uninstall";
 static constexpr const char* kPendingInstallIntent = ".pj_pending_install";
+static constexpr const char* kQuarantinePrefix = ".pj_quarantine_";
 static constexpr int kMaxDiagnostics = 50;
 
 QString extRoot(const QString& extensions_dir, const QString& id) {
@@ -182,9 +184,24 @@ PendingInstallIntent readPendingInstallIntent(const QString& root) {
     return intent;
   }
 
+  const QString id = QString::fromUtf8(lines[0].trimmed());
+  const QString version = QString::fromUtf8(lines[1].trimmed());
+  // Defend against tampered or corrupted intent files: a path-traversal id, or a
+  // version that contains anything outside the semver alphabet, must not be
+  // trusted later as a directory name or version comparison input.
+  if (const QString id_error = invalidExtensionIdReason(id); !id_error.isEmpty()) {
+    intent.error = QString("Staged install registry intent has unsafe id: %1").arg(id_error);
+    return intent;
+  }
+  static const QRegularExpression kVersionRe(QStringLiteral("^[0-9A-Za-z._+-]+$"));
+  if (!kVersionRe.match(version).hasMatch()) {
+    intent.error = QString("Staged install registry intent has unsafe version \"%1\"").arg(version);
+    return intent;
+  }
+
   intent.valid = true;
-  intent.id = QString::fromUtf8(lines[0].trimmed());
-  intent.version = QString::fromUtf8(lines[1].trimmed());
+  intent.id = id;
+  intent.version = version;
   return intent;
 }
 
@@ -200,8 +217,13 @@ ExtensionManager::ExtensionManager()
 }
 
 ExtensionManager::ExtensionManager(
-    DownloadManager* downloader, const QString& extensions_dir, const QString& pending_dir, QObject* parent)
-    : QObject(parent), downloader_(downloader), extensions_dir_(extensions_dir), pending_dir_(pending_dir) {
+    DownloadManager* downloader, const QString& extensions_dir, const QString& pending_dir, DiagnosticSink sink,
+    QObject* parent)
+    : QObject(parent),
+      downloader_(downloader),
+      extensions_dir_(extensions_dir),
+      pending_dir_(pending_dir),
+      sink_(std::move(sink)) {
   initComponents();
 }
 
@@ -209,7 +231,14 @@ void ExtensionManager::initComponents() {
   if (!downloader_) {
     downloader_ = new DownloadManager(this);
   }
-  QDir().mkpath(extensions_dir_);
+  if (!QDir().mkpath(extensions_dir_)) {
+    reportDiagnostic({}, QString("Could not create extensions directory \"%1\"").arg(extensions_dir_), true);
+  }
+  // Drain any restart-deferred work before computing the installed snapshot, so the
+  // result reflects post-promotion / post-cleanup reality regardless of which
+  // MarketplaceWindow ctor (or host wiring) ends up using this manager.
+  applyPendingUninstalls();
+  applyPendingInstalls();
   refreshInstalledFromDisk();
 }
 
@@ -245,6 +274,13 @@ void ExtensionManager::doInstall(const Extension& ext, bool staging, bool allow_
   }
   const Platform& artifact = ext.platforms[platform];
 
+  // Extraction goes into a hidden transaction directory on the same filesystem
+  // as the final destination, so the eventual rename is atomic. For deferred
+  // (Windows) staging that's pending_dir_; for immediate promotion we extract
+  // beside extensions_dir_ and rename in-place after validation.
+  // The DSO is dlopened and its embedded manifest verified inside the
+  // transaction directory BEFORE the rename, then re-verified at the final
+  // location AFTER the rename — see the post-promotion check below.
   const QString dest_dir = staging ? pending_dir_ : extensions_dir_;
   QDir().mkpath(dest_dir);
   const QString transaction_root = makeTransactionRoot(dest_dir, ext.id);
@@ -338,34 +374,45 @@ void ExtensionManager::doInstall(const Extension& ext, bool staging, bool allow_
           return;
         }
 
+        // Double-check: the DSO loaded from the staging area; confirm it still
+        // loads from its final location. Catches issues like rpath/relative-path
+        // assumptions that hold in pending_dir_ but break in extensions_dir_.
+        const DirectoryDiscovery final_check = discoverExtensionDirectory(dst);
+        const QString final_error = validateRegistryIntent(final_check, ext.id, ext.version);
+        if (!final_error.isEmpty()) {
+          QDir(dst).removeRecursively();
+          failAfterExtraction(QString("Post-promotion validation failed: %1").arg(final_error));
+          return;
+        }
+
         removeDirectoryIfSet(transaction_root);
         pending_extract_dir_.clear();
         pending_backup_path_.clear();
-        InstalledExtension record = discovered.record;
+        InstalledExtension record = final_check.record;
         record.path = dst;
         record.install_date = QFileInfo(dst).lastModified();
         installed_[ext.id] = record;
         emit installFinished(finished_id, true);
       });
 
-  dl_failed_conn_ = connect(downloader_, &DownloadManager::failed, this, [this](int id, const QString& error) {
-    if (id != pending_op_id_) {
-      return;
-    }
-    disconnectDlConns();
-    disk_space_checked_ = false;
+  dl_failed_conn_ =
+      connect(downloader_, &DownloadManager::failed, this, [this, transaction_root](int id, const QString& error) {
+        if (id != pending_op_id_) {
+          return;
+        }
+        disconnectDlConns();
+        disk_space_checked_ = false;
 
-    const QString failed_id = pending_id_;
-    pending_id_.clear();
-    pending_op_id_ = -1;
+        const QString failed_id = pending_id_;
+        pending_id_.clear();
+        pending_op_id_ = -1;
+        pending_extract_dir_.clear();
 
-    const QString extract_dir = pending_extract_dir_;
-    pending_extract_dir_.clear();
-    removeDirectoryIfSet(extract_dir);
-    emitInstallFailure(failed_id, error);
-  });
+        removeDirectoryIfSet(transaction_root);
+        emitInstallFailure(failed_id, error);
+      });
 
-  dl_cancelled_conn_ = connect(downloader_, &DownloadManager::cancelled, this, [this](int id) {
+  dl_cancelled_conn_ = connect(downloader_, &DownloadManager::cancelled, this, [this, transaction_root](int id) {
     if (id != pending_op_id_) {
       return;
     }
@@ -375,10 +422,9 @@ void ExtensionManager::doInstall(const Extension& ext, bool staging, bool allow_
     pending_id_.clear();
     pending_op_id_ = -1;
     disk_space_checked_ = false;
-
-    const QString extract_dir = pending_extract_dir_;
     pending_extract_dir_.clear();
-    removeDirectoryIfSet(extract_dir);
+
+    removeDirectoryIfSet(transaction_root);
 
     const QString reason = cancel_reason_.isEmpty() ? "Installation was cancelled" : cancel_reason_;
     cancel_reason_.clear();
@@ -400,7 +446,12 @@ void ExtensionManager::uninstall(const QString& extension_id) {
 
   if (!QDir(dir_path).removeRecursively()) {
     if (PlatformUtils::isWindows()) {
-      schedulePendingUninstall(dir_path);
+      if (!schedulePendingUninstall(dir_path)) {
+        emitUninstallFailure(
+            extension_id,
+            QString("Could not mark \"%1\" for restart cleanup; uninstall not scheduled").arg(dir_path));
+        return;
+      }
       installed_.remove(extension_id);
       emit uninstallPendingRestart(extension_id);
     } else {
@@ -458,7 +509,8 @@ void ExtensionManager::update(const Extension& ext) {
     installed_.remove(ext.id);
   }
 
-  doInstall(ext, PlatformUtils::isWindows());
+  // The Windows branch returned earlier; here we always promote immediately.
+  doInstall(ext, /*staging=*/false, /*allow_existing=*/true);
 }
 
 void ExtensionManager::applyPendingInstalls() {
@@ -475,12 +527,28 @@ void ExtensionManager::applyPendingInstalls() {
       removeDirectoryIfSet(staged_dir);
       continue;
     }
+    if (staged_name.startsWith(kQuarantinePrefix)) {
+      // Leftover from a previous failed promotion. Skip — manual inspection only.
+      continue;
+    }
 
     auto failStagedInstall = [&](const QString& signal_id, const QString& message) {
       qWarning(
           "ExtensionManager: staged install '%s' failed validation: %s", qPrintable(staged_dir), qPrintable(message));
-      QDir(staged_dir).removeRecursively();
-      emitInstallFailure(signal_id, message);
+      QString final_message = message;
+      if (!QDir(staged_dir).removeRecursively()) {
+        // Removal can fail on Windows when the DSO is still locked by another
+        // process. Move the broken stage aside so the next startup does not
+        // re-validate the same payload and emit the same diagnostic forever.
+        const QString quarantine = QDir(pending_dir_).absoluteFilePath(
+            QString(kQuarantinePrefix) + entry.fileName() + "_" + QUuid::createUuid().toString(QUuid::Id128));
+        if (QDir().rename(staged_dir, quarantine)) {
+          final_message += QString(" Moved to quarantine: \"%1\".").arg(quarantine);
+        } else {
+          final_message += QString(" Could not remove or quarantine \"%1\" — manual cleanup required.").arg(staged_dir);
+        }
+      }
+      emitInstallFailure(signal_id, final_message);
     };
 
     if (staged_name.isEmpty()) {
@@ -538,8 +606,18 @@ void ExtensionManager::applyPendingUninstalls() {
       continue;
     }
     const QString id = entry.fileName();
-    if (QDir(entry.absoluteFilePath()).removeRecursively() && !id.isEmpty()) {
-      installed_.remove(id);
+    if (QDir(entry.absoluteFilePath()).removeRecursively()) {
+      if (!id.isEmpty()) {
+        installed_.remove(id);
+      }
+    } else {
+      // Leave the marker in place so the next startup retries; surface so the
+      // user sees that a deferred uninstall is stuck.
+      reportDiagnostic(
+          id,
+          QString("Could not remove extension directory \"%1\"; restart the application or close any process using it")
+              .arg(entry.absoluteFilePath()),
+          true);
     }
   }
 }
@@ -608,9 +686,12 @@ void ExtensionManager::disconnectDlConns() {
   disconnect(dl_cancelled_conn_);
 }
 
-void ExtensionManager::schedulePendingUninstall(const QString& path) {
+bool ExtensionManager::schedulePendingUninstall(const QString& path) {
   QFile marker(path + "/" + kPendingUninstallMarker);
-  marker.open(QIODevice::WriteOnly);  // content irrelevant; existence is the signal
+  // Content is irrelevant; existence is the signal. Failure here means the next
+  // startup's applyPendingUninstalls() will not see the marker and the directory
+  // would leak forever — surface it so the caller can fail the uninstall.
+  return marker.open(QIODevice::WriteOnly);
 }
 
 void ExtensionManager::reportDiagnostic(const QString& id, const QString& message, bool is_error) {
@@ -619,6 +700,15 @@ void ExtensionManager::reportDiagnostic(const QString& id, const QString& messag
     diagnostics_.removeFirst();
   }
   emit diagnosticReported(id, message, is_error);
+  if (sink_) {
+    sink_(Diagnostic{
+        is_error ? DiagnosticLevel::kError : DiagnosticLevel::kInfo,
+        "ExtensionManager",
+        id.toStdString(),
+        message.toStdString(),
+        std::chrono::system_clock::now(),
+    });
+  }
 }
 
 void ExtensionManager::emitInstallFailure(const QString& id, const QString& message) {
