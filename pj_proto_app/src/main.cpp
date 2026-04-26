@@ -1,6 +1,10 @@
 #include <QApplication>
 #include <QCommandLineParser>
+#include <QDebug>
+#include <QDir>
 #include <QTimer>
+
+#include <filesystem>
 
 #include "main_window.hpp"
 
@@ -26,6 +30,20 @@ int main(int argc, char* argv[]) {
   parser.process(app);
 
   auto plugin_dir = parser.value(plugin_dir_opt).toStdString();
+
+  qDebug() << "[plugin-dir] argv raw value :" << parser.value(plugin_dir_opt);
+  qDebug() << "[plugin-dir] cwd            :" << QDir::currentPath();
+  {
+    std::error_code ec;
+    auto abs = std::filesystem::absolute(plugin_dir, ec);
+    qDebug() << "[plugin-dir] absolute       :" << QString::fromStdString(abs.string())
+             << "(absolute err:" << QString::fromStdString(ec.message()) << ")";
+    auto canon = std::filesystem::weakly_canonical(plugin_dir, ec);
+    qDebug() << "[plugin-dir] weakly_canon   :" << QString::fromStdString(canon.string())
+             << "(canon err:" << QString::fromStdString(ec.message()) << ")";
+    qDebug() << "[plugin-dir] exists         :" << std::filesystem::exists(plugin_dir, ec)
+             << " is_directory:" << std::filesystem::is_directory(plugin_dir, ec);
+  }
 
   proto::MainWindow window(plugin_dir);
   window.resize(1200, 700);

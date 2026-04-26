@@ -7,3 +7,5 @@ pj_media/testdata/
 /perf.data*
 /.qt/
 /.vscode/*
+/CMakeUserPresets.json
+/aqtinstall.log

@@ -14,6 +14,8 @@ PluginRegistry::PluginRegistry(std::string_view plugin_dir) : plugin_dir_(plugin
 bool PluginRegistry::loadAndRegisterDataSource(const std::filesystem::path& so_path) {
   auto result = PJ::DataSourceLibrary::load(so_path.string());
   if (!result) {
+    std::cerr << "  [DataSourceLibrary::load] " << so_path.filename().string() << " -> "
+              << result.error() << "\n";
     return false;
   }
   LoadedDataSource loaded;
@@ -42,6 +44,8 @@ bool PluginRegistry::loadAndRegisterDataSource(const std::filesystem::path& so_p
 bool PluginRegistry::loadAndRegisterMessageParser(const std::filesystem::path& so_path) {
   auto result = PJ::MessageParserLibrary::load(so_path.string());
   if (!result) {
+    std::cerr << "  [MessageParserLibrary::load] " << so_path.filename().string() << " -> "
+              << result.error() << "\n";
     return false;
   }
   LoadedMessageParser loaded;
@@ -81,6 +85,8 @@ bool PluginRegistry::loadAndRegisterMessageParser(const std::filesystem::path& s
 bool PluginRegistry::loadAndRegisterToolbox(const std::filesystem::path& so_path) {
   auto result = PJ::ToolboxLibrary::load(so_path.string());
   if (!result) {
+    std::cerr << "  [ToolboxLibrary::load] " << so_path.filename().string() << " -> "
+              << result.error() << "\n";
     return false;
   }
   LoadedToolbox loaded;
@@ -104,22 +110,41 @@ bool PluginRegistry::loadAndRegisterToolbox(const std::filesystem::path& so_path
 void PluginRegistry::scanDirectory() {
   namespace fs = std::filesystem;
 
-  if (!fs::is_directory(plugin_dir_)) {
-    std::cerr << "Plugin directory not found: " << plugin_dir_ << "\n";
+  std::error_code ec;
+  const auto abs = fs::absolute(plugin_dir_, ec);
+  std::cerr << "[scanDirectory] plugin_dir_ = '" << plugin_dir_ << "' absolute = '"
+            << abs.string() << "' (ec=" << ec.message() << ")\n";
+
+  if (!fs::is_directory(plugin_dir_, ec)) {
+    std::cerr << "Plugin directory not found: " << plugin_dir_
+              << " (is_directory ec=" << ec.message() << ")\n";
     return;
   }
 
-  for (const auto& entry : fs::recursive_directory_iterator(plugin_dir_)) {
-    if (!entry.is_regular_file() ||
-        entry.path().extension() != PJ::PlatformUtils::pluginExtension()) {
+  const std::string expected_ext = PJ::PlatformUtils::pluginExtension();
+  std::cerr << "[scanDirectory] expected extension = '" << expected_ext << "'\n";
+
+  std::size_t walked = 0;
+  std::size_t matched = 0;
+  for (const auto& entry : fs::recursive_directory_iterator(plugin_dir_, ec)) {
+    ++walked;
+    const bool is_file = entry.is_regular_file();
+    const auto ext = entry.path().extension().string();
+    std::cerr << "[scanDirectory] visit: " << entry.path() << " (regular_file=" << is_file
+              << " ext='" << ext << "')\n";
+    if (!is_file || ext != expected_ext) {
       continue;
     }
-    if (!loadAndRegisterDataSource(entry.path()) &&
-        !loadAndRegisterMessageParser(entry.path()) &&
-        !loadAndRegisterToolbox(entry.path())) {
+    ++matched;
+    const bool ok_ds = loadAndRegisterDataSource(entry.path());
+    const bool ok_mp = !ok_ds && loadAndRegisterMessageParser(entry.path());
+    const bool ok_tb = !ok_ds && !ok_mp && loadAndRegisterToolbox(entry.path());
+    if (!ok_ds && !ok_mp && !ok_tb) {
       std::cerr << "Failed to load plugin: " << entry.path() << "\n";
     }
   }
+  std::cerr << "[scanDirectory] done. walked=" << walked << " matched=" << matched
+            << " (iter ec=" << ec.message() << ")\n";
 }
 
 void PluginRegistry::reload() {
