@@ -41,6 +41,7 @@ if(PJ_BUILD_TESTS)
   )
   target_compile_definitions(proto_plugin_registry_test PRIVATE
     PJ_MOCK_DATA_SOURCE_PLUGIN_PATH="$<TARGET_FILE:mock_data_source_plugin>"
+    PJ_MOCK_JSON_PARSER_PLUGIN_PATH="$<TARGET_FILE:mock_json_parser_plugin>"
   )
   target_link_libraries(proto_plugin_registry_test PRIVATE
     pj_datastore
@@ -52,7 +53,7 @@ if(PJ_BUILD_TESTS)
     nlohmann_json::nlohmann_json
     Qt6::Core
   )
-  add_dependencies(proto_plugin_registry_test mock_data_source_plugin)
+  add_dependencies(proto_plugin_registry_test mock_data_source_plugin mock_json_parser_plugin)
   set_target_properties(proto_plugin_registry_test PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/tests
   )

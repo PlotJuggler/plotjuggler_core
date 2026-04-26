@@ -5,7 +5,6 @@ This file tracks the remaining work that is intentionally deferred or still open
 ## Product follow-ups
 
 - Automatic rollback / restore from backup after a failed plugin load.
-- Enable/disable without uninstalling.
 - Local registry cache with TTL, if we decide to reintroduce caching.
 - macOS packaging and runtime validation.
 

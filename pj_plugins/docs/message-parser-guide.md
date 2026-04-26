@@ -271,7 +271,7 @@ needed.
 │    loadConfig(json) applies it   │
 │                                  │
 │  PJ_MESSAGE_PARSER_PLUGIN(...)   │  → exports parser vtable
-│  PJ_DIALOG_PLUGIN_VTABLE(ProtoDialog) │  → exports dialog vtable
+│  PJ_DIALOG_PLUGIN(ProtoDialog)   │  → exports dialog vtable
 └──────────────────────────────────┘
 ```
 
@@ -323,6 +323,7 @@ it without instantiating the plugin.
 
 | Key | Type | Required | Description |
 |-----|------|----------|-------------|
+| `id` | string | yes | Stable plugin identifier — used by the host catalog and the marketplace. Must be unique per plugin. |
 | `name` | string | yes | Human-readable plugin name. |
 | `version` | string | yes | Semver version string. |
 | `encoding` | string | yes | Encoding this parser handles, e.g. `"json"`, `"protobuf"`, `"ros1msg"`. The host uses this to match binding requests to parsers. |
@@ -330,6 +331,7 @@ it without instantiating the plugin.
 Example:
 ```json
 {
+  "id": "protobuf-parser",
   "name": "Protobuf Parser",
   "version": "1.0.0",
   "encoding": "protobuf"

@@ -257,10 +257,17 @@ if (Checksum OK?) then (yes)
   if (Is update?) then (yes)
     :Backup current;
   endif
-  :Extract to extensions/;
+  :Extract to .pj_install_<id>_<uuid>/ (transaction dir);
   :Load DSO manifest;
   :Validate registry id/version;
-  :Register discovery cache;
+  :Atomic rename to extensions/<id>/;
+  :Re-validate promoted DSO (post-promotion gate);
+  if (Re-validation OK?) then (yes)
+    :Register discovery cache;
+  else (no)
+    :Move to .pj_quarantine_<id>_<uuid>/;
+    :Notify install error;
+  endif
 else (no)
   :Error: invalid checksum;
 endif
@@ -284,22 +291,24 @@ title Windows Staging Flow
 
 start
 :Download ZIP;
-:Extract to .extension_staging/{id}/;
+:Extract to .pj_install_<id>_<uuid>/ (transaction dir under .extension_staging/);
 :Load DSO manifest;
 :Validate registry id/version;
-:Write .pj_pending_install intent;
+:Atomic rename to .extension_staging/<id>/;
+:Write .extension_staging/<id>/.pj_pending_install intent;
 :Notify "Restart required";
 stop
 
 start
 :PlotJuggler restarts;
+:applyPendingInstalls() scans .extension_staging/;
 :Read .pj_pending_install intent;
 :Validate staged DSO manifest;
 if (Valid?) then (yes)
-:Move .extension_staging/{id}/ to extensions/{id}/;
+  :Move .extension_staging/<id>/ to extensions/<id>/;
   :Plugin active;
 else (no)
-  :Remove broken stage;
+  :Move to .pj_quarantine_<id>_<uuid>/;
   :Notify install error;
 endif
 stop
@@ -360,8 +369,11 @@ The root is `QStandardPaths::GenericDataLocation` + `/plotjuggler` (Linux: `~/.l
 │   │   └── ros2_streaming.ui
 │   └── csv-loader/
 │       └── libcsv_loader.so
-├── .extension_staging/      # Staging area (Windows)
-│   └── ros2-streaming/              # Ready to install on restart
+├── .extension_staging/      # Staging area (all platforms — Windows uses it
+│   │                                # for restart-time install; Linux/macOS
+│   │                                # use it as the post-promotion validation gate)
+│   └── ros2-streaming/              # Ready to install on restart (Windows)
+│       └── .pj_pending_install      # Intent file (Windows-only)
 └── .backup/                         # Non-Windows update backups; automatic rollback deferred
     ├── ros2-streaming-1.2.2/
     └── csv-loader-0.9.0/

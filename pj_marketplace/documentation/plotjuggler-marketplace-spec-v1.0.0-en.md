@@ -61,10 +61,9 @@ Development will begin with a standalone prototype to validate the concept, with
 |                    | Individual update    | Update a specific extension                                   |
 |                    | Bulk update          | "Update All" for multiple extensions                          |
 |                    | Automatic backup     | Backup of previous version before updating                    |
-| **Uninstallation** | Clean removal        | Directory deletion + local state update                       |
+| **Uninstallation** | Clean removal        | Directory deletion + installed cache refresh                  |
 |                    | Confirmation         | Confirmation dialog before uninstalling                       |
-| **Management**     | Enable/Disable       | Activate/deactivate extensions without uninstalling           |
-|                    | Backup diagnostics   | Report retained backup paths when an update install fails     |
+| **Management**     | Backup diagnostics   | Report retained backup paths when an update install fails     |
 |                    | Persistent state     | Installed state derived from embedded plugin manifests        |
 | **UI/UX**          | Download progress    | Progress bar in status bar                                    |
 |                    | Notifications        | Status messages and available update alerts                   |
@@ -109,7 +108,7 @@ Development will begin with a standalone prototype to validate the concept, with
 | **Registry**   | Static JSON file on GitHub with the catalog of available extensions.            |
 | **Plugin SDK** | Abstract library (no Qt) that plugins use for UI and data access.               |
 | **Artifact**   | Compiled binary of an extension for a specific platform.                        |
-| **Manifest**   | JSON file inside the ZIP describing the extension contents.                     |
+| **Embedded manifest** | JSON string exported by each plugin DSO describing the installed plugin.  |
 
 ---
 
@@ -610,7 +609,7 @@ The solution is a staging system similar to what Windows installers use:
 The flow is:
 
 1. User clicks "Update"
-2. New version downloads to a transaction folder under `.extension_staging/`
+2. New version downloads to a hidden transaction folder `.pj_install_<id>_<uuid>/` (created under `.extension_staging/` on Windows, under `extensions/` on Linux/macOS)
 3. The staged DSO is loaded and its embedded manifest is validated against the registry id/version
 4. A transient `.pj_pending_install` intent is written with the registry id/version
 5. Message shown: "Update will be applied when PlotJuggler restarts"
@@ -631,8 +630,9 @@ The root is `QStandardPaths::GenericDataLocation` + `/plotjuggler` (Linux: `~/.l
 ├── extensions/              ← Active plugins
 │   ├── ros2-streaming/
 │   └── csv-loader/
-├── .extension_staging/      ← Staging (Windows)
-│   └── plugin-id/.pj_pending_install
+├── .extension_staging/      ← Staging area (all platforms; Windows uses it for restart-time installs, Linux/macOS as the post-promotion validation gate)
+│   └── plugin-id/
+│       └── .pj_pending_install      ← Intent file (Windows-only)
 └── .backup/                 ← Non-Windows update backups; automatic rollback deferred
     ├── ros2-streaming-1.2.2/
     └── csv-loader-0.9.0/
@@ -763,7 +763,7 @@ The detail panel includes:
 - Icon (64x64)
 - Name and publisher
 - Metrics (downloads, rating)
-- Action buttons (Install/Update/Disable/Uninstall)
+- Action buttons (Install/Update/Uninstall)
 - Metadata (category, tags, platforms, minimum version)
 - Tabs: Details (README), Changelog, Dependencies
 
@@ -772,10 +772,14 @@ The detail panel includes:
 | State                       | Actions                    |
 | --------------------------- | -------------------------- |
 | Not installed               | Install                    |
-| Installed, up-to-date       | Disable, Uninstall         |
-| Installed, update available | Update, Disable, Uninstall |
+| Installed, up-to-date       | Uninstall                  |
+| Installed, update available | Update, Uninstall          |
 | Installed, local newer      | Local newer, Uninstall     |
-| Disabled                    | Enable, Uninstall          |
+
+Enabling or disabling an installed extension without uninstalling it is **out
+of scope** for the marketplace — it belongs to the host application's plugin
+loader / config (e.g. a per-user knob in `pj_app` that filters which
+discovered DSOs are instantiated at startup).
 
 ### 12.5 Dialogs
 
@@ -840,7 +844,6 @@ marketplace/
 | F-12 | Backup previous version on updates  |
 | F-13 | Automatic rollback if plugin fails (deferred) |
 | F-14 | Windows staging: apply on restart   |
-| F-15 | Enable/Disable without uninstalling |
 | F-16 | Cancel download in progress         |
 | F-17 | Update All                          |
 | F-18 | Confirmation dialogs                |

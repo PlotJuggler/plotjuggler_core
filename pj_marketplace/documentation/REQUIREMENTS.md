@@ -38,10 +38,9 @@ PlotJuggler has grown significantly, evolving from an internal tool to a de fact
 |                    | Individual update    | Update a specific extension                                   |
 |                    | Bulk update          | "Update All" for multiple extensions                          |
 |                    | Automatic backup     | Backup of previous version before updating                    |
-| **Uninstallation** | Clean removal        | Directory deletion + local state update                       |
+| **Uninstallation** | Clean removal        | Directory deletion + installed cache refresh                  |
 |                    | Confirmation         | Confirmation dialog before uninstalling                       |
-| **Management**     | Enable/Disable       | Activate/deactivate extensions without uninstalling (planned — see TODO.md) |
-|                    | Backup diagnostics   | Report retained backup paths when an update install fails     |
+| **Management**     | Backup diagnostics   | Report retained backup paths when an update install fails     |
 |                    | Persistent state     | Installed state derived from plugin DSOs; each embedded plugin manifest is the source of truth |
 |                    | Registry URL settings | Configure registry URL at runtime via ⚙ settings dialog; rejects URLs with non-http(s)/file scheme; change triggers immediate refresh |
 |                    | Registry URL persistence | Last configured registry URL saved and restored between sessions |
@@ -93,6 +92,22 @@ PlotJuggler has grown significantly, evolving from an internal tool to a de fact
 
 ---
 
+## 3a. Out of scope
+
+These concerns are intentionally **not** part of `pj_marketplace` and belong
+elsewhere in the host application:
+
+- **Enable/disable installed plugins.** Toggling a plugin on or off without
+  uninstalling it is a host-application concern (e.g. a per-user config knob
+  in `pj_app` that filters which discovered DSOs the loader instantiates),
+  not a marketplace concern. The marketplace's job ends at "installed on
+  disk"; whether the host chooses to load that DSO at startup is decided by
+  the host's plugin loader and config.
+- **Runtime hot-reload of plugin instances.** Out of scope per PJ4_PLAN
+  non-goals.
+
+---
+
 ## 4. Functional Requirements
 
 ### 4.1 P0 — Minimum Viable Product
@@ -120,7 +135,6 @@ PlotJuggler has grown significantly, evolving from an internal tool to a de fact
 | F-12 | Backup previous version on updates | Old version saved before overwriting |
 | F-13 | Automatic rollback if plugin fails | Deferred; backups may exist, but automatic restore is not implemented |
 | F-14 | Windows staging: apply on restart | Updates downloaded but applied only after restart (Windows) |
-| F-15 | Enable/Disable without uninstalling | User can deactivate extension without removing files |
 | F-16 | Cancel download in progress | User can abort a download |
 | F-17 | Update All | Single action to update all extensions with available updates |
 | F-18 | Confirmation dialogs | User confirms before install/uninstall/update actions |
@@ -199,9 +213,9 @@ PlotJuggler has grown significantly, evolving from an internal tool to a de fact
 4. System shows confirmation dialog
 5. User confirms
 6. System removes extension files
-7. System updates local state
+7. System refreshes installed cache
 
-**Postconditions:** Extension removed, local state updated
+**Postconditions:** Extension removed, installed cache refreshed
 
 ### UC-04: Plugin Fails to Load (Rollback Deferred)
 
@@ -288,7 +302,7 @@ PlotJuggler has grown significantly, evolving from an internal tool to a de fact
 |----------|-------------------|
 | Plugin crashes on load | Report load failure; automatic rollback is deferred |
 | Plugin incompatible with current SDK | Clear error message, don't load |
-| Manifest missing or invalid | Reject install or staged promotion with diagnostics |
+| Embedded manifest missing or invalid | Reject install or staged promotion with diagnostics |
 | Marketplace opens in a host app | Seed the initial UI from the host's loaded-plugin snapshot, then reconcile with disk refreshes on demand |
 
 ---
@@ -299,7 +313,7 @@ PlotJuggler has grown significantly, evolving from an internal tool to a de fact
 
 - **No backend server** — All hosting via GitHub (serverless)
 - **No Qt dependency in plugins** — Plugins use abstract SDK only
-- **No database** — JSON files for registry and local state
+- **No database** — Registry data is JSON; installed state is discovered from embedded DSO manifests, not a local state database
 - **No user accounts** — Anonymous usage
 - **No telemetry** — No data collection without consent
 

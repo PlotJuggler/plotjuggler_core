@@ -31,6 +31,30 @@ TEST(PluginRegistryTest, LoadedExtensionsSnapshotUsesLoadedManifestVersion) {
   EXPECT_EQ(snapshot["mock-data-source"].version, "1.0.0");
 }
 
+TEST(PluginRegistryTest, MessageParserManifestAcceptsStringEncoding) {
+  QTemporaryDir temp_dir;
+  ASSERT_TRUE(temp_dir.isValid());
+
+  const QString plugin_dir = temp_dir.filePath("plugins");
+  ASSERT_TRUE(QDir().mkpath(plugin_dir));
+
+  const QString dst = plugin_dir + "/" + QFileInfo(QStringLiteral(PJ_MOCK_JSON_PARSER_PLUGIN_PATH)).fileName();
+  ASSERT_TRUE(QFile::copy(QStringLiteral(PJ_MOCK_JSON_PARSER_PLUGIN_PATH), dst));
+
+  PluginRegistry registry(plugin_dir.toStdString());
+  registry.scanDirectory();
+
+  const auto* parser = registry.findParserByEncoding("json");
+  ASSERT_NE(parser, nullptr);
+  EXPECT_EQ(parser->id, "mock-json-parser");
+  EXPECT_EQ(parser->version, "1.0.0");
+  EXPECT_EQ(registry.listAvailableEncodings(), "[\"json\"]");
+
+  const auto snapshot = registry.loadedExtensionsSnapshot();
+  ASSERT_TRUE(snapshot.contains("mock-json-parser"));
+  EXPECT_EQ(snapshot["mock-json-parser"].version, "1.0.0");
+}
+
 // A capturing sink confirms diagnostics flow out of PluginRegistry — the GUI
 // path depends on this contract, and a regression here would silently break
 // every error message the user normally sees in the status bar.

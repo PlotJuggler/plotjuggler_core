@@ -373,4 +373,4 @@ PJ_DATA_SOURCE_PLUGIN(
     MockStreamerSource, R"({"id":"mock-streamer-source","name":"Mock Streamer Source","version":"1.0.0",)"
                         R"("description":"Combined DataSource+Dialog mock for integration testing"})")
 
-PJ_DIALOG_PLUGIN_VTABLE(MockStreamerDialog)
+PJ_DIALOG_PLUGIN(MockStreamerDialog)

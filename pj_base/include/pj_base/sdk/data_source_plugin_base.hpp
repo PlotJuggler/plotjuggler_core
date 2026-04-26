@@ -33,6 +33,7 @@
 
 #include "pj_base/data_source_protocol.h"
 #include "pj_base/expected.hpp"
+#include "pj_base/plugin_abi_export.h"
 #include "pj_base/sdk/data_source_host_views.hpp"
 #include "pj_base/sdk/plugin_data_api.hpp"
 #include "pj_base/sdk/service_registry.hpp"
@@ -233,7 +234,7 @@ class DataSourcePluginBase {
  * @param manifest  String literal JSON manifest (must have "id", "name", and "version").
  */
 #define PJ_DATA_SOURCE_PLUGIN(ClassName, manifest)                                                       \
-  extern "C" PJ_DATA_SOURCE_EXPORT const uint32_t pj_plugin_abi_version = PJ_ABI_VERSION;                \
+  PJ_EXPORT_PLUGIN_ABI_VERSION(PJ_DATA_SOURCE_EXPORT)                                                    \
   extern "C" PJ_DATA_SOURCE_EXPORT const PJ_data_source_vtable_t* PJ_get_data_source_vtable() noexcept { \
     static const PJ_data_source_vtable_t* vt = PJ::DataSourcePluginBase::vtableWithCreate(               \
         []() noexcept -> void* {                                                                         \

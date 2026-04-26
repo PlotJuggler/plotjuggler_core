@@ -19,6 +19,7 @@
 
 #include "pj_base/expected.hpp"
 #include "pj_base/message_parser_protocol.h"
+#include "pj_base/plugin_abi_export.h"
 #include "pj_base/sdk/plugin_data_api.hpp"
 #include "pj_base/sdk/service_registry.hpp"
 #include "pj_base/sdk/service_traits.hpp"
@@ -155,7 +156,7 @@ class MessageParserPluginBase {
 #include "pj_base/sdk/detail/message_parser_trampolines.hpp"
 
 #define PJ_MESSAGE_PARSER_PLUGIN(ClassName, manifest)                                                             \
-  extern "C" PJ_MESSAGE_PARSER_EXPORT const uint32_t pj_plugin_abi_version = PJ_ABI_VERSION;                      \
+  PJ_EXPORT_PLUGIN_ABI_VERSION(PJ_MESSAGE_PARSER_EXPORT)                                                          \
   extern "C" PJ_MESSAGE_PARSER_EXPORT const PJ_message_parser_vtable_t* PJ_get_message_parser_vtable() noexcept { \
     static const PJ_message_parser_vtable_t* vt = PJ::MessageParserPluginBase::vtableWithCreate(                  \
         []() noexcept -> void* {                                                                                  \

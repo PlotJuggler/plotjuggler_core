@@ -9,9 +9,16 @@ these is an ABI break and requires a v5 bump.
    `pj_plugin_abi_version` as a `const uint32_t` symbol independent of
    any vtable. The host `dlsym`s it BEFORE fetching the family vtable;
    missing or mismatched symbol is a fail-fast rejection with a specific
-   error. Emitted automatically by `PJ_DATA_SOURCE_PLUGIN`,
-   `PJ_MESSAGE_PARSER_PLUGIN`, `PJ_TOOLBOX_PLUGIN` macros. Current value
-   is `PJ_ABI_VERSION == 4`.
+   error. The symbol is emitted at file scope by
+   `pj_base/include/pj_base/plugin_abi_export.h`, which is transitively
+   included by every family SDK base header
+   (`data_source_plugin_base.hpp`, `dialog_plugin_base.hpp`,
+   `message_parser_plugin_base.hpp`, `toolbox_plugin_base.hpp`). Weak
+   linkage (`__attribute__((weak))` / `__declspec(selectany)`) folds
+   duplicate definitions across translation units in one DSO, so a single
+   .so can host multiple plugin families (e.g. DataSource + Dialog) with
+   one `PJ_*_PLUGIN(...)` macro per family — no duplicate-symbol error.
+   Current value is `PJ_ABI_VERSION == 4`.
 
 2. **Min-vtable-size floor, pinned at v4.0.** Each family header defines
    `PJ_<FAMILY>_MIN_VTABLE_SIZE` — the byte count of the vtable as
@@ -271,7 +278,7 @@ at load time. Mismatches produce a clear error.
 | DataSource (stream) | `StreamSourceBase` | `onStart()`, `onPoll()`, `onStop()`, `extraCapabilities()` | same macro |
 | MessageParser | `MessageParserPluginBase` | `parse()` | `PJ_MESSAGE_PARSER_PLUGIN(Class, manifest)` |
 | Toolbox | `ToolboxPluginBase` | `capabilities()` | `PJ_TOOLBOX_PLUGIN(Class, manifest)` |
-| Dialog | `DialogPluginTyped` | `manifest()`, `ui_content()`, `widget_data()`, event handlers | `PJ_DIALOG_PLUGIN(Class)` standalone, `PJ_DIALOG_PLUGIN_VTABLE(Class)` when co-resident |
+| Dialog | `DialogPluginTyped` | `manifest()`, `ui_content()`, `widget_data()`, event handlers | `PJ_DIALOG_PLUGIN(Class)` (works standalone or co-resident with another family) |
 
 All SDK base classes:
 - Generate the C vtable via `vtableWithCreate()` at static init.

@@ -226,6 +226,22 @@ target_link_libraries(my_dialog_plugin PRIVATE pj_dialog_sdk)
 
 No Qt dependency is needed in the plugin — only the host links Qt.
 
+## Manifest Schema
+
+`manifest()` returns a JSON string. Unlike the other plugin families, the
+dialog manifest is built at runtime (not a string literal in the vtable), but
+the same required keys apply.
+
+| Key | Type | Required | Description |
+|-----|------|----------|-------------|
+| `id` | string | yes | Stable plugin identifier — used by the host catalog and the marketplace. Must be unique per plugin. |
+| `name` | string | yes | Human-readable plugin name. |
+| `version` | string | yes | Semver version string. |
+| `description` | string | no | Short description of the dialog. |
+
+The host validates these keys when it inspects the dialog vtable; manifests
+missing a required string are rejected.
+
 ## The Reactive Loop
 
 The dialog protocol follows a simple reactive cycle:
@@ -553,8 +569,8 @@ class MySource : public PJ::StreamSourceBase {
 };
 
 PJ_DATA_SOURCE_PLUGIN(MySource, R"({"id":"my-source","name":"My Source","version":"1.0.0"})")
-PJ_DIALOG_PLUGIN_VTABLE(MyDialog)  // also specialises PJ::dialogVtableFor<MyDialog>()
-                                  // so PJ::borrowDialog picks up the right vtable.
+PJ_DIALOG_PLUGIN(MyDialog)  // also specialises PJ::dialogVtableFor<MyDialog>()
+                            // so PJ::borrowDialog picks up the right vtable.
 ```
 
 The host resolves both vtables, creates a borrowed `DialogHandle` from the

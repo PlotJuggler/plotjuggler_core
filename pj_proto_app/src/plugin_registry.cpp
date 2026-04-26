@@ -10,6 +10,40 @@
 
 namespace proto {
 
+namespace {
+
+bool appendManifestEncodings(const nlohmann::json& value, std::vector<std::string>& encodings, std::string& error) {
+  auto append_string = [&](const nlohmann::json& item) -> bool {
+    if (!item.is_string() || item.get<std::string>().empty()) {
+      error = "'encoding' must contain non-empty strings";
+      return false;
+    }
+    encodings.push_back(item.get<std::string>());
+    return true;
+  };
+
+  if (value.is_string()) {
+    return append_string(value);
+  }
+  if (value.is_array()) {
+    for (const auto& item : value) {
+      if (!append_string(item)) {
+        return false;
+      }
+    }
+    if (encodings.empty()) {
+      error = "'encoding' array must not be empty";
+      return false;
+    }
+    return true;
+  }
+
+  error = "'encoding' must be a string or an array of strings";
+  return false;
+}
+
+}  // namespace
+
 PluginRegistry::PluginRegistry(std::string_view plugin_dir, PJ::DiagnosticSink sink)
     : plugin_dir_(plugin_dir), sink_(std::move(sink)) {}
 
@@ -87,18 +121,15 @@ bool PluginRegistry::loadAndRegisterMessageParser(const std::filesystem::path& s
     loaded.id = manifest["id"].get<std::string>();
     loaded.name = manifest.value("name", loaded.id);
     loaded.version = manifest["version"].get<std::string>();
-    if (manifest.contains("encoding")) {
-      const auto& enc = manifest["encoding"];
-      if (!enc.is_array()) {
-        report(PJ::DiagnosticLevel::kError, loaded.id,
-             "MessageParser " + so_path.string() + ": 'encoding' must be an array of strings");
-        return false;
-      }
-      for (const auto& e : enc) {
-        if (e.is_string()) {
-          loaded.encodings.push_back(e.get<std::string>());
-        }
-      }
+    if (!manifest.contains("encoding")) {
+      report(PJ::DiagnosticLevel::kError, loaded.id,
+           "MessageParser " + so_path.string() + ": embedded manifest missing required key 'encoding'");
+      return false;
+    }
+    std::string encoding_error;
+    if (!appendManifestEncodings(manifest["encoding"], loaded.encodings, encoding_error)) {
+      report(PJ::DiagnosticLevel::kError, loaded.id, "MessageParser " + so_path.string() + ": " + encoding_error);
+      return false;
     }
   } catch (const nlohmann::json::exception& e) {
     report(PJ::DiagnosticLevel::kError, /*id*/ {},

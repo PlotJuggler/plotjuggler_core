@@ -543,6 +543,7 @@ it without instantiating the plugin.
 
 | Key | Type | Required | Description |
 |-----|------|----------|-------------|
+| `id` | string | yes | Stable plugin identifier — used by the host catalog and the marketplace. Must be unique per plugin. |
 | `name` | string | yes | Human-readable plugin name. |
 | `version` | string | yes | Semver version string. |
 | `description` | string | no | Short description of the plugin. |
@@ -551,6 +552,7 @@ it without instantiating the plugin.
 Example:
 ```json
 {
+  "id": "csv-loader",
   "name": "CSV Loader",
   "version": "1.0.0",
   "description": "Import numeric CSV files",
@@ -726,7 +728,7 @@ with no JSON serialization needed at runtime.
 │    getDialog() → borrowDialog(...)   │
 │                                      │
 │  PJ_DATA_SOURCE_PLUGIN(MySource)     │  → exports DataSource vtable
-│  PJ_DIALOG_PLUGIN_VTABLE(MyDialog)   │  → exports Dialog vtable
+│  PJ_DIALOG_PLUGIN(MyDialog)          │  → exports Dialog vtable
 └──────────────────────────────────────┘
 ```
 
@@ -789,7 +791,7 @@ class MySource : public PJ::StreamSourceBase {
 
 ```cpp
 PJ_DATA_SOURCE_PLUGIN(MySource, R"({"id":"my-source","name":"My Source","version":"1.0.0"})")
-PJ_DIALOG_PLUGIN_VTABLE(MyDialog)
+PJ_DIALOG_PLUGIN(MyDialog)
 ```
 
 ### Host-side flow
