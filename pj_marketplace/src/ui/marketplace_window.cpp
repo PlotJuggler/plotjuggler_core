@@ -359,7 +359,32 @@ void MarketplaceWindow::onCategoryChanged(int /*index*/)         { applyFilters(
 
 void MarketplaceWindow::onRefreshClicked() {
   setStatus("Refreshing...");
+  // Reconcile in-memory installed_ against disk first so the cards painted
+  // during the registry-fetch latency already show the correct state. If any
+  // entry was stale, mark installations changed so MainWindow's post-close
+  // catalog.reload() runs.
+  const int before = ext_mgr_->installedExtensions().size();
+  ext_mgr_->reconcileInstalledWithDisk();
+  if (ext_mgr_->installedExtensions().size() != before) {
+    installations_changed_ = true;
+  }
+  populateCards();
   registry_mgr_->fetchRegistry(registry_url_);
+}
+
+void MarketplaceWindow::showEvent(QShowEvent* event) {
+  // Self-heal stale "Installed" badges every time the dialog becomes visible.
+  // Cheap (one stat per installed entry) and prevents the user from ever
+  // seeing a phantom card without taking any explicit action.
+  if (ext_mgr_ != nullptr) {
+    const int before = ext_mgr_->installedExtensions().size();
+    ext_mgr_->reconcileInstalledWithDisk();
+    if (ext_mgr_->installedExtensions().size() != before) {
+      installations_changed_ = true;
+      populateCards();
+    }
+  }
+  QDialog::showEvent(event);
 }
 
 void MarketplaceWindow::onSettingsClicked() {

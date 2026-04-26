@@ -31,6 +31,11 @@ class MarketplaceWindow : public QDialog {
  protected:
   bool eventFilter(QObject* obj, QEvent* event) override;
 
+  // Reconciles `installed_` against disk on every dialog open so phantom
+  // entries (`.so` removed externally between sessions) don't render as
+  // "Installed" badges. See ExtensionManager::reconcileInstalledWithDisk.
+  void showEvent(QShowEvent* event) override;
+
  private slots:
   void onSearchChanged(const QString& text);
   void onCategoryChanged(int index);
