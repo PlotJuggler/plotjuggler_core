@@ -38,9 +38,15 @@ inline Expected<void*> loadLibraryHandle(std::string_view path) {
   // breaks LD_PRELOAD'd malloc interposition, which makes every plugin
   // dlopen fail under AddressSanitizer (and similarly for jemalloc /
   // tcmalloc interposition in production). Plugin-local symbol isolation
-  // is instead achieved by building plugins with -fvisibility=hidden and
-  // explicitly marking only the boot-level exports
-  // (pj_plugin_abi_version + PJ_get_<family>_vtable) as default visible.
+  // uses two build-time mechanisms (cmake/PjPluginManifest.cmake):
+  // 1. -fvisibility=hidden: hides symbols defined in plugin source files.
+  // 2. -Wl,-Bsymbolic-functions (Linux): function calls within the .so
+  //    resolve to the embedded static copies, bypassing PLT. This covers
+  //    deps compiled without -fvisibility=hidden (e.g. libssl.a from Conan)
+  //    whose symbols enter the .so with default visibility and whose calls
+  //    would otherwise resolve to the host's namespace first via PLT.
+  // malloc/pthread/system calls are NOT defined in the plugin so they still
+  // reach the host — ASAN malloc interposition works correctly.
   int flags = RTLD_NOW | RTLD_LOCAL;
   void* handle = dlopen(std::string(path).c_str(), flags);
   if (handle == nullptr) {
