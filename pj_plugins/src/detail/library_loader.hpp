@@ -33,18 +33,17 @@ inline Expected<void*> loadLibraryHandle(std::string_view path) {
   // RTLD_LOCAL — keep plugin symbols out of the global symbol pool; each
   //              plugin resolves its own copies of bundled statics in
   //              isolation from other plugins and from the host.
-  //
-  // Historical note: we USED to also set RTLD_DEEPBIND on glibc to force
-  // the plugin's own symbol scope ahead of the global one (Conan OpenSSL
-  // vs system libcrypto, etc.). That flag is a documented trap — it
-  // breaks LD_PRELOAD'd malloc interposition, which makes every plugin
-  // dlopen fail under AddressSanitizer (and similarly for jemalloc /
-  // tcmalloc interposition in production). Plugin-local symbol isolation
-  // is instead achieved by building plugins with -fvisibility=hidden and
-  // explicitly marking only the boot-level exports
-  // (pj_plugin_abi_version + PJ_get_<family>_vtable) as default visible.
-  // See cmake/PjPluginManifest.cmake for the plugin build flags.
+  // RTLD_DEEPBIND (Linux only, skipped under ASAN) — force the plugin's own
+  //              symbol scope ahead of the global one. Prevents Conan-built
+  //              deps (e.g. paho-mqtt + OpenSSL) from resolving to a
+  //              different version already loaded by the host (e.g. Qt's
+  //              libssl.so.3). Skipped when PJ_ASAN_ACTIVE because ASAN
+  //              uses LD_PRELOAD'd malloc interposition that DEEPBIND
+  //              bypasses, causing dlopen to fail (google/sanitizers#611).
   int flags = RTLD_NOW | RTLD_LOCAL;
+#if defined(__linux__) && defined(RTLD_DEEPBIND) && !defined(PJ_ASAN_ACTIVE)
+  flags |= RTLD_DEEPBIND;
+#endif
   void* handle = dlopen(std::string(path).c_str(), flags);
   if (handle == nullptr) {
     return unexpected(std::string(dlerror()));
