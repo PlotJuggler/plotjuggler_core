@@ -263,6 +263,48 @@ TEST_F(RegistryManagerTest, ParsesPlatformArtifacts) {
   EXPECT_EQ(platforms["windows-x86_64"].url, "https://example.com/csv-loader-win.dll");
 }
 
+// compatibleExtensions(platform) returns only entries whose `platforms` map
+// contains the requested key, while extensions() stays untouched.
+TEST_F(RegistryManagerTest, CompatibleExtensionsFiltersByRequestedPlatform) {
+  static const QByteArray kMixedPlatformsJson = R"({
+    "extensions": [
+      { "id": "linux-only", "name": "Linux Only", "version": "1.0.0",
+        "platforms": { "linux-x86_64": { "url": "u1", "checksum": "sha256:1" } } },
+      { "id": "windows-only", "name": "Windows Only", "version": "1.0.0",
+        "platforms": { "windows-x86_64": { "url": "u2", "checksum": "sha256:2" } } },
+      { "id": "cross", "name": "Cross", "version": "1.0.0",
+        "platforms": {
+          "linux-x86_64":   { "url": "u3", "checksum": "sha256:3" },
+          "windows-x86_64": { "url": "u4", "checksum": "sha256:4" }
+        }
+      }
+    ]
+  })";
+
+  RegistryManager mgr;
+  QSignalSpy spy_finished(&mgr, &RegistryManager::fetchFinished);
+
+  server_->setResponseBody(kMixedPlatformsJson);
+  mgr.fetchRegistry(server_->url());
+  ASSERT_TRUE(spy_finished.wait(3000));
+
+  // extensions() returns the parsed list verbatim, regardless of platform.
+  EXPECT_EQ(mgr.extensions().size(), 3);
+
+  const QList<Extension> linux_compat = mgr.compatibleExtensions("linux-x86_64");
+  ASSERT_EQ(linux_compat.size(), 2);
+  EXPECT_EQ(linux_compat.at(0).id, "linux-only");
+  EXPECT_EQ(linux_compat.at(1).id, "cross");
+
+  const QList<Extension> win_compat = mgr.compatibleExtensions("windows-x86_64");
+  ASSERT_EQ(win_compat.size(), 2);
+  EXPECT_EQ(win_compat.at(0).id, "windows-only");
+  EXPECT_EQ(win_compat.at(1).id, "cross");
+
+  // Unknown platform key drops everything.
+  EXPECT_TRUE(mgr.compatibleExtensions("imaginary-os-arch").isEmpty());
+}
+
 // [2] Changelog map (version -> description)
 TEST_F(RegistryManagerTest, ParsesChangelog) {
   RegistryManager mgr;

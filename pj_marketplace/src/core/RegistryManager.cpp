@@ -48,6 +48,17 @@ QList<Extension> RegistryManager::extensions() const {
   return extensions_;
 }
 
+QList<Extension> RegistryManager::compatibleExtensions(const QString& platform) const {
+  QList<Extension> result;
+  result.reserve(extensions_.size());
+  for (const Extension& ext : extensions_) {
+    if (ext.platforms.contains(platform)) {
+      result.append(ext);
+    }
+  }
+  return result;
+}
+
 Extension RegistryManager::findById(const QString& id) const {
   for (const Extension& ext : extensions_) {
     if (ext.id == id) {
