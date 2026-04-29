@@ -34,6 +34,13 @@ class RegistryManager : public QObject {
   // Returns the parsed extensions after a successful fetch; empty list otherwise.
   QList<Extension> extensions() const;
 
+  // Same as extensions(), but drops entries whose `platforms` map has no
+  // artifact for `platform` (e.g. "linux-x86_64"). Use this for catalog
+  // views — installation would fail anyway for the dropped entries (see
+  // ExtensionManager::doInstall). The platform key is injected by the
+  // caller so RegistryManager stays independent of host detection.
+  QList<Extension> compatibleExtensions(const QString& platform) const;
+
   // Returns the first extension whose id matches, or a default-constructed Extension
   // (id is empty) when not found.
   Extension findById(const QString& id) const;

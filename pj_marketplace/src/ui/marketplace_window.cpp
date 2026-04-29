@@ -148,7 +148,7 @@ void MarketplaceWindow::setupSignals() {
     // A successful refresh is a strong "things are working" signal; let it
     // override any old sticky error so progress messages aren't suppressed.
     clearStickyStatus();
-    extensions_ = registry_mgr_->extensions();
+    extensions_ = registry_mgr_->compatibleExtensions(PlatformUtils::currentPlatform());
     applyFilters();
     setStatus("Ready — " + QString::number(extensions_.size()) + " extensions loaded");
   });
