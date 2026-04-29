@@ -636,3 +636,54 @@ must read the same viewTransform matrix uniform; otherwise the
 overlay floats relative to the image during pan/zoom. Cleanest is
 to update the uniform from the same `QMatrix4x4 view = buildViewTransform(...)`
 on every render.
+
+**One QRhi `ShaderResourceBindings` per resource set, not per draw.**
+QRhi reads SRB contents at command-buffer *submit* time, not at the
+`cb->setShaderResources(srb)` call. Mutating a shared SRB between
+draws (`srb->setBindings({..., sampledTexture(t1, ...)}); srb->create();
+cb->draw(); srb->setBindings({..., sampledTexture(t2, ...)}); srb->create();
+cb->draw();`) makes **all** previously-recorded draws read whichever
+bindings the SRB held last. We hit this in the text pipeline: every
+label appeared with the texture of the last text drawn (visible as
+"all labels show 'circle'" in the demo). Fix: cache a dedicated SRB
+next to the texture inside each `text_cache_` entry so the binding is
+immutable for that texture's lifetime; the draw loop just selects the
+right SRB and never mutates it. See `MediaViewerWidget::TextEntry::srb`
+and the per-text draw loop in `render()`.
+
+**Per-instance text textures with mask + tint scale better than
+(text, color) cache keys.** A text glyph atlas painted by `QPainter`
+is colour-agnostic — render to `QImage::Format_Alpha8`, upload as
+`QRhiTexture::R8`, sample in the fragment shader as
+`alpha = texture(textTex, uv).r` and modulate by a per-vertex tint
+colour. Two labels with the same text+size but different colours share
+the same texture; the cache key is `(text, font_size_q)` only. Doing
+it the other way (RGBA texture per (text, font, colour)) blows up
+cache size for no gain, since the font already does its own
+anti-aliasing in the alpha channel.
+
+**Use FNV-1a (or any cheap 32-bit hash) when colouring by string
+class identifier.** ROS `vision_msgs::Detection2D::results[i].class_id`
+is a string ("person", "car", …); the colour palette is indexed by
+`int32_t`. Hashing the string into the palette keeps the same class
+on the same colour across frames even if detection ordering changes
+between frames. The previous approach (using the bbox's index in the
+results array) caused colours to swap as soon as detections appeared
+in a different order — a real visual artefact, not a cosmetic one.
+
+**Polygon fill via triangle fan is convex-only — document and accept.**
+`expandLoopFillToTriangles` emits a fan from `points[0]`; concave
+polygons render with self-overlapping triangles (visibly broken
+through alpha blending). The annotations real users emit are convex
+(bboxes, triangles, regular polygons), so the trade-off is fine.
+Ear-clipping or a dedicated tessellator is overkill for now.
+
+**Thick lines via per-segment perpendicular expansion have no miter
+joins.** `expandThickSegmentsToTriangles` emits a rectangle per
+segment by offsetting `±perp(b - a) · thickness/2`; adjacent segments
+butt-join, so a sharp corner shows a small visible gap. Adding miter
+joins requires looking at three consecutive vertices to compute the
+join point, and degenerates badly at near-parallel angles. Bboxes
+(right angles) and gentle polylines hide the artefact; complex
+polylines like robot paths might not. Acceptable for now; punch-list
+item if a use case appears.

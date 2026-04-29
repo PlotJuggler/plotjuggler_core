@@ -45,6 +45,14 @@ if(TARGET pj_media_qt)
     pj_media_qt pj_media_core pj_datastore PkgConfig::TURBOJPEG
   )
 
+  # --- Qt demo: kPoints quad overlay visual sanity check ---
+  add_executable(quad_overlay_demo quad_overlay_demo.cpp)
+  target_compile_features(quad_overlay_demo PRIVATE cxx_std_20)
+  target_compile_options(quad_overlay_demo PRIVATE ${PJ_WARNING_FLAGS})
+  target_link_libraries(quad_overlay_demo PRIVATE
+    pj_media_qt pj_media_core pj_datastore PkgConfig::TURBOJPEG
+  )
+
   # --- Qt demo: video stream (M18 — FFmpeg decode via ObjectStore) ---
   if(LIBAVCODEC_FOUND AND LIBAVFORMAT_FOUND)
     add_executable(video_stream_demo video_stream_demo.cpp)

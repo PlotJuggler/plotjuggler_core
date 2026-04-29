@@ -129,21 +129,25 @@ explicitly a viewer concern. Video keyframe indexing is owned by
 All data type schemas are defined in [datatypes_2D.md](datatypes_2D.md).
 This document does not duplicate field-level definitions.
 
-**Types pj_media RENDERS (2D subset):**
+**Types pj_media RENDERS (image-pixel space only):**
 
 | Type | Role |
 |------|------|
 | Image | Raw, compressed, depth, and segmentation frames |
 | VideoFrame | H.264 / H.265 / AV1 / VP9 encoded frames |
-| ImageAnnotation | 2D pixel-space overlays (points, lines, circles, text) |
-| ScenePrimitive (2D) | Markers, lines, polygons, text with `z = 0` |
+| ImageAnnotation | Pixel-space vector overlays (points, lines/polygons, circles, text labels) |
 | CameraCalibration | Intrinsics and distortion (metadata only; no rendering) |
 
 **Types STORED in ObjectStore but rendered by other modules:**
 
-PointCloud, Grid (occupancy / costmap / elevation), 3D ScenePrimitive
-variants, and FrameTransform chains are stored in the same ObjectStore
-but are consumed by a future `pj_scene` module rather than by pj_media.
+PointCloud, Grid (occupancy / costmap / elevation), all `ScenePrimitive`
+variants (including 2D `z = 0` ones), and FrameTransform chains are
+stored in the same ObjectStore but are consumed by `pj_3d_widgets`
+rather than by pj_media. Even when a marker carries `z = 0`, projecting
+it onto a camera image requires `CameraCalibration` plus TF interpolation,
+which is the machinery `pj_3d_widgets` owns. Duplicating that inside
+pj_media would create two TF resolvers and two projection paths for the
+same primitive — see `PLAN.md` "Scope decision" for the full rationale.
 
 **Note on Grid**: `datatypes_2D.md §10` classifies Grid as "2D/3D"
 because the underlying data is a flat rectangular cell array. pj_media

@@ -136,6 +136,48 @@ bool decodePoint2(Reader& r, size_t len, Point2& out) {
   return true;
 }
 
+// Decode a foxglove.Color sub-message: {1: double r, 2: double g, 3: double b, 4: double a}
+// with components in [0, 1]. Output is uint8 RGBA in [0, 255].
+bool decodeColor(Reader& r, size_t len, ColorRGBA& out) {
+  const uint8_t* sub_end = r.p + len;
+  if (sub_end > r.end) {
+    return false;
+  }
+  double rd = 0.0;
+  double gd = 0.0;
+  double bd = 0.0;
+  double ad = 1.0;
+  while (r.p < sub_end) {
+    uint64_t tag = 0;
+    if (!r.readVarint(tag)) return false;
+    uint32_t field = static_cast<uint32_t>(tag >> 3);
+    uint32_t wire = static_cast<uint32_t>(tag & 0x7u);
+    if (wire == 1 && field >= 1 && field <= 4) {
+      double v = 0.0;
+      if (!r.readDouble(v)) return false;
+      switch (field) {
+        case 1: rd = v; break;
+        case 2: gd = v; break;
+        case 3: bd = v; break;
+        case 4: ad = v; break;
+        default: break;
+      }
+    } else {
+      if (!r.skipField(wire)) return false;
+    }
+  }
+  auto to_byte = [](double v) {
+    if (v < 0.0) v = 0.0;
+    if (v > 1.0) v = 1.0;
+    return static_cast<uint8_t>(v * 255.0 + 0.5);
+  };
+  out.r = to_byte(rd);
+  out.g = to_byte(gd);
+  out.b = to_byte(bd);
+  out.a = to_byte(ad);
+  return true;
+}
+
 // Decode one PointsAnnotation sub-message.
 bool decodePointsAnnotation(Reader& r, size_t len, PointsAnnotation& out) {
   const uint8_t* sub_end = r.p + len;
@@ -158,8 +200,106 @@ bool decodePointsAnnotation(Reader& r, size_t len, PointsAnnotation& out) {
       Point2 pt;
       if (!decodePoint2(r, pt_len, pt)) return false;
       out.points.push_back(pt);
+    } else if (field == 4 && wire == 2) {
+      uint64_t c_len = 0;
+      if (!r.readVarint(c_len)) return false;
+      if (!decodeColor(r, c_len, out.color)) return false;
+    } else if (field == 5 && wire == 2) {
+      uint64_t c_len = 0;
+      if (!r.readVarint(c_len)) return false;
+      ColorRGBA c{};
+      if (!decodeColor(r, c_len, c)) return false;
+      out.colors.push_back(c);
+    } else if (field == 6 && wire == 2) {
+      uint64_t c_len = 0;
+      if (!r.readVarint(c_len)) return false;
+      if (!decodeColor(r, c_len, out.fill_color)) return false;
     } else if (field == 7 && wire == 1) {
       if (!r.readDouble(out.thickness)) return false;
+    } else {
+      if (!r.skipField(wire)) return false;
+    }
+  }
+  return true;
+}
+
+// Decode one foxglove.CircleAnnotation sub-message:
+//   timestamp(1)=Time, position(2)=Point2, diameter(3)=double, thickness(4)=double,
+//   fill_color(5)=Color, outline_color(6)=Color
+// We map diameter/2 -> radius and outline_color -> color (the C++ struct has no
+// separate outline field; .color IS the outline).
+bool decodeCircleAnnotation(Reader& r, size_t len, CircleAnnotation& out) {
+  const uint8_t* sub_end = r.p + len;
+  if (sub_end > r.end) {
+    return false;
+  }
+  // Defaults match scene_frame.h.
+  out.color = {0, 255, 0, 255};
+  out.fill_color = {0, 0, 0, 0};
+  out.thickness = 2.0;
+  out.radius = 1.0;
+  while (r.p < sub_end) {
+    uint64_t tag = 0;
+    if (!r.readVarint(tag)) return false;
+    uint32_t field = static_cast<uint32_t>(tag >> 3);
+    uint32_t wire = static_cast<uint32_t>(tag & 0x7u);
+    if (field == 2 && wire == 2) {
+      uint64_t p_len = 0;
+      if (!r.readVarint(p_len)) return false;
+      if (!decodePoint2(r, p_len, out.center)) return false;
+    } else if (field == 3 && wire == 1) {
+      double diameter = 0.0;
+      if (!r.readDouble(diameter)) return false;
+      out.radius = diameter * 0.5;
+    } else if (field == 4 && wire == 1) {
+      if (!r.readDouble(out.thickness)) return false;
+    } else if (field == 5 && wire == 2) {
+      uint64_t c_len = 0;
+      if (!r.readVarint(c_len)) return false;
+      if (!decodeColor(r, c_len, out.fill_color)) return false;
+    } else if (field == 6 && wire == 2) {
+      uint64_t c_len = 0;
+      if (!r.readVarint(c_len)) return false;
+      if (!decodeColor(r, c_len, out.color)) return false;
+    } else {
+      if (!r.skipField(wire)) return false;
+    }
+  }
+  return true;
+}
+
+// Decode one foxglove.TextAnnotation sub-message:
+//   timestamp(1)=Time, position(2)=Point2, text(3)=string, font_size(4)=double,
+//   text_color(5)=Color, background_color(6)=Color  (background_color skipped — not
+//   present in scene_frame.h::TextAnnotation).
+bool decodeTextAnnotation(Reader& r, size_t len, TextAnnotation& out) {
+  const uint8_t* sub_end = r.p + len;
+  if (sub_end > r.end) {
+    return false;
+  }
+  out.color = {255, 255, 255, 255};
+  out.font_size = 14.0;
+  while (r.p < sub_end) {
+    uint64_t tag = 0;
+    if (!r.readVarint(tag)) return false;
+    uint32_t field = static_cast<uint32_t>(tag >> 3);
+    uint32_t wire = static_cast<uint32_t>(tag & 0x7u);
+    if (field == 2 && wire == 2) {
+      uint64_t p_len = 0;
+      if (!r.readVarint(p_len)) return false;
+      if (!decodePoint2(r, p_len, out.position)) return false;
+    } else if (field == 3 && wire == 2) {
+      uint64_t s_len = 0;
+      if (!r.readVarint(s_len)) return false;
+      if (s_len > r.remaining()) return false;
+      out.text.assign(reinterpret_cast<const char*>(r.p), static_cast<size_t>(s_len));
+      r.p += s_len;
+    } else if (field == 4 && wire == 1) {
+      if (!r.readDouble(out.font_size)) return false;
+    } else if (field == 5 && wire == 2) {
+      uint64_t c_len = 0;
+      if (!r.readVarint(c_len)) return false;
+      if (!decodeColor(r, c_len, out.color)) return false;
     } else {
       if (!r.skipField(wire)) return false;
     }
@@ -197,9 +337,27 @@ class ProtobufImageAnnotationsDecoder final : public ISceneDecoder {
           return unexpected(std::string("Protobuf ImageAnnotations: PointsAnnotation decode failed"));
         }
         ia.points.push_back(std::move(pa));
+      } else if (field == 1 && wire == 2) {
+        uint64_t ca_len = 0;
+        if (!r.readVarint(ca_len)) {
+          return unexpected(std::string("Protobuf ImageAnnotations: bad CircleAnnotation length"));
+        }
+        CircleAnnotation ca;
+        if (!decodeCircleAnnotation(r, ca_len, ca)) {
+          return unexpected(std::string("Protobuf ImageAnnotations: CircleAnnotation decode failed"));
+        }
+        ia.circles.push_back(std::move(ca));
+      } else if (field == 3 && wire == 2) {
+        uint64_t ta_len = 0;
+        if (!r.readVarint(ta_len)) {
+          return unexpected(std::string("Protobuf ImageAnnotations: bad TextAnnotation length"));
+        }
+        TextAnnotation ta;
+        if (!decodeTextAnnotation(r, ta_len, ta)) {
+          return unexpected(std::string("Protobuf ImageAnnotations: TextAnnotation decode failed"));
+        }
+        ia.texts.push_back(std::move(ta));
       } else {
-        // CircleAnnotation (field 1) and TextAnnotation (field 3) are skipped
-        // for this iteration — they are decoded but not yet rendered.
         if (!r.skipField(wire)) {
           return unexpected(std::string("Protobuf ImageAnnotations: skip failed"));
         }

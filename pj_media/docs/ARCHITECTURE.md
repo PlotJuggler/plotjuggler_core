@@ -411,19 +411,30 @@ the compositor to rasterize or overlay.
 MCAP schema name; unknown schemas return `nullptr` and the caller skips
 the topic. Schema constants live alongside the factory:
 
-| Schema constant                        | Wire | Mapping                                                      |
-|----------------------------------------|------|--------------------------------------------------------------|
-| `kSchemaDetection2DArray`              | CDR  | `vision_msgs/msg/Detection2DArray` → 4-corner LineLoop bboxes|
-| `kSchemaYoloDetectionArray`            | CDR  | `yolo_msgs/msg/DetectionArray` (yolo_ros) → bboxes by class  |
-| `kSchemaFoxgloveImageAnnotations`      | PB   | `foxglove.ImageAnnotations` (PointsAnnotation only for now)  |
+| Schema constant                        | Wire | Mapping                                                              |
+|----------------------------------------|------|----------------------------------------------------------------------|
+| `kSchemaDetection2DArray`              | CDR  | `vision_msgs/msg/Detection2DArray` → 4-corner LineLoop bboxes + `"<class> <score>"` label |
+| `kSchemaYoloDetectionArray`            | CDR  | `yolo_msgs/msg/DetectionArray` (yolo_ros) → bboxes coloured by `class_id`, label uses `class_name` |
+| `kSchemaFoxgloveImageAnnotations`      | PB   | `foxglove.ImageAnnotations` — full coverage of `points`, `circles`, `texts` |
 
 The Foxglove decoder is hand-rolled against the protobuf wire format
-(varint / I64 / LEN) — no `protoc`/libprotobuf dependency. CircleAnnotation
-and TextAnnotation fields are recognized but their bodies are skipped;
-rendering for them lands when needed. Color for ROS-style schemas is
-synthesized from `class_id` via a stable 10-entry palette (the messages
-themselves carry no color); Foxglove's outline/fill colors are not yet
-read from the wire.
+(varint / I64 / LEN) — no `protoc`/libprotobuf dependency. It now reads
+every payload field used by the renderer: `PointsAnnotation` outline_color
+(field 4), outline_colors (field 5, repeated → `colors[]`), fill_color
+(field 6); `CircleAnnotation` (top-level field 1) with position, diameter,
+thickness, fill_color and outline_color; `TextAnnotation` (top-level
+field 3) with position, text, font_size and text_color. Colour
+components arrive as four doubles in `[0, 1]` and are quantised to
+8-bit via `decodeColor`. The `background_color` field of TextAnnotation
+is intentionally skipped (no equivalent in `scene_frame.h::TextAnnotation`).
+
+ROS-style schemas (Detection2DArray, yolo_msgs) carry no colour on the
+wire. The CDR decoders synthesise a colour by hashing the first
+hypothesis's `class_id` (FNV-1a 32-bit) into a stable 10-entry palette,
+so the same class keeps the same colour across frames even if detection
+ordering changes. They also emit a `TextAnnotation` per detection using
+the helper `makeBboxLabel(text, cx, cy, hx, hy, color)` so the label is
+consistent in both decoders.
 
 ### 4.4 StreamingVideoDecoder
 
@@ -737,20 +748,33 @@ and 4.
 
 ## 7. Rendering Pipeline
 
-### 7.1 QRhiWidget
+### 7.1 QRhiWidget — five pipelines
 
 `MediaViewerWidget` subclasses `QRhiWidget` (Qt 6.8+), which abstracts
-over Vulkan, Metal, D3D11, and OpenGL at runtime. The widget:
+over Vulkan, Metal, D3D11, and OpenGL at runtime. The widget owns five
+QRhi graphics pipelines that share the same `viewTransform` UBO so
+zoom/pan apply uniformly:
 
-1. Creates 3 R8 GPU textures for YUV420P planes: Y (full resolution),
-   U (half resolution), V (half resolution). This is 75% less GPU
-   memory than a single RGBA8 texture.
-2. On each render tick, polls `FrameSlot::take()`.
-3. If a new frame arrived: uploads plane data to GPU textures via
-   `QRhiResourceUpdateBatch`.
-4. Draws a full-screen quad with the BT.709 YUV-to-RGB fragment shader.
-5. A backward-compatible QImage (RGB) path is kept for image viewers
-   that produce RGB output directly.
+| # | Pipeline | Topology | Responsibility |
+|---|---|---|---|
+| 1 | Image | implicit (procedural fullscreen quad) | YUV420P → RGB via BT.709 (3 R8 textures) or RGBA passthrough |
+| 2 | Marker | `Lines` | 1 px line primitives (`thickness ≤ 1.5`) — bboxes, polylines, circle outlines |
+| 3 | Points | `Triangles` | Solid fills: `kPoints` quads, `LineLoop` fill, `CircleAnnotation` fill |
+| 4 | Thick lines | `Triangles` | Lines/circle outlines with `thickness > 1.5`, expanded CPU-side to perpendicular rectangles |
+| 5 | Text | `Triangles` (textured) | One quad per `TextAnnotation`, glyph mask sampled and tinted by per-vertex colour |
+
+Pipelines 2–5 share `marker_uniform_buf_` (the same `mat4 viewTransform + vec4 frameSize` UBO) but each has its own SRB and VBO so submissions don't trample each other's bindings.
+
+Per-frame flow:
+
+1. Build `MediaFrame` via the attached `MediaSource`. Pixel data goes to texture upload; vector overlays go to CPU vertex builders.
+2. On a dirty cycle, walk `last_overlays_` once and dispatch each `PointsAnnotation` and `CircleAnnotation` to the correct CPU helper (`expandToLineList`, `expandToThickList`, `expandKPointsToQuads`, `expandLoopFillToTriangles`, `expandCircleOutline*`, `expandCircleFillToTriangleFan`). Per circle, `circlePerimeter` is computed once and reused for both outline and fill.
+3. For each `TextAnnotation`, look up `(text, font_size_q)` in `text_cache_`. On miss, render a glyph mask with `QPainter` to a `QImage::Format_Alpha8`, upload as a `QRhiTexture::R8`, and create a per-entry SRB pointing at it (so per-draw rebinding cannot mix textures across instances).
+4. Issue draw calls in order `image → fills → 1 px lines → thick lines → text` so strokes always land on top of fills and labels on top of everything.
+
+### 7.1b Backward-compatible QImage path
+
+A backward-compatible `QImage` upload path is kept for legacy image viewers that produce RGB output directly without going through a `MediaSource`.
 
 ### 7.2 YUV-to-RGB shaders
 
@@ -804,38 +828,30 @@ display time (§R4.8). The `Compositor` class orchestrates this.
 
 ### 8.1 Layer model
 
-Each layer is a `(topic, decoder, blend_mode, z_order)` tuple
-configured at widget construction time. Layer types:
+Each layer is a `MediaSource` registered with the composite. Layer types
+that pj_media renders today (image-pixel space only — see REQUIREMENTS §4.1):
 
-| Layer type | Decoder | Output |
-|------------|---------|--------|
-| Base image/video | `VideoDecoder` or `ImageDecoder` | RGB/YUV pixel buffer |
-| Annotation overlay | `SceneDecoder` | List of 2D primitives (rasterized onto the base) |
-| Depth colormap | `ImageDecoder` (mono16) | False-color pixel buffer (colormap applied by compositor) |
-| Segmentation mask | `ImageDecoder` | Indexed-color pixel buffer (alpha-blended) |
+| Layer type | Source | Output in `MediaFrame` |
+|---|---|---|
+| Base image/video | `ImagePipelineSource`, `FileVideoSource`, `StreamingVideoSource` | `.base` (RGB/YUV pixel buffer) |
+| Vector annotations (`ImageAnnotation`) | `ScenePipelineSource` | `.overlays` (typed primitives — points, line loops/strips/lists, circles, texts) |
+| Depth colormap (planned) | `ImagePipelineSource` with `DepthColormap` codec | additional `.base` slot (pixel-layer fusion not implemented yet) |
+| Segmentation mask (planned) | `ImagePipelineSource` with `SegmentationPalette` codec | additional `.base` slot (idem) |
 
 ### 8.2 Compositing pipeline
 
 `CompositeMediaSource` (§5.4) owns one `MediaSource` per layer. On each tick:
 
-1. Calls `takeFrame()` on each layer's `MediaSource`.
-2. Collects decoded outputs into a single `MediaFrame` (one `.base` +
-   accumulated `.overlays`).
-3. Returns the fused frame via its own `takeFrame()`.
+1. Calls `setTimestamp()` on every layer.
+2. Calls `takeFrame()` on every layer.
+3. Returns one `MediaFrame` where the first non-null `.base` wins and every layer's `.overlays` are concatenated in addition order.
 
-Layer-specific rasterization happens in the widget that consumes the
-`MediaFrame`:
-- Pixel-buffer layers (`.base`) → texture upload + image shader.
-- Vector overlays (`.overlays`) → per-primitive expansion (e.g. LineLoop
-  → LineList) + a second QRhi pipeline that shares the same
-  viewTransform uniform so overlays track pan/zoom/letterbox with the
-  base. See `MediaViewerWidget::render` for the current implementation
-  (image base + line overlay, blended in the same render pass).
+The widget consumes the fused `MediaFrame` and dispatches:
 
-Pixel-buffer overlays (depth colormap, segmentation mask) are recognized
-in §8.1 but not yet wired through `MediaFrame.overlays` — they will need
-either an additional pixel-layer slot or shared-texture composition in a
-follow-up.
+- `.base` → texture upload + image pipeline.
+- `.overlays` → CPU expansion to vertex streams (see §7.1) and the four overlay pipelines (Lines, Points/Triangles fills, Thick triangles, Text textured).
+
+Pixel-layer fusion (multiple `.base` layers blended in pixel space — RGB + depth colormap + segmentation mask) is **not implemented yet**. Today the composite handles vector overlays on top of one pixel base. Adding a multi-base path requires either an additional slot in `MediaFrame` or a CPU blender step before delivery; estimated ~1 week's work when test data appears.
 
 ### 8.3 At-or-before semantics
 

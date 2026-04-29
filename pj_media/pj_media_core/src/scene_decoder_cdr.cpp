@@ -1,3 +1,5 @@
+#include <cmath>
+#include <cstdio>
 #include <exception>
 #include <memory>
 #include <string>
@@ -29,6 +31,44 @@ constexpr ColorRGBA colorForClass(int32_t class_id) {
   // Negative ids fold into the palette via unsigned wrap.
   auto idx = static_cast<uint32_t>(class_id) % (sizeof(kClassPalette) / sizeof(kClassPalette[0]));
   return kClassPalette[idx];
+}
+
+// FNV-1a 32-bit hash of a string. Used to map textual class_id (vision_msgs uses
+// string class identifiers) to a deterministic palette index. Same input always
+// hashes to the same colour across frames.
+uint32_t fnv1a32(const std::string& s) {
+  uint32_t h = 0x811c9dc5u;
+  for (unsigned char c : s) {
+    h ^= c;
+    h *= 0x01000193u;
+  }
+  return h;
+}
+
+// Compose "label score" with score truncated to 2 decimals. Empty label → empty
+// string (caller should skip emission). NaN/inf scores produce just the label.
+std::string formatLabel(const std::string& label, double score) {
+  if (label.empty()) return {};
+  char buf[64] = {0};
+  if (score == score && score > -1e9 && score < 1e9) {
+    std::snprintf(buf, sizeof(buf), "%s %.2f", label.c_str(), score);
+  } else {
+    std::snprintf(buf, sizeof(buf), "%s", label.c_str());
+  }
+  return std::string(buf);
+}
+
+// Build a TextAnnotation positioned just above the top edge of a bbox whose
+// center is (cx, cy) and whose half-extents are (hx, hy). Returns std::nullopt
+// when the label is empty so callers can skip the push.
+TextAnnotation makeBboxLabel(const std::string& label_text, double cx, double cy, double hx, double hy,
+                             const ColorRGBA& color) {
+  TextAnnotation t;
+  t.text = label_text;
+  t.position = {cx - hx, cy - hy - 18.0};
+  t.font_size = 14.0;
+  t.color = color;
+  return t;
 }
 
 // CDR decoder for ROS 2 vision_msgs/msg/Detection2DArray.
@@ -67,9 +107,11 @@ class CdrDetection2DArrayDecoder final : public ISceneDecoder {
 
       // detections[]
       std::vector<PointsAnnotation> bboxes;
+      std::vector<TextAnnotation> labels;
       uint32_t n_detections = 0;
       dec.decode(n_detections);
       bboxes.reserve(n_detections);
+      labels.reserve(n_detections);
 
       for (uint32_t i = 0; i < n_detections; ++i) {
         // per-detection Header
@@ -80,15 +122,22 @@ class CdrDetection2DArrayDecoder final : public ISceneDecoder {
         std::string det_frame_id;
         dec.decode(det_frame_id);
 
-        // results[]: skip everything (class_id + score + PoseWithCovariance{7 doubles + 36 doubles})
+        // results[] : ObjectHypothesisWithPose = {class_id (string), score (double),
+        //                                          PoseWithCovariance (7 + 36 doubles)}.
+        // Capture the FIRST hypothesis's class_id and score for the label.
         uint32_t n_results = 0;
         dec.decode(n_results);
+        std::string first_class_id;
+        double first_score = std::nan("");
         for (uint32_t j = 0; j < n_results; ++j) {
           std::string class_id;
           dec.decode(class_id);
           double score = 0;
           dec.decode(score);
-          // PoseWithCovariance: position(3) + orientation(4) + covariance[36]
+          if (j == 0) {
+            first_class_id = std::move(class_id);
+            first_score = score;
+          }
           for (int k = 0; k < 7 + 36; ++k) {
             double dummy = 0;
             dec.decode(dummy);
@@ -115,12 +164,18 @@ class CdrDetection2DArrayDecoder final : public ISceneDecoder {
             {cx + sx / 2.0, cy + sy / 2.0},
             {cx - sx / 2.0, cy + sy / 2.0},
         };
-        // vision_msgs/Detection2D doesn't carry a top-level class_id; the
-        // class lives inside results[0].hypothesis. Until we parse that,
-        // rotate through the palette by detection index so neighbouring
-        // bboxes are at least visually distinguishable.
-        bbox.color = colorForClass(static_cast<int32_t>(i));
+        // Pick a stable colour per class_id. Hashing the string lets the same
+        // class keep the same colour even if the publisher re-orders detections
+        // between frames. Fallback to the bbox index when no hypothesis exists.
+        bbox.color = first_class_id.empty()
+                         ? colorForClass(static_cast<int32_t>(i))
+                         : colorForClass(static_cast<int32_t>(fnv1a32(first_class_id)));
         bbox.thickness = 2.0;
+
+        if (!first_class_id.empty()) {
+          labels.push_back(makeBboxLabel(formatLabel(first_class_id, first_score), cx, cy, sx / 2.0, sy / 2.0,
+                                          bbox.color));
+        }
         bboxes.push_back(std::move(bbox));
       }
 
@@ -128,6 +183,7 @@ class CdrDetection2DArrayDecoder final : public ISceneDecoder {
       ia.timestamp = top_ts;
       ia.image_topic = outer_frame_id;  // best-effort link; demo wires explicitly
       ia.points = std::move(bboxes);
+      ia.texts = std::move(labels);
 
       SceneFrame sf;
       sf.timestamp = top_ts;
@@ -163,9 +219,11 @@ class CdrYoloDetectionArrayDecoder final : public ISceneDecoder {
       const Timestamp top_ts = static_cast<int64_t>(sec) * 1'000'000'000LL + static_cast<int64_t>(nanosec);
 
       std::vector<PointsAnnotation> bboxes;
+      std::vector<TextAnnotation> labels;
       uint32_t n_detections = 0;
       dec.decode(n_detections);
       bboxes.reserve(n_detections);
+      labels.reserve(n_detections);
 
       for (uint32_t i = 0; i < n_detections; ++i) {
         // Detection fields, in order
@@ -244,6 +302,11 @@ class CdrYoloDetectionArrayDecoder final : public ISceneDecoder {
         };
         bbox.color = colorForClass(class_id);
         bbox.thickness = 2.0;
+
+        if (!class_name.empty()) {
+          labels.push_back(
+              makeBboxLabel(formatLabel(class_name, score), cx, cy, sx / 2.0, sy / 2.0, bbox.color));
+        }
         bboxes.push_back(std::move(bbox));
       }
 
@@ -251,6 +314,7 @@ class CdrYoloDetectionArrayDecoder final : public ISceneDecoder {
       ia.timestamp = top_ts;
       ia.image_topic = outer_frame_id;
       ia.points = std::move(bboxes);
+      ia.texts = std::move(labels);
 
       SceneFrame sf;
       sf.timestamp = top_ts;

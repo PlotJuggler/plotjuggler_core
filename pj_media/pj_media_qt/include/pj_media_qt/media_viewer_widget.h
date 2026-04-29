@@ -9,6 +9,8 @@
 #include <QRhiWidget>
 #include <QWheelEvent>
 #include <mutex>
+#include <string>
+#include <unordered_map>
 #include <vector>
 
 #include "pj_media_core/decoded_frame.h"
@@ -75,6 +77,12 @@ class MediaViewerWidget : public QRhiWidget {
  private:
   [[nodiscard]] QMatrix4x4 buildViewTransform(QSize output_size) const;
   static QShader loadShader(const QString& path);
+  // Get-or-create the glyph mask texture for a given (text, font_size). Renders
+  // via QPainter on first miss and uploads as an R8 QRhiTexture. The texture
+  // pointer is owned by text_cache_; never delete the returned pointer.
+  struct TextEntry;
+  TextEntry* getOrCreateTextTexture(const std::string& text, double font_size,
+                                    QRhiResourceUpdateBatch* updates);
 
   // Pipeline for YUV→RGB shader (video frames)
   QRhi* rhi_cached_ = nullptr;
@@ -126,6 +134,65 @@ class MediaViewerWidget : public QRhiWidget {
   std::vector<float> marker_vertex_data_; ///< CPU-side scratch (pos.xy + color.rgba)
   std::vector<SceneFrame> last_overlays_; ///< persisted across renders
   bool overlays_dirty_ = false;           ///< rebuild VBO on next render
+
+  // ----- kPoints quad pipeline (solid filled squares for kPoints topology) -----
+  // Third QRhi pipeline (Triangles topology) sharing marker_uniform_buf_ but
+  // with its own SRB and VBO. Each kPoints point becomes 2 triangles centred
+  // on the point with side = thickness.
+  QRhiGraphicsPipeline* points_pipeline_ = nullptr;
+  QRhiBuffer* points_vbo_ = nullptr;
+  QRhiShaderResourceBindings* points_srb_ = nullptr;
+  size_t points_vbo_capacity_ = 0;
+  std::vector<float> points_vertex_data_;
+
+  // ----- Thick lines pipeline (Triangles topology, perpendicular expansion) -----
+  // Fourth QRhi pipeline. Used when PointsAnnotation.thickness > 1.5 (line
+  // primitives) or when CircleAnnotation.thickness > 1.5. Each segment expands
+  // CPU-side to 2 triangles forming a rectangle of width = thickness.
+  QRhiGraphicsPipeline* thick_pipeline_ = nullptr;
+  QRhiBuffer* thick_vbo_ = nullptr;
+  QRhiShaderResourceBindings* thick_srb_ = nullptr;
+  size_t thick_vbo_capacity_ = 0;
+  std::vector<float> thick_vertex_data_;
+
+  // ----- Text pipeline (Triangles, textured quads with QPainter masks) -----
+  // Fifth QRhi pipeline. One textured quad per TextAnnotation; texture is an
+  // R8 alpha mask painted by QPainter, the per-vertex color provides the tint.
+  // Cache key = (text, font_size_q): two labels with same text+size but different
+  // colors share the same texture (color applied at fragment time).
+  QRhiGraphicsPipeline* text_pipeline_ = nullptr;
+  QRhiBuffer* text_vbo_ = nullptr;
+  QRhiShaderResourceBindings* text_srb_ = nullptr;  // pipeline layout SRB (placeholder texture)
+  QRhiTexture* text_placeholder_tex_ = nullptr;     // owned, lives until releaseResources
+  QRhiSampler* text_sampler_ = nullptr;
+  size_t text_vbo_capacity_ = 0;
+  std::vector<float> text_vertex_data_;  ///< stride 32: pos.xy + uv.xy + color.rgba
+
+  struct TextKey {
+    std::string text;
+    uint32_t font_size_q = 0;
+    bool operator==(const TextKey& o) const noexcept {
+      return font_size_q == o.font_size_q && text == o.text;
+    }
+  };
+  struct TextKeyHash {
+    size_t operator()(const TextKey& k) const noexcept {
+      return std::hash<std::string>{}(k.text) ^ (static_cast<size_t>(k.font_size_q) * 0x9e3779b9u);
+    }
+  };
+  struct TextEntry {
+    QRhiTexture* tex = nullptr;
+    QRhiShaderResourceBindings* srb = nullptr;  // Owns its own binding to `tex`.
+    int width = 0;
+    int height = 0;
+  };
+  std::unordered_map<TextKey, TextEntry, TextKeyHash> text_cache_;
+  // Per-text quad metadata captured at rebuild time, consumed at draw time.
+  struct TextDrawItem {
+    QRhiShaderResourceBindings* srb;  // pointer borrowed from text_cache_
+    size_t vbo_offset_bytes;
+  };
+  std::vector<TextDrawItem> text_draw_items_;
 
   // Uniform layout for marker pipeline (std140). frameSize is vec4 (only .xy
   // used) instead of vec2 to dodge a std140 alignment quirk in the OpenGL

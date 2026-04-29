@@ -357,11 +357,36 @@ on top of it. They are not part of the 3D scene graph.
 `CircleAnnotation`, `TextAnnotation`) live in
 `pj_media_core/include/pj_media_core/scene_frame.h`, plus a `Point2` and a `ColorRGBA`
 (RGBA8). Decoders for `vision_msgs/msg/Detection2DArray`, `yolo_msgs/msg/DetectionArray`
-(both CDR) and `foxglove.ImageAnnotations` (Protobuf) live in `scene_decoder*.cpp` and
-are wired through the factory `makeSceneDecoder(schema_name)`. `MediaViewerWidget`
-renders `PointsAnnotation` (any topology) via a second QRhi pipeline that shares the
-image's `viewTransform` uniform; `CircleAnnotation` and `TextAnnotation` are decoded
-but not yet rendered.
+(both CDR) and `foxglove.ImageAnnotations` (Protobuf, hand-rolled wire reader — no
+libprotobuf dependency) live in `scene_decoder*.cpp` and are wired through the factory
+`makeSceneDecoder(schema_name)`. The Foxglove decoder reads `points`, `circles`, `texts`
+and the colour fields (`outline_color`, `outline_colors` per-vertex, `fill_color`). The
+CDR Detection2D decoder maps the first hypothesis's `class_id` to a stable palette
+colour via FNV-1a hash and emits a `"<class> <score>"` `TextAnnotation` above each
+bbox; the yolo decoder uses `class_name` for the same purpose.
+
+`MediaViewerWidget` renders **every** `ImageAnnotation` primitive end-to-end through
+five QRhi pipelines:
+
+| Pipeline | Topology | Used for |
+|---|---|---|
+| Image | textured quad | YUV420P or RGB base frame |
+| Marker (1 px) | `Lines` | `PointsAnnotation` and circle outlines with `thickness ≤ 1.5` (QRhi `Lines` is fixed-width 1 px on most backends — that's the threshold) |
+| Points | `Triangles` | `kPoints` quads, `kLineLoop` fills, circle fills |
+| Thick lines | `Triangles` | `PointsAnnotation` and circle outlines with `thickness > 1.5`, expanded CPU-side to perpendicular rectangles |
+| Text | `Triangles` (textured) | `TextAnnotation` — one quad per label, glyph mask painted by `QPainter` to a `QImage::Format_Alpha8` and uploaded as a `QRhiTexture::R8`. Per-vertex colour acts as a tint over the alpha mask, so two labels with the same text+size but different colours share the same texture (cache key is `(text, font_size_q)`). |
+
+Draw order is `image → fills → 1 px lines → thick lines → text`, so strokes always
+render on top of fills and text on top of everything. Per-vertex colour
+(`PointsAnnotation.colors[]`) is honoured when its size matches `points.size()`,
+otherwise `color` is splatted across all vertices. `LineLoop` fill (`fill_color.a > 0`)
+is a triangle fan from `points[0]` — convex polygons only.
+
+**Limitations**: thick lines have no miter joins (adjacent segments butt-join with a
+possible visible gap at sharp angles); polygon fills are convex-only; text is rasterised
+once per `(text, font_size)` and uses Qt's default font selection (no fallback for
+missing glyphs). The text cache is cleared in `releaseResources()`; for now there is
+no LRU eviction.
 
 ### ImageAnnotation
 
