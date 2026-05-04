@@ -18,7 +18,6 @@ set(PJ_MEDIA_CORE_SOURCES
   src/codecs.cpp
   src/image_pipeline_source.cpp
   src/scene_decoder.cpp
-  src/scene_decoder_cdr.cpp
   src/scene_decoder_protobuf.cpp
   src/scene_pipeline_source.cpp
   src/composite_media_source.cpp
@@ -46,7 +45,7 @@ target_compile_options(pj_media_core PRIVATE
   ${PJ_WARNING_FLAGS} ${PJ_SANITIZER_FLAGS}
 )
 target_link_libraries(pj_media_core
-  PUBLIC pj_base pj_datastore
+  PUBLIC pj_base pj_datastore pj_marker_protocol
   PRIVATE PkgConfig::TURBOJPEG PkgConfig::LIBPNG
 )
 

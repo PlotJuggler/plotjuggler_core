@@ -355,15 +355,23 @@ on top of it. They are not part of the 3D scene graph.
 
 **Implementation status:** all four type structs (`ImageAnnotation`, `PointsAnnotation`,
 `CircleAnnotation`, `TextAnnotation`) live in
-`pj_media_core/include/pj_media_core/scene_frame.h`, plus a `Point2` and a `ColorRGBA`
-(RGBA8). Decoders for `vision_msgs/msg/Detection2DArray`, `yolo_msgs/msg/DetectionArray`
-(both CDR) and `foxglove.ImageAnnotations` (Protobuf, hand-rolled wire reader — no
-libprotobuf dependency) live in `scene_decoder*.cpp` and are wired through the factory
-`makeSceneDecoder(schema_name)`. The Foxglove decoder reads `points`, `circles`, `texts`
-and the colour fields (`outline_color`, `outline_colors` per-vertex, `fill_color`). The
-CDR Detection2D decoder maps the first hypothesis's `class_id` to a stable palette
-colour via FNV-1a hash and emits a `"<class> <score>"` `TextAnnotation` above each
-bbox; the yolo decoder uses `class_name` for the same purpose.
+`pj_marker_protocol/include/pj_marker_protocol/image_annotation.h`, plus a `Point2` and a
+`ColorRGBA` (RGBA8). The canonical wire format is
+`foxglove.ImageAnnotations` Protobuf (this section's spec). pj_media has exactly **one**
+decoder (`scene_decoder_protobuf.cpp`, hand-rolled wire reader — no libprotobuf
+dependency) that reads `points`, `circles`, `texts` and all colour fields (`outline_color`,
+`outline_colors` per-vertex, `fill_color`).
+
+**Source-format conversion happens loader-side**, not in pj_media. A loader reads its
+source format (CDR `vision_msgs/msg/Detection2DArray`, CDR `yolo_msgs/msg/DetectionArray`,
+CSV, RLDS, etc.), fills the `ImageAnnotation` struct, and serializes via
+`PJ::serializeImageAnnotation` (in `pj_marker_protocol/image_annotation_codec.h`) before
+pushing canonical bytes to ObjectStore. Each loader's per-source adapters live next to it
+(`pj_media/demos/cdr_*_to_image_annotation.{h,cpp}` for the MCAP demo, plus
+`marker_palette.{h,cpp}` for the FNV-1a class-id palette). The Detection2D adapter maps
+the first hypothesis's `class_id` to a stable palette colour and emits a
+`"<class> <score>"` `TextAnnotation` above each bbox; the yolo adapter uses `class_name`
+for the same purpose. New source formats add new adapter files; pj_media does not change.
 
 `MediaViewerWidget` renders **every** `ImageAnnotation` primitive end-to-end through
 five QRhi pipelines:

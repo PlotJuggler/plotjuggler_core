@@ -5,19 +5,11 @@
 
 namespace PJ {
 
-// Format-specific factories implemented in their own translation units.
-std::unique_ptr<ISceneDecoder> makeSceneDecoderCdrDetection2DArray();
-std::unique_ptr<ISceneDecoder> makeSceneDecoderCdrYoloDetectionArray();
+// Single decoder kind, defined in scene_decoder_protobuf.cpp.
 std::unique_ptr<ISceneDecoder> makeSceneDecoderProtobufImageAnnotations();
 
 std::unique_ptr<ISceneDecoder> makeSceneDecoder(std::string_view schema_name) {
-  if (schema_name == kSchemaDetection2DArray) {
-    return makeSceneDecoderCdrDetection2DArray();
-  }
-  if (schema_name == kSchemaYoloDetectionArray) {
-    return makeSceneDecoderCdrYoloDetectionArray();
-  }
-  if (schema_name == kSchemaFoxgloveImageAnnotations) {
+  if (schema_name == kSchemaImageAnnotations) {
     return makeSceneDecoderProtobufImageAnnotations();
   }
   return nullptr;

@@ -3,46 +3,30 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
-#include <string>
-#include <string_view>
 
 #include "pj_base/expected.hpp"
-#include "pj_media_core/scene_frame.h"
+#include "pj_marker_protocol/image_annotation.h"
+#include "pj_marker_protocol/image_annotation_codec.h"  // for kSchemaImageAnnotations
 
 namespace PJ {
 
-/// MCAP schema names recognized by the scene decoder factory. Use these
-/// constants instead of raw string literals so a typo can't silently disable
-/// a decoder.
-inline constexpr std::string_view kSchemaDetection2DArray = "vision_msgs/msg/Detection2DArray";
-inline constexpr std::string_view kSchemaYoloDetectionArray = "yolo_msgs/msg/DetectionArray";
-inline constexpr std::string_view kSchemaFoxgloveImageAnnotations = "foxglove.ImageAnnotations";
-
-/// True if the given schema name is one this module can decode.
-constexpr bool isSupportedSceneSchema(std::string_view schema) {
-  return schema == kSchemaDetection2DArray || schema == kSchemaYoloDetectionArray ||
-         schema == kSchemaFoxgloveImageAnnotations;
-}
-
-/// Decodes wire-format bytes (one per topic message) into a SceneFrame of
+/// Decodes canonical wire-format bytes (foxglove.ImageAnnotations Protobuf —
+/// the schema documented in `pj_media/docs/datatypes_2D.md §8` and serialized
+/// by `pj_marker_protocol::serializeImageAnnotation`) into a `SceneFrame` of
 /// vector primitives. Stateless — one instance per scene/annotation layer.
 ///
-/// Concrete implementations:
-///   - CDR decoder for ROS 2 native schemas (e.g. vision_msgs/msg/Detection2DArray)
-///   - Protobuf decoder for Foxglove schemas (e.g. foxglove.ImageAnnotations)
+/// There is exactly ONE decoder kind. Per-source-format conversion (e.g. CDR
+/// `vision_msgs/msg/Detection2DArray` → canonical bytes) lives loader-side and
+/// is invisible to pj_media.
 class ISceneDecoder {
  public:
   virtual ~ISceneDecoder() = default;
   virtual Expected<SceneFrame> decode(const uint8_t* data, size_t size) = 0;
 };
 
-/// Factory: returns a decoder for the given MCAP schema name, or nullptr if
-/// the schema is not supported. Caller owns the returned decoder.
-///
-/// Currently supported (see kSchema* constants above):
-///   - vision_msgs/msg/Detection2DArray — CDR (ROS 2 native)
-///   - yolo_msgs/msg/DetectionArray     — CDR (yolo_ros)
-///   - foxglove.ImageAnnotations        — Protobuf (Foxglove Studio)
+/// Factory: returns the canonical Protobuf decoder. The `schema_name` argument
+/// is checked against `kSchemaImageAnnotations` so a typo on the loader side
+/// surfaces as a nullptr at construction.
 std::unique_ptr<ISceneDecoder> makeSceneDecoder(std::string_view schema_name);
 
 }  // namespace PJ

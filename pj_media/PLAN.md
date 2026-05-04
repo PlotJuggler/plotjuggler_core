@@ -121,7 +121,7 @@ the full list.
 | Piece | Spec | Status |
 |---|---|---|
 | `CompositeMediaSource` | ARCH §5.4, §8 | ✓ implemented (`composite_media_source.cpp`) |
-| `SceneDecoder` (CDR/Protobuf → typed primitives) | ARCH §4.3 | ✓ implemented for `vision_msgs/Detection2DArray`, `yolo_msgs/DetectionArray`, `foxglove.ImageAnnotations` (full Foxglove coverage: points, circles, texts, all colour fields) |
+| `SceneDecoder` (canonical Protobuf → typed primitives) | ARCH §4.3 | ✓ single decoder for `foxglove.ImageAnnotations` (full coverage: points, circles, texts, all colour fields). Source-format conversion (CDR `vision_msgs`/`yolo_msgs`, …) lives loader-side in `pj_media/demos/cdr_*_to_image_annotation.{h,cpp}` and writes canonical bytes via `pj_marker_protocol::serializeImageAnnotation` before push. |
 | `ImageAnnotation` render path (Points, Circle, Text) | datatypes_2D §8 | ✓ implemented end-to-end. 5 QRhi pipelines (image / lines 1 px / triangles fills+kPoints / thick lines / textured text) with mask-+-tint text rasterisation |
 | 2D `ScenePrimitive` render | datatypes_2D §7 | **removed from scope** (covered by `pj_3d_widgets`) |
 | Pixel-layer fusion (depth colormap + RGB + segmentation, alpha-blended in pixel space) | REQUIREMENTS §4.8, ARCH §8.1 | not started — only the vector-overlay path of `CompositeMediaSource` is exercised today |
@@ -189,13 +189,23 @@ Time estimates are single-developer, rough. Each phase ends green on
 
 **Phase D — Annotations (delivered)**
 
-- ✓ `SceneDecoder` implemented for three schemas: `vision_msgs/msg/Detection2DArray`
-  (CDR), `yolo_msgs/msg/DetectionArray` (CDR), `foxglove.ImageAnnotations`
-  (Protobuf, hand-rolled wire parser, no libprotobuf dependency). Foxglove
-  coverage is complete: points/circles/texts plus outline_color,
-  outline_colors (per-vertex), fill_color. CDR Detection2D uses real
-  `class_id` (FNV-1a → palette) and emits `"<class> <score>"` labels
-  above each bbox.
+- ✓ Schema + canonical wire codec live in `pj_marker_protocol/` (sibling
+  of `pj_media_core`, depends on `pj_base` only so plugins can link it).
+  Provides the `ImageAnnotation` struct types and
+  `serializeImageAnnotation()` (hand-rolled Foxglove ImageAnnotations
+  Protobuf writer, no libprotobuf dependency).
+- ✓ `SceneDecoder` in `pj_media_core` is now a single decoder kind that
+  reads canonical `foxglove.ImageAnnotations` bytes — no schema-name
+  dispatch on the read side. Coverage is complete: points/circles/texts
+  plus outline_color, outline_colors (per-vertex), fill_color.
+- ✓ Source-format adapters (CDR `vision_msgs/msg/Detection2DArray`,
+  CDR `yolo_msgs/msg/DetectionArray`) live next to each loader in
+  `pj_media/demos/cdr_*_to_image_annotation.{h,cpp}` plus
+  `marker_palette.{h,cpp}` for the FNV-1a class-id palette and label
+  formatter. The MCAP demo loader converts source bytes →
+  `ImageAnnotation` → canonical wire bytes → `pushOwned`. New source
+  formats (CSV, RLDS, custom) add new adapter files; pj_media doesn't
+  change.
 - ✓ `ImageAnnotation` rendered end-to-end via 5 QRhi pipelines (see
   ARCHITECTURE.md §7 / §8.2): image → fills (Triangles) → 1 px lines
   → thick lines (Triangles) → textured text (Triangles, R8 mask + tint).

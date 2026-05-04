@@ -14,7 +14,7 @@
 #include <vector>
 
 #include "pj_media_core/decoded_frame.h"
-#include "pj_media_core/scene_frame.h"
+#include "pj_marker_protocol/image_annotation.h"
 
 namespace PJ {
 

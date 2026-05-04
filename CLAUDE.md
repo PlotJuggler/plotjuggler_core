@@ -9,7 +9,7 @@ PlotJuggler Core — C++20 foundation libraries that will host the full PlotJugg
 - **pj_base** — vocabulary types, plugin SDK headers (zero external deps)
 - **pj_datastore** — columnar storage engine + `ObjectStore` (for media blobs) + `DerivedEngine` (fmt, tsl::robin_map, nanoarrow)
 - **pj_plugins** — C-ABI plugin protocol, host-side loaders, dialog SDK (Qt 6.8.3 optional); four plugin families: DataSource, MessageParser, Dialog, Toolbox
-- **pj_media** — 2D/video visualization on top of `ObjectStore` (QRhi rendering, Qt 6.8+)
+- **pj_media** — 2D/video visualization on top of `ObjectStore` (QRhi rendering, Qt 6.8+). Sub-modules: `pj_marker_protocol` (schema + canonical wire-format codec for image annotations — `ImageAnnotation` struct types and `serializeImageAnnotation()`; depends on `pj_base` only so loaders/plugins can link it without dragging `pj_media_core`), `pj_media_core` (decoders, MediaSource, ObjectStore plumbing), `pj_media_qt` (QRhi viewer widgets).
 - **pj_marketplace** — extension discovery, download, install (GitHub-hosted registry)
 
 ### Planned modules (PlotJuggler 4.x application — see `PJ4_PLAN.md` and `docs/APP_IMPLEMENTATION_PLAN.md`)
@@ -27,7 +27,9 @@ The three widget families (plot / 2D / 3D) are **independent by design** — eac
 
 - `pj_datastore` → `pj_base`
 - `pj_plugins` → `pj_base`
-- `pj_media` → `pj_datastore`, `pj_base`
+- `pj_marker_protocol` → `pj_base`
+- `pj_media` (= `pj_media_core` + `pj_media_qt`) → `pj_datastore`, `pj_base`, `pj_marker_protocol`
+- DataSource loaders/plugins that produce annotations → `pj_base`, `pj_marker_protocol` (NOT `pj_media_core`)
 - `pj_scripting` → `pj_base`, `pj_datastore` (uses `ISISOTransform` / `IMIMOTransform`)
 - `pj_app_core` → `pj_datastore`, `pj_plugins`, `pj_scripting`, `pj_media`
 - `pj_plot_widgets`, `pj_media_widgets_qt`, `pj_3d_widgets` → `pj_app_core` + Qt (never each other)

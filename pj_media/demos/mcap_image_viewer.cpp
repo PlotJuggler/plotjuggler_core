@@ -24,10 +24,13 @@
 #include "pj_media_core/scene_decoder.h"
 #include "pj_media_core/scene_pipeline_source.h"
 #include "pj_media_qt/media_viewer_widget.h"
+#include "pj_marker_protocol/image_annotation_codec.h"
 
 #define MCAP_IMPLEMENTATION
 #include <mcap/reader.hpp>
 
+#include "cdr_detection2d_to_image_annotation.h"
+#include "cdr_yolo_to_image_annotation.h"
 #include "mcap_helpers.hpp"
 
 // ---------------------------------------------------------------------------
@@ -47,6 +50,23 @@
 /// Predicate returning true if the channel/schema is the one to load.
 using TopicMatchFn = std::function<bool(const mcap::Channel&, const mcap::Schema&)>;
 
+/// Optional ingest-time transform: takes the raw (decompressed) message bytes
+/// from MCAP and returns canonical bytes to store. Switches the loader from
+/// lazy `pushLazy` (raw bytes, decoded on read) to eager `pushOwned` (canonical
+/// bytes, decoded once at index time). Used for annotation topics where the
+/// source format differs from the canonical wire (e.g. CDR Detection2DArray →
+/// foxglove.ImageAnnotations Protobuf).
+///
+/// Receives the schema name so a single transform can dispatch on source format.
+/// Returning an empty vector signals "skip this message".
+using EagerByteTransform =
+    std::function<std::vector<uint8_t>(std::string_view schema, std::vector<uint8_t> raw)>;
+
+struct LoaderOptions {
+  std::string metadata_json = "{}";
+  EagerByteTransform eager_transform;  ///< null = lazy mode (raw pass-through)
+};
+
 struct McapTopicLoader {
   std::shared_ptr<mcap::McapReader> index_reader;
   std::shared_ptr<mcap::McapReader> fetch_reader;
@@ -60,6 +80,7 @@ struct McapTopicLoader {
   std::atomic<size_t> indexed_count{0};
   std::atomic<bool> stop_requested{false};
   std::thread indexer_thread;
+  EagerByteTransform eager_transform;
 
   McapTopicLoader() = default;
   McapTopicLoader(const McapTopicLoader&) = delete;
@@ -72,7 +93,8 @@ struct McapTopicLoader {
     }
   }
 
-  bool open(const std::string& path, PJ::ObjectStore& store, const TopicMatchFn& match) {
+  bool open(const std::string& path, PJ::ObjectStore& store, const TopicMatchFn& match,
+            LoaderOptions options = {}) {
     auto summary_reader = std::make_shared<mcap::McapReader>();
     if (!summary_reader->open(path).ok()) return false;
     if (!summary_reader->readSummary(mcap::ReadSummaryMethod::AllowFallbackScan).ok()) return false;
@@ -99,17 +121,25 @@ struct McapTopicLoader {
       }
     }
 
-    auto id_or = store.registerTopic({.dataset_id = 1, .topic_name = topic_name, .metadata_json = "{}"});
+    auto id_or = store.registerTopic(
+        {.dataset_id = 1, .topic_name = topic_name, .metadata_json = options.metadata_json});
     if (!id_or.has_value()) return false;
     topic_id = *id_or;
 
     index_reader = std::make_shared<mcap::McapReader>();
     if (!index_reader->open(path).ok()) return false;
     if (!index_reader->readSummary(mcap::ReadSummaryMethod::AllowFallbackScan).ok()) return false;
-    fetch_reader = std::make_shared<mcap::McapReader>();
-    if (!fetch_reader->open(path).ok()) return false;
-    if (!fetch_reader->readSummary(mcap::ReadSummaryMethod::AllowFallbackScan).ok()) return false;
-    fetch_mutex = std::make_shared<std::mutex>();
+
+    eager_transform = std::move(options.eager_transform);
+    if (!eager_transform) {
+      // Lazy mode needs a separate fetch_reader because closure execution can
+      // race with the indexer iterating index_reader. Eager mode reads inside
+      // the indexer loop only, so a single reader suffices.
+      fetch_reader = std::make_shared<mcap::McapReader>();
+      if (!fetch_reader->open(path).ok()) return false;
+      if (!fetch_reader->readSummary(mcap::ReadSummaryMethod::AllowFallbackScan).ok()) return false;
+      fetch_mutex = std::make_shared<std::mutex>();
+    }
 
     indexer_thread = std::thread(&McapTopicLoader::indexLoop, this, std::ref(store), target_chan);
     return true;
@@ -123,10 +153,10 @@ struct McapTopicLoader {
   void indexLoop(PJ::ObjectStore& store, uint16_t target_chan) {
     mcap::ReadMessageOptions opts;
     opts.topicFilter = [this](std::string_view t) { return t == topic_name; };
-    // ObjectStore::pushLazy requires monotonically non-decreasing timestamps.
-    // mcap's default readOrder (FileOrder) does NOT sort by log time and can
-    // surface out-of-order messages on bags where chunks aren't laid out
-    // chronologically (rosbag2 message-mode compressed bags exhibit this).
+    // ObjectStore::push* require monotonically non-decreasing timestamps. mcap's
+    // default readOrder (FileOrder) does NOT sort by log time and can surface
+    // out-of-order messages on bags where chunks aren't laid out chronologically
+    // (rosbag2 message-mode compressed bags exhibit this).
     opts.readOrder = mcap::ReadMessageOptions::ReadOrder::LogTimeOrder;
     auto view = index_reader->readMessages([](const mcap::Status&) {}, opts);
 
@@ -135,24 +165,37 @@ struct McapTopicLoader {
       if (it->message.channelId != target_chan) continue;
       auto ts = static_cast<PJ::Timestamp>(it->message.logTime);
 
-      auto status = store.pushLazy(
-          topic_id, ts,
-          [reader = fetch_reader, mtx = fetch_mutex, topic = topic_name, ts, target_chan]()
-              -> std::vector<uint8_t> {
-            std::lock_guard<std::mutex> lock(*mtx);
-            mcap::ReadMessageOptions read_opts;
-            read_opts.startTime = static_cast<mcap::Timestamp>(ts);
-            read_opts.endTime = read_opts.startTime + 1;
-            read_opts.topicFilter = [&topic](std::string_view t) { return t == topic; };
-            auto v = reader->readMessages([](const mcap::Status&) {}, read_opts);
-            for (auto vit = v.begin(); vit != v.end(); ++vit) {
-              if (vit->message.channelId == target_chan) {
-                const auto* d = reinterpret_cast<const uint8_t*>(vit->message.data);
-                return pj_demos::maybeDecompressZstd({d, d + vit->message.dataSize});
+      PJ::Expected<void, std::string> status;
+      if (eager_transform) {
+        // Eager path: read + decompress + transform once at index time, push the
+        // canonical bytes via pushOwned. Used for small-payload topics (e.g.
+        // annotations, KB-scale) where lazy fetching would force per-read
+        // re-conversion. The image topic stays lazy via the else branch below.
+        const auto* d = reinterpret_cast<const uint8_t*>(it->message.data);
+        auto raw = pj_demos::maybeDecompressZstd({d, d + it->message.dataSize});
+        auto canonical = eager_transform(schema_name, std::move(raw));
+        if (canonical.empty()) continue;  // transform indicated skip / decode failure
+        status = store.pushOwned(topic_id, ts, std::move(canonical));
+      } else {
+        status = store.pushLazy(
+            topic_id, ts,
+            [reader = fetch_reader, mtx = fetch_mutex, topic = topic_name, ts, target_chan]()
+                -> std::vector<uint8_t> {
+              std::lock_guard<std::mutex> lock(*mtx);
+              mcap::ReadMessageOptions read_opts;
+              read_opts.startTime = static_cast<mcap::Timestamp>(ts);
+              read_opts.endTime = read_opts.startTime + 1;
+              read_opts.topicFilter = [&topic](std::string_view t) { return t == topic; };
+              auto v = reader->readMessages([](const mcap::Status&) {}, read_opts);
+              for (auto vit = v.begin(); vit != v.end(); ++vit) {
+                if (vit->message.channelId == target_chan) {
+                  const auto* d = reinterpret_cast<const uint8_t*>(vit->message.data);
+                  return pj_demos::maybeDecompressZstd({d, d + vit->message.dataSize});
+                }
               }
-            }
-            return {};
-          });
+              return {};
+            });
+      }
 
       if (status.has_value()) {
         indexed_count.fetch_add(1, std::memory_order_relaxed);
@@ -179,10 +222,47 @@ TopicMatchFn imageMatchFn(const std::string& target_topic) {
     return true;
   };
 }
+// Source schemas the loader knows how to convert to the canonical wire format.
+// Local to this demo — when a new source format becomes interesting (CSV, RLDS,
+// etc.) the corresponding adapter goes next to mcap_image_viewer.cpp and this
+// list grows. NOT a property of pj_media: each loader/plugin maintains its
+// own list of recognised source formats.
+constexpr std::string_view kSrcDetection2DArray = "vision_msgs/msg/Detection2DArray";
+constexpr std::string_view kSrcYoloDetectionArray = "yolo_msgs/msg/DetectionArray";
+
+constexpr bool isSupportedAnnotationSourceSchema(std::string_view schema) {
+  return schema == kSrcDetection2DArray || schema == kSrcYoloDetectionArray ||
+         schema == PJ::kSchemaImageAnnotations;
+}
+
 TopicMatchFn annotationsMatchFn() {
   return [](const mcap::Channel& /*chan*/, const mcap::Schema& schema) {
-    return PJ::isSupportedSceneSchema(schema.name);
+    return isSupportedAnnotationSourceSchema(schema.name);
   };
+}
+
+// Convert raw source-format bytes (CDR Detection2D, CDR yolo, or already-canonical
+// Foxglove Protobuf) into canonical foxglove.ImageAnnotations Protobuf bytes.
+// Returning empty bytes signals "skip this message" (decode error or unknown
+// schema). Used as the eager_transform for the annotations topic so the bytes
+// landing in ObjectStore are always the canonical wire format.
+std::vector<uint8_t> convertToCanonicalAnnotationBytes(std::string_view schema_name,
+                                                        std::vector<uint8_t> raw) {
+  if (schema_name == kSrcDetection2DArray) {
+    auto ia_or = pj_demos::cdrDetection2DArrayToImageAnnotation(raw.data(), raw.size());
+    if (!ia_or.has_value()) return {};
+    return PJ::serializeImageAnnotation(*ia_or);
+  }
+  if (schema_name == kSrcYoloDetectionArray) {
+    auto ia_or = pj_demos::cdrYoloDetectionArrayToImageAnnotation(raw.data(), raw.size());
+    if (!ia_or.has_value()) return {};
+    return PJ::serializeImageAnnotation(*ia_or);
+  }
+  if (schema_name == PJ::kSchemaImageAnnotations) {
+    // Already canonical — pass the bytes through unchanged.
+    return raw;
+  }
+  return {};
 }
 }  // namespace
 
@@ -221,14 +301,20 @@ class ImageViewerWindow : public QMainWindow {
     auto image_src = std::make_unique<PJ::ImagePipelineSource>(
         store_.get(), image_loader_->topic_id, PJ::makeCdrJpegPipeline());
 
-    // Try to discover an annotations topic. If found, wrap image+scene in a
-    // composite; otherwise the image source itself is the active source.
+    // Try to discover an annotations topic. The loader converts source-format
+    // bytes (CDR Detection2D, yolo, or already-canonical Foxglove) into
+    // canonical foxglove.ImageAnnotations Protobuf bytes BEFORE pushing to the
+    // ObjectStore. Topic metadata declares the wire format so any reader can
+    // dispatch deterministically. The viewer-side decoder is always the same
+    // canonical Protobuf decoder regardless of source format.
     annotations_loader_ = std::make_unique<McapTopicLoader>();
-    std::unique_ptr<PJ::ISceneDecoder> decoder;
-    if (annotations_loader_->open(path.toStdString(), *store_, annotationsMatchFn())) {
-      decoder = PJ::makeSceneDecoder(annotations_loader_->schema_name);
-    }
-    if (decoder != nullptr) {
+    LoaderOptions annotation_opts;
+    annotation_opts.metadata_json = R"({"encoding":"foxglove.ImageAnnotations"})";
+    annotation_opts.eager_transform = &convertToCanonicalAnnotationBytes;
+    bool annotations_ok = annotations_loader_->open(path.toStdString(), *store_,
+                                                     annotationsMatchFn(), std::move(annotation_opts));
+    if (annotations_ok) {
+      auto decoder = PJ::makeSceneDecoder(PJ::kSchemaImageAnnotations);
       auto scene_src = std::make_unique<PJ::ScenePipelineSource>(
           store_.get(), annotations_loader_->topic_id, std::move(decoder));
       auto composite = std::make_unique<PJ::CompositeMediaSource>();

@@ -19,15 +19,45 @@ target_link_libraries(extract_frame PRIVATE
 # Uses QRhiWidget (pj_media_qt) if Qt 6.8+ is available, else QLabel fallback
 if(TARGET pj_media_qt)
   set(CMAKE_AUTOMOC ON)
-  add_executable(mcap_image_viewer mcap_image_viewer.cpp)
+  add_executable(mcap_image_viewer
+    mcap_image_viewer.cpp
+    cdr_detection2d_to_image_annotation.cpp
+    cdr_yolo_to_image_annotation.cpp
+    marker_palette.cpp
+  )
   target_compile_features(mcap_image_viewer PRIVATE cxx_std_20)
   target_compile_options(mcap_image_viewer PRIVATE ${PJ_WARNING_FLAGS})
   target_compile_definitions(mcap_image_viewer PRIVATE PJ_HAS_RHI_WIDGET)
+  target_include_directories(mcap_image_viewer PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/..  # for <nanocdr/nanocdr.hpp>
+  )
   find_package(zstd REQUIRED)
   target_link_libraries(mcap_image_viewer PRIVATE
-    pj_media_qt pj_media_core pj_datastore mcap::mcap PkgConfig::TURBOJPEG
-    zstd::libzstd_static
+    pj_media_qt pj_media_core pj_marker_protocol pj_datastore mcap::mcap
+    PkgConfig::TURBOJPEG zstd::libzstd_static
   )
+
+  # Tests for the loader-side CDR adapters. Shares sources with the demo so
+  # there's only one place to fix bugs.
+  if(PJ_BUILD_TESTS)
+    add_executable(cdr_to_image_annotation_test
+      cdr_to_image_annotation_test.cpp
+      cdr_detection2d_to_image_annotation.cpp
+      cdr_yolo_to_image_annotation.cpp
+      marker_palette.cpp
+    )
+    target_compile_features(cdr_to_image_annotation_test PRIVATE cxx_std_20)
+    target_compile_options(cdr_to_image_annotation_test PRIVATE
+      ${PJ_WARNING_FLAGS} ${PJ_SANITIZER_FLAGS}
+    )
+    target_include_directories(cdr_to_image_annotation_test PRIVATE
+      ${CMAKE_CURRENT_SOURCE_DIR}/..  # for <nanocdr/nanocdr.hpp>
+    )
+    target_link_libraries(cdr_to_image_annotation_test PRIVATE
+      pj_marker_protocol pj_base GTest::gtest_main
+    )
+    add_test(NAME cdr_to_image_annotation_test COMMAND cdr_to_image_annotation_test)
+  endif()
   # --- Qt demo: multi-channel viewer (color + depth side by side) ---
   add_executable(multi_channel_viewer multi_channel_viewer.cpp)
   target_compile_features(multi_channel_viewer PRIVATE cxx_std_20)

@@ -2,135 +2,24 @@
 
 #include <gtest/gtest.h>
 
-#include <array>
 #include <cstdint>
-#include <string>
+#include <cstring>
 #include <vector>
 
-#include "nanocdr/nanocdr.hpp"
-#include "pj_media_core/scene_frame.h"
+#include "pj_marker_protocol/image_annotation.h"
 
 namespace PJ {
 namespace {
 
-// Build a synthetic CDR-encoded vision_msgs/msg/Detection2DArray with N
-// detections. Mirrors the field layout the decoder expects.
-std::vector<uint8_t> encodeDetection2DArray(
-    int32_t header_sec, uint32_t header_nanosec, const std::string& frame_id,
-    const std::vector<std::tuple<double, double, double, double>>& bboxes_cxcywh) {
-  std::vector<uint8_t> storage;
-  nanocdr::Encoder enc(nanocdr::CdrHeader{}, storage);
-
-  // header: stamp.sec, stamp.nanosec, frame_id
-  enc.encode(static_cast<uint32_t>(header_sec));
-  enc.encode(header_nanosec);
-  enc.encode(frame_id);
-
-  // detections[]
-  enc.encode(static_cast<uint32_t>(bboxes_cxcywh.size()));
-  for (const auto& [cx, cy, w, h] : bboxes_cxcywh) {
-    // per-detection header
-    enc.encode(static_cast<uint32_t>(0));  // sec
-    enc.encode(static_cast<uint32_t>(0));  // nanosec
-    enc.encode(std::string(""));            // frame_id
-
-    // results[]: empty (zero-length vector)
-    enc.encode(static_cast<uint32_t>(0));
-
-    // bbox: center.x, center.y, center.theta, size_x, size_y
-    enc.encode(static_cast<double>(cx));
-    enc.encode(static_cast<double>(cy));
-    enc.encode(static_cast<double>(0.0));
-    enc.encode(static_cast<double>(w));
-    enc.encode(static_cast<double>(h));
-
-    // id
-    enc.encode(std::string(""));
-  }
-
-  auto buf = enc.encodedBuffer();
-  return std::vector<uint8_t>(buf.data(), buf.data() + buf.size());
-}
-
-TEST(SceneDecoderCdrTest, FactoryReturnsNullForUnknownSchema) {
+TEST(SceneDecoderTest, FactoryReturnsNullForUnknownSchema) {
   auto dec = makeSceneDecoder("nonsense/Schema");
   EXPECT_EQ(dec.get(), nullptr);
 }
 
-TEST(SceneDecoderCdrTest, FactoryReturnsDecoderForDetection2DArray) {
-  auto dec = makeSceneDecoder("vision_msgs/msg/Detection2DArray");
-  ASSERT_NE(dec.get(), nullptr);
-}
-
-TEST(SceneDecoderCdrTest, EmptyDetectionListProducesEmptyAnnotation) {
-  auto dec = makeSceneDecoder("vision_msgs/msg/Detection2DArray");
-  ASSERT_NE(dec.get(), nullptr);
-
-  auto bytes = encodeDetection2DArray(0, 0, "/camera", {});
-  auto result = dec->decode(bytes.data(), bytes.size());
-  ASSERT_TRUE(result.has_value());
-  EXPECT_EQ(result->annotations.size(), 1u);
-  EXPECT_TRUE(result->annotations[0].points.empty());
-}
-
-TEST(SceneDecoderCdrTest, ThreeBboxesProduceThreeLineLoops) {
-  auto dec = makeSceneDecoder("vision_msgs/msg/Detection2DArray");
-  ASSERT_NE(dec.get(), nullptr);
-
-  auto bytes = encodeDetection2DArray(
-      1234, 567'000'000, "/camera/image",
-      {
-          {100.0, 200.0, 50.0, 30.0},   // bbox at (100,200) size 50x30
-          {500.0, 400.0, 80.0, 80.0},
-          {320.0, 240.0, 100.0, 60.0},
-      });
-
-  auto result = dec->decode(bytes.data(), bytes.size());
-  ASSERT_TRUE(result.has_value()) << "decode failed";
-  ASSERT_EQ(result->annotations.size(), 1u);
-
-  const auto& ia = result->annotations[0];
-  EXPECT_EQ(ia.image_topic, "/camera/image");
-  EXPECT_EQ(ia.timestamp, 1234LL * 1'000'000'000LL + 567'000'000LL);
-  ASSERT_EQ(ia.points.size(), 3u);
-
-  for (const auto& bbox : ia.points) {
-    EXPECT_EQ(bbox.topology, AnnotationTopology::kLineLoop);
-    EXPECT_EQ(bbox.points.size(), 4u);
-  }
-
-  // Verify first bbox geometry: cx=100, cy=200, w=50, h=30
-  // → corners: (75, 185), (125, 185), (125, 215), (75, 215)
-  const auto& first = ia.points[0];
-  EXPECT_DOUBLE_EQ(first.points[0].x, 75.0);
-  EXPECT_DOUBLE_EQ(first.points[0].y, 185.0);
-  EXPECT_DOUBLE_EQ(first.points[1].x, 125.0);
-  EXPECT_DOUBLE_EQ(first.points[1].y, 185.0);
-  EXPECT_DOUBLE_EQ(first.points[2].x, 125.0);
-  EXPECT_DOUBLE_EQ(first.points[2].y, 215.0);
-  EXPECT_DOUBLE_EQ(first.points[3].x, 75.0);
-  EXPECT_DOUBLE_EQ(first.points[3].y, 215.0);
-}
-
-TEST(SceneDecoderCdrTest, TooSmallBufferReturnsError) {
-  auto dec = makeSceneDecoder("vision_msgs/msg/Detection2DArray");
-  ASSERT_NE(dec.get(), nullptr);
-
-  std::vector<uint8_t> tiny = {0, 0};
-  auto result = dec->decode(tiny.data(), tiny.size());
-  EXPECT_FALSE(result.has_value());
-}
-
-TEST(SceneDecoderCdrTest, NullDataReturnsError) {
-  auto dec = makeSceneDecoder("vision_msgs/msg/Detection2DArray");
-  ASSERT_NE(dec.get(), nullptr);
-
-  auto result = dec->decode(nullptr, 0);
-  EXPECT_FALSE(result.has_value());
-}
-
 // ---------------------------------------------------------------------------
-// Protobuf decoder tests (foxglove.ImageAnnotations)
+// Protobuf decoder tests (foxglove.ImageAnnotations) — the canonical wire
+// format. Per-source-format conversion (CDR vision_msgs, yolo, …) is
+// loader-side and tested elsewhere (see pj_media/demos/cdr_to_image_annotation_test).
 // ---------------------------------------------------------------------------
 
 namespace pb {

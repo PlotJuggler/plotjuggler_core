@@ -233,7 +233,7 @@ bool decodeCircleAnnotation(Reader& r, size_t len, CircleAnnotation& out) {
   if (sub_end > r.end) {
     return false;
   }
-  // Defaults match scene_frame.h.
+  // Defaults match pj_marker_protocol/image_annotation.h.
   out.color = {0, 255, 0, 255};
   out.fill_color = {0, 0, 0, 0};
   out.thickness = 2.0;
@@ -271,7 +271,7 @@ bool decodeCircleAnnotation(Reader& r, size_t len, CircleAnnotation& out) {
 // Decode one foxglove.TextAnnotation sub-message:
 //   timestamp(1)=Time, position(2)=Point2, text(3)=string, font_size(4)=double,
 //   text_color(5)=Color, background_color(6)=Color  (background_color skipped — not
-//   present in scene_frame.h::TextAnnotation).
+//   present in pj_marker_protocol/image_annotation.h::TextAnnotation).
 bool decodeTextAnnotation(Reader& r, size_t len, TextAnnotation& out) {
   const uint8_t* sub_end = r.p + len;
   if (sub_end > r.end) {

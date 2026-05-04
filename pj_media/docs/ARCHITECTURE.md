@@ -15,15 +15,23 @@ pj_media ships as two CMake targets with a strict dependency direction:
 
 ```
 pj_media_qt  ──►  pj_media_core  ──►  pj_base
-     │                  │                  │
-     │                  ├──►  pj_datastore │
-     │                  ├──►  FFmpeg       │
-     │                  ├──►  turbojpeg    │
-     │                  └──►  libpng       │
-     │                                     │
-     ├──►  Qt 6.8+ (Widgets, Gui, Rhi)    │
-     └──►  pj_media_core                  │
+     │                  │
+     │                  ├──►  pj_marker_protocol  (schema + canonical wire codec)
+     │                  ├──►  pj_datastore
+     │                  ├──►  FFmpeg
+     │                  ├──►  turbojpeg
+     │                  └──►  libpng
+     │
+     ├──►  Qt 6.8+ (Widgets, Gui, Rhi)
+     └──►  pj_media_core
 ```
+
+`pj_marker_protocol` is a top-level sibling library (NOT under `pj_media/`).
+It owns the `ImageAnnotation` struct types and the canonical wire-format
+codec. Both pj_media (consumer of canonical bytes) and any loader/plugin
+(producer of canonical bytes) depend on it; loaders never link
+pj_media_core, so the schema bridge has to live somewhere both sides can
+see — that's the role pj_marker_protocol fills. See `pj_marker_protocol/`.
 
 ### pj_media_core (no Qt)
 
@@ -43,7 +51,7 @@ Pure C++ library. Contains everything that does not touch Qt:
 | `ThumbnailCache` | `thumbnail_cache.h` | JPEG-compressed frame cache: background pre-decode at open, auto-scale to 1920px, YUV420P output (§4.1) |
 | `H264 NAL utils` | `h264_utils.h` | Annex-B keyframe detection (`isH264Keyframe`), SPS/PPS extraction (`extractH264SpsPps`), codec param builder (`makeH264CodecParams`) |
 | `ImageDecoder` | `image_decoder.h` | turbojpeg / libpng / raw-pixel dispatch (§4) |
-| `SceneDecoder` | `scene_decoder.h` | CDR / Protobuf deserializer for annotations and 2D primitives (§4) — implemented for vision_msgs / yolo_msgs / foxglove ImageAnnotations |
+| `SceneDecoder` | `scene_decoder.h` | Protobuf deserializer for the canonical `foxglove.ImageAnnotations` wire format (§4). Single decoder kind; per-source-format conversion is loader-side, see `pj_marker_protocol`. |
 | `MediaIndexRegistry` | `media_index_registry.h` | Per-topic keyframe timestamp index sidechannel (§6) |
 | `CompositeMediaSource` | `composite_media_source.h` | Multi-layer fan-out: owns N `MediaSource`, fuses their `MediaFrame`s (§5.4 / §8) |
 | `CancelToken` | `cancel_token.h` | Atomic flag polled by decoders between decode units |
@@ -399,42 +407,43 @@ that caching wastes more memory than it saves time (§R4.2).
 
 ### 4.3 SceneDecoder
 
-Stateless. One instance per scene/annotation layer. Deserializes CDR
-or Protobuf wire format into typed scene primitives and annotations
-(see `datatypes_2D.md` for the type catalog).
+Stateless. One instance per scene/annotation layer. Deserializes the
+canonical wire format (`foxglove.ImageAnnotations` Protobuf) into
+`ImageAnnotation` structs ready for the compositor to overlay. There is
+exactly **one** decoder kind — pj_media has no schema-name dispatch.
 
-Output is a `SceneFrame` — a collection of typed primitives ready for
-the compositor to rasterize or overlay.
+Output is a `SceneFrame` (`pj_marker_protocol/image_annotation.h`) — a
+collection of `ImageAnnotation` ready for the compositor to rasterize.
 
 **Implemented** (`pj_media_core/scene_decoder.h`). The factory
-`makeSceneDecoder(schema_name)` dispatches to the right decoder by exact
-MCAP schema name; unknown schemas return `nullptr` and the caller skips
-the topic. Schema constants live alongside the factory:
-
-| Schema constant                        | Wire | Mapping                                                              |
-|----------------------------------------|------|----------------------------------------------------------------------|
-| `kSchemaDetection2DArray`              | CDR  | `vision_msgs/msg/Detection2DArray` → 4-corner LineLoop bboxes + `"<class> <score>"` label |
-| `kSchemaYoloDetectionArray`            | CDR  | `yolo_msgs/msg/DetectionArray` (yolo_ros) → bboxes coloured by `class_id`, label uses `class_name` |
-| `kSchemaFoxgloveImageAnnotations`      | PB   | `foxglove.ImageAnnotations` — full coverage of `points`, `circles`, `texts` |
-
-The Foxglove decoder is hand-rolled against the protobuf wire format
-(varint / I64 / LEN) — no `protoc`/libprotobuf dependency. It now reads
-every payload field used by the renderer: `PointsAnnotation` outline_color
-(field 4), outline_colors (field 5, repeated → `colors[]`), fill_color
-(field 6); `CircleAnnotation` (top-level field 1) with position, diameter,
+`makeSceneDecoder(schema_name)` accepts only `kSchemaImageAnnotations`
+(value `"foxglove.ImageAnnotations"`, defined in
+`pj_marker_protocol/image_annotation_codec.h`); any other input returns
+`nullptr`. The Protobuf reader (`scene_decoder_protobuf.cpp`) is
+hand-rolled against the wire format (varint / I64 / LEN) — no
+`protoc`/libprotobuf dependency. It reads every payload field used by
+the renderer: `PointsAnnotation` outline_color (field 4), outline_colors
+(field 5, repeated → `colors[]`), fill_color (field 6);
+`CircleAnnotation` (top-level field 1) with position, diameter,
 thickness, fill_color and outline_color; `TextAnnotation` (top-level
 field 3) with position, text, font_size and text_color. Colour
 components arrive as four doubles in `[0, 1]` and are quantised to
 8-bit via `decodeColor`. The `background_color` field of TextAnnotation
-is intentionally skipped (no equivalent in `scene_frame.h::TextAnnotation`).
+is intentionally skipped (no equivalent in
+`pj_marker_protocol/image_annotation.h::TextAnnotation`).
 
-ROS-style schemas (Detection2DArray, yolo_msgs) carry no colour on the
-wire. The CDR decoders synthesise a colour by hashing the first
-hypothesis's `class_id` (FNV-1a 32-bit) into a stable 10-entry palette,
-so the same class keeps the same colour across frames even if detection
-ordering changes. They also emit a `TextAnnotation` per detection using
-the helper `makeBboxLabel(text, cx, cy, hx, hy, color)` so the label is
-consistent in both decoders.
+**Source-format conversion is loader-side, not pj_media's concern.**
+Per-source-format adapters (CDR `vision_msgs/msg/Detection2DArray`, CDR
+`yolo_msgs/msg/DetectionArray`, future CSV/RLDS, …) live next to each
+loader. A loader reads its source bytes, fills the
+`PJ::ImageAnnotation` struct (defined in `pj_marker_protocol`), calls
+`PJ::serializeImageAnnotation` to produce canonical wire bytes, and
+pushes those bytes to ObjectStore with
+`metadata_json = {"encoding":"foxglove.ImageAnnotations"}`. The viewer
+side never sees the original schema. See
+`pj_media/demos/cdr_*_to_image_annotation.{h,cpp}` for the demo's
+adapters and `pj_media/demos/marker_palette.{h,cpp}` for the FNV-1a
+class-id → palette helpers shared between them.
 
 ### 4.4 StreamingVideoDecoder
 

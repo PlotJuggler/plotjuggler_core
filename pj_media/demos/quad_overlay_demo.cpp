@@ -31,8 +31,8 @@
 #include "pj_media_core/composite_media_source.h"
 #include "pj_media_core/image_pipeline_source.h"
 #include "pj_media_core/scene_decoder.h"
-#include "pj_media_core/scene_frame.h"
 #include "pj_media_core/scene_pipeline_source.h"
+#include "pj_marker_protocol/image_annotation.h"
 #include "pj_media_qt/media_viewer_widget.h"
 
 namespace {

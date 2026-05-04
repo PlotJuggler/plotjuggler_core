@@ -436,7 +436,7 @@ singleton model.
 |---------|-------|------|
 | `VideoDecoder` | stateful, one instance per video layer | FFmpeg wrapper with runtime HW-accel detection and guaranteed software fallback. Platform backend matrix is documented in `TECHNICAL_NOTES.md §3`. |
 | `ImageDecoder` | stateless, one instance per image layer | Dispatches to turbojpeg (JPEG), libpng (PNG), or raw pixel copy (mono8, rgb8, etc.). Multiple instances in one widget are fine (they share no state). |
-| `SceneDecoder` | stateless, one instance per scene/annotation layer | CDR / Protobuf deserializer for scene primitives and annotations. |
+| `SceneDecoder` | stateless, one instance per scene/annotation layer | Single canonical-wire decoder (`foxglove.ImageAnnotations` Protobuf, hand-rolled, no libprotobuf). Source-format conversion (e.g. CDR `vision_msgs/Detection2DArray`) is loader-side; pj_media only sees canonical bytes. Schema + writer live in the sibling module `pj_marker_protocol`. |
 
 **Threading and decoder ownership**: each viewer widget owns one
 `PlaybackController`. The controller owns **one decoder instance per
