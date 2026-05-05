@@ -128,8 +128,8 @@ class WidgetEvent {
     auto xmax = data_.find("chart_x_max");
     auto ymin = data_.find("chart_y_min");
     auto ymax = data_.find("chart_y_max");
-    if (xmin == data_.end() || !xmin->is_number() || xmax == data_.end() || !xmax->is_number() ||
-        ymin == data_.end() || !ymin->is_number() || ymax == data_.end() || !ymax->is_number()) {
+    if (xmin == data_.end() || !xmin->is_number() || xmax == data_.end() || !xmax->is_number() || ymin == data_.end() ||
+        !ymin->is_number() || ymax == data_.end() || !ymax->is_number()) {
       return std::nullopt;
     }
     return ChartViewState{xmin->get<double>(), xmax->get<double>(), ymin->get<double>(), ymax->get<double>()};

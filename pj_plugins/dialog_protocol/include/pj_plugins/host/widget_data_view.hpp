@@ -143,7 +143,7 @@ class WidgetDataView {
   struct ChartSeriesView {
     std::string label;
     std::vector<std::pair<double, double>> points;  // {x, y}
-    std::string color;  // optional hex "#rrggbb"; empty means use chart theme default
+    std::string color;                              // optional hex "#rrggbb"; empty means use chart theme default
   };
 
   [[nodiscard]] std::optional<std::vector<ChartSeriesView>> chartSeries(std::string_view name) const {
@@ -269,7 +269,9 @@ class WidgetDataView {
   /// Return all widget names that declare drop_target: true.
   [[nodiscard]] std::vector<std::string> dropTargets() const {
     std::vector<std::string> result;
-    if (!data_.is_object()) return result;
+    if (!data_.is_object()) {
+      return result;
+    }
     for (const auto& [key, val] : data_.items()) {
       if (val.is_object()) {
         auto it = val.find("drop_target");

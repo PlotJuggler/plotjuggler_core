@@ -92,8 +92,7 @@ TEST(UserDataDirTest, PrefersLocalAppDataOnWindows) {
 TEST(UserDataDirTest, UsesApplicationSupportOnMac) {
   ScopedEnv guard("HOME", "/tmp/pj_test_home");
   auto dir = userDataDir();
-  EXPECT_EQ(dir,
-            std::filesystem::path("/tmp/pj_test_home") / "Library" / "Application Support" / "plotjuggler");
+  EXPECT_EQ(dir, std::filesystem::path("/tmp/pj_test_home") / "Library" / "Application Support" / "plotjuggler");
 }
 #else
 TEST(UserDataDirTest, PrefersXdgDataHomeOnLinux) {
@@ -107,8 +106,7 @@ TEST(UserDataDirTest, FallsBackToHomeLocalShareOnLinux) {
   ::unsetenv("XDG_DATA_HOME");
   ScopedEnv guard("HOME", "/tmp/pj_test_home");
   auto dir = userDataDir();
-  EXPECT_EQ(dir,
-            std::filesystem::path("/tmp/pj_test_home") / ".local" / "share" / "plotjuggler");
+  EXPECT_EQ(dir, std::filesystem::path("/tmp/pj_test_home") / ".local" / "share" / "plotjuggler");
 }
 #endif
 

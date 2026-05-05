@@ -1,5 +1,3 @@
-#include "pj_datastore/reader.hpp"
-
 #include <gtest/gtest.h>
 
 #include <memory>
@@ -8,6 +6,7 @@
 
 #include "pj_base/type_tree.hpp"
 #include "pj_datastore/engine.hpp"
+#include "pj_datastore/reader.hpp"
 #include "pj_datastore/writer.hpp"
 
 namespace PJ {
@@ -22,16 +21,14 @@ class SeriesReaderTest : public ::testing::Test {
 
     DataWriter writer = engine_.createWriter();
     auto schema_or = writer.registerSchema(
-        "row",
-        makeStruct(
-            "row",
-            {
-                makePrimitive("dense", PrimitiveType::kFloat64),
-                makePrimitive("sparse", PrimitiveType::kFloat64),
-                makePrimitive("text", PrimitiveType::kString),
-                makePrimitive("flag", PrimitiveType::kBool),
-                makePrimitive("all_null", PrimitiveType::kFloat64),
-            }));
+        "row", makeStruct(
+                   "row", {
+                              makePrimitive("dense", PrimitiveType::kFloat64),
+                              makePrimitive("sparse", PrimitiveType::kFloat64),
+                              makePrimitive("text", PrimitiveType::kString),
+                              makePrimitive("flag", PrimitiveType::kBool),
+                              makePrimitive("all_null", PrimitiveType::kFloat64),
+                          }));
     ASSERT_TRUE(schema_or.has_value()) << schema_or.error();
 
     TopicDescriptor descriptor;

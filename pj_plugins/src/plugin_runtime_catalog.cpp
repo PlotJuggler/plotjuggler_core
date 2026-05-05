@@ -57,9 +57,7 @@ std::vector<const PluginT*> constPtrs(const std::vector<PluginT>& plugins, uint6
 
 PluginRuntimeCatalog::PluginRuntimeCatalog(
     std::filesystem::path plugin_dir, DiagnosticSink sink, std::string diagnostic_source)
-    : plugin_dir_(std::move(plugin_dir)),
-      sink_(std::move(sink)),
-      diagnostic_source_(std::move(diagnostic_source)) {}
+    : plugin_dir_(std::move(plugin_dir)), sink_(std::move(sink)), diagnostic_source_(std::move(diagnostic_source)) {}
 
 void PluginRuntimeCatalog::setPluginDir(std::filesystem::path plugin_dir) {
   plugin_dir_ = std::move(plugin_dir);
@@ -85,8 +83,7 @@ void PluginRuntimeCatalog::scanDirectory() {
     if (!loadAndRegister(descriptor)) {
       report(
           DiagnosticLevel::kError, descriptor.id,
-          descriptor.dso_path.string() + ": failed to load " + std::string(toString(descriptor.family)) +
-              " plugin");
+          descriptor.dso_path.string() + ": failed to load " + std::string(toString(descriptor.family)) + " plugin");
     }
   }
 }
@@ -143,8 +140,7 @@ bool PluginRuntimeCatalog::reload() {
     } else {
       report(
           DiagnosticLevel::kError, descriptor.id,
-          descriptor.dso_path.string() + ": failed to load " + std::string(toString(descriptor.family)) +
-              " plugin");
+          descriptor.dso_path.string() + ": failed to load " + std::string(toString(descriptor.family)) + " plugin");
     }
   }
 
@@ -357,8 +353,7 @@ std::string PluginRuntimeCatalog::buildFileFilter() const {
   std::string all_exts;
   std::string per_plugin;
   for (const auto& source : data_sources_) {
-    if ((source.capabilities & PJ_DATA_SOURCE_CAPABILITY_FINITE_IMPORT) == 0 ||
-        source.file_extensions.empty()) {
+    if ((source.capabilities & PJ_DATA_SOURCE_CAPABILITY_FINITE_IMPORT) == 0 || source.file_extensions.empty()) {
       continue;
     }
 

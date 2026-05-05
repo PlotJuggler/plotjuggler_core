@@ -31,8 +31,7 @@
 #if defined(_MSC_VER)
 #define PJ_PLUGIN_ABI_LINK __declspec(dllexport) __declspec(selectany)
 #else
-#define PJ_PLUGIN_ABI_LINK \
-  __attribute__((visibility("default"))) __attribute__((weak)) __attribute__((used))
+#define PJ_PLUGIN_ABI_LINK __attribute__((visibility("default"))) __attribute__((weak)) __attribute__((used))
 #endif
 
 extern "C" {

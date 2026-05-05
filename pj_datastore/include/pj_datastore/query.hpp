@@ -108,8 +108,7 @@ class RangeCursor {
 class SeriesCursor {
  public:
   /// Construct cursor over [time_range.min, time_range.max] from committed chunks.
-  SeriesCursor(
-      const std::deque<TopicChunk>& chunks, std::size_t column_index, PJ::Range<PJ::Timestamp> time_range);
+  SeriesCursor(const std::deque<TopicChunk>& chunks, std::size_t column_index, PJ::Range<PJ::Timestamp> time_range);
 
   [[nodiscard]] bool valid() const noexcept;
 

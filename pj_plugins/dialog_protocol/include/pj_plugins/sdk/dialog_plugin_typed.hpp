@@ -69,8 +69,8 @@ class DialogPluginTyped : public DialogPluginBase {
 
   /// ChartPreviewWidget: zoom or pan changed the visible range.
   /// Only called when the plugin has declared setChartZoomEnabled for this widget.
-  virtual bool onChartViewChanged(std::string_view /*widget_name*/, double /*x_min*/, double /*x_max*/,
-                                  double /*y_min*/, double /*y_max*/) {
+  virtual bool onChartViewChanged(
+      std::string_view /*widget_name*/, double /*x_min*/, double /*x_max*/, double /*y_min*/, double /*y_max*/) {
     return false;
   }
 

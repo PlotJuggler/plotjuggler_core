@@ -68,13 +68,19 @@ class PluginRuntimeCatalog {
   [[nodiscard]] bool reload();
 
   // Returns loaded DataSource plugins.
-  [[nodiscard]] const std::vector<RuntimeDataSourcePlugin>& dataSources() const { return data_sources_; }
+  [[nodiscard]] const std::vector<RuntimeDataSourcePlugin>& dataSources() const {
+    return data_sources_;
+  }
 
   // Returns loaded MessageParser plugins.
-  [[nodiscard]] const std::vector<RuntimeMessageParserPlugin>& messageParsers() const { return message_parsers_; }
+  [[nodiscard]] const std::vector<RuntimeMessageParserPlugin>& messageParsers() const {
+    return message_parsers_;
+  }
 
   // Returns loaded Toolbox plugins.
-  [[nodiscard]] const std::vector<RuntimeToolboxPlugin>& toolboxes() const { return toolbox_plugins_; }
+  [[nodiscard]] const std::vector<RuntimeToolboxPlugin>& toolboxes() const {
+    return toolbox_plugins_;
+  }
 
   // Returns file-import capable DataSource plugins.
   [[nodiscard]] std::vector<RuntimeDataSourcePlugin*> fileImportSources();
