@@ -21,7 +21,8 @@ namespace {
          chunk.columns[column_index].descriptor->logical_type == PrimitiveType::kBool;
 }
 
-[[nodiscard]] std::optional<double> readSeriesValue(const TopicChunk& chunk, std::size_t column_index, std::size_t row) {
+[[nodiscard]] std::optional<double> readSeriesValue(
+    const TopicChunk& chunk, std::size_t column_index, std::size_t row) {
   if (column_index >= chunk.columns.size() || row >= chunk.stats.row_count || chunk.isNull(column_index, row)) {
     return std::nullopt;
   }
@@ -205,8 +206,7 @@ RangeCursor rangeQuery(const std::deque<TopicChunk>& chunks, Timestamp t_min, Ti
 // SeriesCursor
 // ===========================================================================
 
-SeriesCursor::SeriesCursor(
-    const std::deque<TopicChunk>& chunks, std::size_t column_index, Range<Timestamp> time_range)
+SeriesCursor::SeriesCursor(const std::deque<TopicChunk>& chunks, std::size_t column_index, Range<Timestamp> time_range)
     : chunks_(&chunks), column_index_(column_index), time_range_(normalized(time_range)) {
   skipToSample();
 }
@@ -237,8 +237,7 @@ void SeriesCursor::skipToSample() {
   while (chunk_index_ < chunks_->size()) {
     const auto& chunk = (*chunks_)[chunk_index_];
 
-    if (chunk.stats.row_count == 0 || chunk.stats.t_max < time_range_.min ||
-        column_index_ >= chunk.columns.size()) {
+    if (chunk.stats.row_count == 0 || chunk.stats.t_max < time_range_.min || column_index_ >= chunk.columns.size()) {
       ++chunk_index_;
       row_index_ = 0;
       continue;

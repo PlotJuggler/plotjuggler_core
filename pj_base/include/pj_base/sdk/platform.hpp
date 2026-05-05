@@ -19,15 +19,15 @@
 #include <string>
 
 #if defined(__linux__) || defined(__APPLE__)
-#  include <dlfcn.h>
+#include <dlfcn.h>
 #elif defined(_WIN32)
-#  ifndef WIN32_LEAN_AND_MEAN
-#    define WIN32_LEAN_AND_MEAN
-#  endif
-#  ifndef NOMINMAX
-#    define NOMINMAX
-#  endif
-#  include <windows.h>
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
 #endif
 
 namespace PJ::sdk {
@@ -39,12 +39,12 @@ namespace PJ::sdk {
 /// without forcing _CRT_SECURE_NO_WARNINGS project-wide.
 inline std::optional<std::string> getEnv(const char* name) {
 #if defined(_MSC_VER)
-#  pragma warning(push)
-#  pragma warning(disable : 4996)
+#pragma warning(push)
+#pragma warning(disable : 4996)
 #endif
   const char* value = std::getenv(name);
 #if defined(_MSC_VER)
-#  pragma warning(pop)
+#pragma warning(pop)
 #endif
   if (value == nullptr || *value == '\0') {
     return std::nullopt;
@@ -109,9 +109,9 @@ inline std::filesystem::path getSharedLibDir(const void* fn_addr) {
 #elif defined(_WIN32)
   wchar_t buf[MAX_PATH] = {};
   HMODULE hm = nullptr;
-  if (::GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS |
-                               GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
-                           reinterpret_cast<LPCWSTR>(fn_addr), &hm)) {
+  if (::GetModuleHandleExW(
+          GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+          reinterpret_cast<LPCWSTR>(fn_addr), &hm)) {
     ::GetModuleFileNameW(hm, buf, MAX_PATH);
     return fs::path(buf).parent_path();
   }

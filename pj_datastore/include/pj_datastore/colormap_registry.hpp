@@ -48,7 +48,9 @@ class ColorMapRegistry {
   [[nodiscard]] bool hasActive() const;
 
   /// Name of the currently active colormap, or empty string when none.
-  [[nodiscard]] const std::string& activeName() const { return active_; }
+  [[nodiscard]] const std::string& activeName() const {
+    return active_;
+  }
 
  private:
   struct Entry {
