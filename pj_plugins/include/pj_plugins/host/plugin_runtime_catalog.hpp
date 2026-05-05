@@ -33,6 +33,7 @@ struct RuntimeMessageParserPlugin {
   std::string id;
   std::string version;
   std::vector<std::string> encodings;
+  std::vector<std::string> capabilities;
   std::filesystem::file_time_type loaded_mtime;
 };
 

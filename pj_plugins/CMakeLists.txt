@@ -124,6 +124,16 @@ target_compile_features(mock_schema_parser_plugin PRIVATE cxx_std_20)
 target_compile_options(mock_schema_parser_plugin PRIVATE ${PJ_WARNING_FLAGS})
 target_link_libraries(mock_schema_parser_plugin PRIVATE pj_base)
 
+# ---------------------------------------------------------------------------
+# Mock Media Parser plugin (declares "object" capability — exercises the
+# dual-emit path: scalar `seq` field + opaque blob via objectWriteHost())
+# ---------------------------------------------------------------------------
+
+add_library(mock_media_parser_plugin SHARED examples/mock_media_parser.cpp)
+target_compile_features(mock_media_parser_plugin PRIVATE cxx_std_20)
+target_compile_options(mock_media_parser_plugin PRIVATE ${PJ_WARNING_FLAGS})
+target_link_libraries(mock_media_parser_plugin PRIVATE pj_base)
+
 endif() # PJ_BUILD_TESTS
 
 # ---------------------------------------------------------------------------

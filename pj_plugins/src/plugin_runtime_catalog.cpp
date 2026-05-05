@@ -223,6 +223,7 @@ bool PluginRuntimeCatalog::loadAndRegisterMessageParser(const PluginDescriptor& 
   loaded.name = descriptor.name;
   loaded.version = descriptor.version;
   loaded.encodings.insert(loaded.encodings.end(), descriptor.encoding.begin(), descriptor.encoding.end());
+  loaded.capabilities = descriptor.capabilities;
 
   report(DiagnosticLevel::kInfo, loaded.id, "Loaded MessageParser " + loaded.name + " from " + loaded.path);
   message_parsers_.push_back(std::move(loaded));
