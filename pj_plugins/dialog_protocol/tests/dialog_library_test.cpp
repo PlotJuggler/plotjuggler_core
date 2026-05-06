@@ -6,6 +6,7 @@
 #include <gtest/gtest.h>
 
 #include <nlohmann/json.hpp>
+#include <memory>
 #include <string>
 
 #ifndef PJ_MOCK_DIALOG_PLUGIN_PATH
@@ -53,6 +54,21 @@ TEST(DialogLibraryTest, HandleLifecycle) {
 TEST(DialogLibraryTest, LoadInvalidPath) {
   auto lib = PJ::DialogLibrary::load("/nonexistent/path.so");
   EXPECT_FALSE(lib);
+}
+
+TEST(DialogLibraryTest, HandleKeepsSharedLibraryLoadedAfterLibraryObjectDies) {
+  std::unique_ptr<PJ::DialogHandle> handle;
+  {
+    auto lib = PJ::DialogLibrary::load(PJ_MOCK_DIALOG_PLUGIN_PATH);
+    ASSERT_TRUE(lib) << lib.error();
+    handle = std::make_unique<PJ::DialogHandle>(lib->createHandle());
+    ASSERT_NE(handle->context(), nullptr);
+  }
+
+  auto j = nlohmann::json::parse(handle->manifest(), nullptr, false);
+  ASSERT_FALSE(j.is_discarded());
+  EXPECT_EQ(j["name"], "Mock Dialog");
+  handle.reset();
 }
 
 TEST(DialogLibraryTest, MoveSemantics) {

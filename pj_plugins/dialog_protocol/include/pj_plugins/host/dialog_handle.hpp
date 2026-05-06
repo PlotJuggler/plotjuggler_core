@@ -5,6 +5,7 @@
 #include <pj_plugins/dialog_protocol.h>
 
 #include <cassert>
+#include <memory>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -14,7 +15,8 @@ namespace PJ {
 /// RAII wrapper around a plugin vtable + context (protocol v4).
 class DialogHandle {
  public:
-  explicit DialogHandle(const PJ_dialog_vtable_t* vt) : vt_(vt) {
+  explicit DialogHandle(const PJ_dialog_vtable_t* vt, std::shared_ptr<void> library_owner = {})
+      : vt_(vt), library_owner_(std::move(library_owner)) {
     if (vt_) {
       assert(vt_->protocol_version == PJ_DIALOG_PROTOCOL_VERSION);
       ctx_ = vt_->create();
@@ -22,13 +24,13 @@ class DialogHandle {
   }
 
   /// Non-owning handle from an externally managed context (e.g. a plugin's embedded dialog).
-  static DialogHandle borrowed(const PJ_dialog_vtable_t* vt, void* ctx) {
-    return DialogHandle(vt, ctx, false);
+  static DialogHandle borrowed(const PJ_dialog_vtable_t* vt, void* ctx, std::shared_ptr<void> library_owner = {}) {
+    return DialogHandle(vt, ctx, false, std::move(library_owner));
   }
 
   /// Non-owning handle built from a PJ_borrowed_dialog_t fat pointer.
-  static DialogHandle fromBorrowed(PJ_borrowed_dialog_t borrowed_ref) {
-    return DialogHandle(borrowed_ref.vtable, borrowed_ref.ctx, false);
+  static DialogHandle fromBorrowed(PJ_borrowed_dialog_t borrowed_ref, std::shared_ptr<void> library_owner = {}) {
+    return DialogHandle(borrowed_ref.vtable, borrowed_ref.ctx, false, std::move(library_owner));
   }
 
   ~DialogHandle() {
@@ -37,7 +39,11 @@ class DialogHandle {
     }
   }
 
-  DialogHandle(DialogHandle&& other) noexcept : vt_(other.vt_), ctx_(other.ctx_), owned_(other.owned_) {
+  DialogHandle(DialogHandle&& other) noexcept
+      : vt_(other.vt_),
+        ctx_(other.ctx_),
+        owned_(other.owned_),
+        library_owner_(std::move(other.library_owner_)) {
     other.vt_ = nullptr;
     other.ctx_ = nullptr;
     other.owned_ = false;
@@ -48,6 +54,7 @@ class DialogHandle {
       std::swap(vt_, other.vt_);
       std::swap(ctx_, other.ctx_);
       std::swap(owned_, other.owned_);
+      std::swap(library_owner_, other.library_owner_);
     }
     return *this;
   }
@@ -106,11 +113,13 @@ class DialogHandle {
   }
 
  private:
-  DialogHandle(const PJ_dialog_vtable_t* vt, void* ctx, bool owned) : vt_(vt), ctx_(ctx), owned_(owned) {}
+  DialogHandle(const PJ_dialog_vtable_t* vt, void* ctx, bool owned, std::shared_ptr<void> library_owner = {})
+      : vt_(vt), ctx_(ctx), owned_(owned), library_owner_(std::move(library_owner)) {}
 
   const PJ_dialog_vtable_t* vt_ = nullptr;
   void* ctx_ = nullptr;
   bool owned_ = true;
+  std::shared_ptr<void> library_owner_;
 
   static std::string safeString(const char* s) {
     return s ? std::string(s) : std::string();

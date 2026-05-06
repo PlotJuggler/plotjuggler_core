@@ -6,6 +6,7 @@
 #include <gtest/gtest.h>
 
 #include <cstring>
+#include <memory>
 #include <string>
 
 #include "pj_base/sdk/service_traits.hpp"
@@ -66,6 +67,21 @@ TEST(MessageParserLibraryTest, SaveLoadConfig) {
   ASSERT_TRUE(handle.saveConfig(cfg));
   EXPECT_EQ(cfg, "{}");
   ASSERT_TRUE(handle.loadConfig(R"({"format":"compact"})"));
+}
+
+TEST(MessageParserLibraryTest, HandleKeepsSharedLibraryLoadedAfterLibraryObjectDies) {
+  std::unique_ptr<PJ::MessageParserHandle> handle;
+  {
+    auto library = PJ::MessageParserLibrary::load(PJ_MOCK_JSON_PARSER_PLUGIN_PATH);
+    ASSERT_TRUE(library) << library.error();
+    handle = std::make_unique<PJ::MessageParserHandle>(library->createHandle());
+    ASSERT_TRUE(handle->valid());
+  }
+
+  EXPECT_NE(handle->manifest().find("Mock JSON Parser"), std::string::npos);
+  std::string cfg;
+  EXPECT_TRUE(handle->saveConfig(cfg));
+  handle.reset();
 }
 
 TEST(MessageParserLibraryTest, LoadNonexistentFails) {

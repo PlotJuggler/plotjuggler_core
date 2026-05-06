@@ -41,6 +41,10 @@ void closeLibraryHandle(void* handle) {
 #endif
 }
 
+std::shared_ptr<void> adoptLibraryHandle(void* handle) {
+  return std::shared_ptr<void>(handle, [](void* loaded_handle) { closeLibraryHandle(loaded_handle); });
+}
+
 Expected<PJ_get_dialog_vtable_fn> loadEntryPoint(void* handle) {
 #if defined(_WIN32)
   auto symbol = GetProcAddress(reinterpret_cast<HMODULE>(handle), "PJ_get_dialog_vtable");
@@ -61,64 +65,58 @@ Expected<PJ_get_dialog_vtable_fn> loadEntryPoint(void* handle) {
 
 }  // namespace
 
-DialogLibrary::DialogLibrary(void* handle, const PJ_dialog_vtable_t* vtable, std::string path)
-    : handle_(handle), vtable_(vtable), path_(std::move(path)) {}
+DialogLibrary::DialogLibrary(std::shared_ptr<void> handle, const PJ_dialog_vtable_t* vtable, std::string path)
+    : handle_(std::move(handle)), vtable_(vtable), path_(std::move(path)) {}
 
 DialogLibrary::~DialogLibrary() {
   reset();
 }
 
 DialogLibrary::DialogLibrary(DialogLibrary&& other) noexcept
-    : handle_(other.handle_), vtable_(other.vtable_), path_(std::move(other.path_)) {
-  other.handle_ = nullptr;
+    : handle_(std::move(other.handle_)), vtable_(other.vtable_), path_(std::move(other.path_)) {
   other.vtable_ = nullptr;
 }
 
 DialogLibrary& DialogLibrary::operator=(DialogLibrary&& other) noexcept {
   if (this != &other) {
     reset();
-    handle_ = other.handle_;
+    handle_ = std::move(other.handle_);
     vtable_ = other.vtable_;
     path_ = std::move(other.path_);
-    other.handle_ = nullptr;
     other.vtable_ = nullptr;
   }
   return *this;
 }
 
 Expected<DialogLibrary> DialogLibrary::load(std::string_view path) {
-  auto handle = loadLibraryHandle(path);
-  if (!handle) {
-    return unexpected(handle.error());
+  auto raw_handle = loadLibraryHandle(path);
+  if (!raw_handle) {
+    return unexpected(raw_handle.error());
   }
+  auto handle = adoptLibraryHandle(*raw_handle);
 
-  auto entry = loadEntryPoint(*handle);
+  auto entry = loadEntryPoint(handle.get());
   if (!entry) {
-    closeLibraryHandle(*handle);
     return unexpected(entry.error());
   }
 
   const PJ_dialog_vtable_t* vtable = (*entry)();
   if (vtable == nullptr) {
-    closeLibraryHandle(*handle);
     return unexpected(std::string("PJ_get_dialog_vtable returned null"));
   }
   if (vtable->protocol_version != PJ_DIALOG_PROTOCOL_VERSION) {
-    closeLibraryHandle(*handle);
     return unexpected(std::string("Dialog protocol version mismatch"));
   }
   if (vtable->struct_size < sizeof(PJ_dialog_vtable_t)) {
-    closeLibraryHandle(*handle);
     return unexpected(std::string("Dialog vtable is smaller than expected"));
   }
 
-  return DialogLibrary(*handle, vtable, std::string(path));
+  return DialogLibrary(std::move(handle), vtable, std::string(path));
 }
 
 void DialogLibrary::reset() {
   if (handle_ != nullptr) {
-    closeLibraryHandle(handle_);
-    handle_ = nullptr;
+    handle_.reset();
     vtable_ = nullptr;
     path_.clear();
   }

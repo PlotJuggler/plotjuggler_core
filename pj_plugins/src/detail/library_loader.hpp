@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: MIT
 
 #include <cstdint>
+#include <memory>
 #include <string>
 #include <string_view>
 
@@ -107,6 +108,10 @@ inline void closeLibraryHandle(void* handle) {
 #else
   dlclose(handle);
 #endif
+}
+
+inline std::shared_ptr<void> adoptLibraryHandle(void* handle) {
+  return std::shared_ptr<void>(handle, [](void* loaded_handle) { closeLibraryHandle(loaded_handle); });
 }
 
 }  // namespace PJ::detail

@@ -4,6 +4,7 @@
 #include <gtest/gtest.h>
 
 #include <cstring>
+#include <memory>
 #include <string>
 
 #include "pj_base/plugin_data_api.h"
@@ -132,6 +133,20 @@ TEST(ToolboxPluginTest, BindFailsWithoutMandatoryServices) {
   PJ::ServiceRegistryBuilder empty;
   auto status = handle.bind(empty.view());
   EXPECT_FALSE(status);
+}
+
+TEST(ToolboxPluginTest, HandleKeepsSharedLibraryLoadedAfterLibraryObjectDies) {
+  std::unique_ptr<PJ::ToolboxHandle> handle;
+  {
+    auto library = PJ::ToolboxLibrary::load(PJ_MOCK_TOOLBOX_PLUGIN_PATH);
+    ASSERT_TRUE(library) << library.error();
+    handle = std::make_unique<PJ::ToolboxHandle>(library->createHandle());
+    ASSERT_TRUE(handle->valid());
+  }
+
+  EXPECT_NE(handle->manifest().find("Mock Toolbox"), std::string::npos);
+  EXPECT_EQ(handle->capabilities(), 0u);
+  handle.reset();
 }
 
 TEST(ToolboxPluginTest, ReadTransformWriteFlowAndNotifyDataChanged) {

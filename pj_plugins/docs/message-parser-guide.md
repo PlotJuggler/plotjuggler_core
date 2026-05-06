@@ -44,8 +44,9 @@ class MyJsonParser : public PJ::MessageParserPluginBase {
 
 ### 2. Implement parse()
 
-When `parse()` is called, the write host is already bound via
-`bindWriteHost()`. Use `writeHost()` (protected) to write decoded fields.
+When `parse()` is called, the SDK default `bind()` has already resolved the
+parser write service from the host's service registry. Use `writeHost()`
+(protected) to write decoded fields.
 Return `okStatus()` on success, or `unexpected("reason")` on failure.
 
 ```cpp
@@ -105,12 +106,12 @@ target_link_libraries(my_parser_plugin PRIVATE pj_base pj_dialog_sdk)
 The host drives the parser through these phases:
 
 ```
-create() → bind_write_host() → [bind_schema()] → parse()* → destroy()
+create() -> bind(registry) -> [bind_schema()] -> parse()* -> destroy()
 ```
 
 1. **create** — the host calls `create()` to allocate a new parser instance.
-2. **bind_write_host** — the host provides the data-plane write host. Must be
-   called before `parse()`.
+2. **bind** — the host provides a service registry. The SDK default bind
+   resolves `"pj.parser_write.v1"`. Must complete before `parse()`.
 3. **bind_schema** (optional) — for parsers that need schema (Protobuf, ROS,
    IDL), the host provides the schema bytes and type name. Parsers that don't
    need schema (JSON, Influx) can ignore this call.
@@ -340,7 +341,7 @@ Example:
 
 ## Threading Model
 
-All parser callbacks — `parse()`, `bindSchema()`, `bindWriteHost()`,
+All parser callbacks — `bind()`, `bindSchema()`, `parse()`,
 `loadConfig()`, `saveConfig()` — are called **on the host's thread**. The host
 guarantees single-threaded access per parser instance: no two callbacks will
 overlap for the same instance.
@@ -354,13 +355,13 @@ and call it from a background thread.
 The host guarantees the following call ordering:
 
 1. `create()` — always first.
-2. `bind_write_host()` — before `parse()`.
+2. `bind(registry)` — before `parse()`.
 3. `bind_schema()` (optional) — before `parse()`, called at most once.
 4. `load_config()` — before `parse()`, may be called multiple times.
 5. `parse()` — called once per message, may be called many times.
 6. `destroy()` — always last.
 
-The host will never call `parse()` before `bind_write_host()`, and `destroy()`
+The host will never call `parse()` before `bind(registry)`, and `destroy()`
 is always the last call.
 
 ## Error Handling
@@ -386,12 +387,9 @@ if (!field) {
 - Do **not** leave the parser in an inconsistent state — ensure field handles
   and internal buffers remain valid for the next `parse()` call.
 
-**setLastError()** — available for fine-grained error reporting. For most
-cases, returning `unexpected()` from `parse()` is sufficient.
-
 **Exception safety** — the SDK base class catches all C++ exceptions in
-virtual method trampolines and converts them to `setLastError()` + false
-return. You never need to worry about exceptions crossing the C ABI boundary.
+virtual method trampolines and converts them to `PJ_error_t` out-params plus
+`false`. You never need to worry about exceptions crossing the C ABI boundary.
 
 ## How Parsers Are Used (Host Perspective)
 
@@ -406,7 +404,7 @@ DataSource                        Host                         MessageParser
     │    topic="sensor/imu",        │                               │
     │    encoding="protobuf",       │──→ load parser .so            │
     │    type_name="ImuSample",     │──→ create()                   │
-    │    schema=descriptor_bytes)   │──→ bind_write_host()          │
+    │    schema=descriptor_bytes)   │──→ bind(registry)             │
     │                               │──→ bind_schema("ImuSample",   │
     │                               │       descriptor_bytes)       │
     │  ←── binding handle           │                               │

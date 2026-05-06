@@ -17,7 +17,7 @@ namespace PJ {
 /// Host-side assembler for `PJ_service_registry_t`.
 ///
 /// The host creates a builder, registers named services, and hands the
-/// resulting `PJ_service_registry_t` view to each plugin via the v3
+/// resulting `PJ_service_registry_t` view to each plugin via the v4
 /// `bind()` call. The builder owns an internal lookup table; the emitted
 /// registry is a thin fat pointer whose lifetime is tied to the builder.
 ///
@@ -78,7 +78,7 @@ class ServiceRegistryBuilder {
     entries_.erase(std::string(name));
   }
 
-  /// Return a fat pointer that plugins can pass through the v3 `bind()`.
+  /// Return a fat pointer that plugins can pass through the v4 `bind()`.
   /// The returned pointer is valid as long as the builder instance lives.
   [[nodiscard]] PJ_service_registry_t view() noexcept {
     return PJ_service_registry_t{this, &kVtable};

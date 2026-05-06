@@ -398,7 +398,7 @@ engine.
 | `ensureField(topic, name, type)` | Optional: pre-register a field. Enables `appendBoundRecord`. |
 | `appendRecord(topic, timestamp, fields)` | Write a row of named field values. Auto-creates new fields. |
 | `appendBoundRecord(topic, timestamp, fields)` | Write using pre-resolved field handles (faster). |
-| `appendArrowStream(topic, stream, ts_col)` | Hand an `ArrowArrayStream*` (Arrow C Data Interface) to the host for bulk ingest. Host drains and releases on success. |
+| `appendArrowStream(topic, stream, ts_col)` | Hand an `ArrowArrayStream*` (Arrow C Data Interface) to the host for bulk ingest. Success transfers ownership to the host; failure leaves ownership with the plugin. |
 
 ### Runtime host — control plane
 
@@ -651,7 +651,8 @@ from the callback thread.
 The host guarantees the following call ordering:
 
 1. `create()` — always first.
-2. `bind_write_host()` and `bind_runtime_host()` — before `start()`.
+2. `bind(registry)` — before `start()`. The SDK default bind resolves
+   `"pj.source_write.v1"` and `"pj.runtime.v1"` from the service registry.
 3. `load_config()` — before `start()`, may be called multiple times.
 4. `start()` — transitions from idle/configuring to starting.
 5. `poll()` — only while running (after `start()` returns success).
@@ -700,12 +701,11 @@ for (const auto& row : rows) {
 }
 ```
 
-**setLastError()** — available for `void` methods (e.g. `stop()`) that cannot
-return a status. For all other methods, prefer returning `unexpected()`.
-
 **Exception safety** — the SDK base class catches all C++ exceptions in virtual
-method trampolines and converts them to `setLastError()` + false return. You
-never need to worry about exceptions crossing the C ABI boundary.
+method trampolines and converts them to `PJ_error_t` out-params plus a
+`false`/safe return value. In plugin code, prefer returning `unexpected()`
+from fallible virtuals; `stop()` should be idempotent and swallow cleanup
+failures internally.
 
 ## Dialog Integration
 
@@ -807,6 +807,11 @@ PJ_DIALOG_PLUGIN(MyDialog)
    → dialog modifies source's internal state directly
 8. source.start()  ←  already has the config
 ```
+
+The `DataSourceHandle` retains the plugin DSO while the source instance is
+alive, so the dialog vtable remains callable even if the catalog reloads the
+plugin entry. The borrowed dialog still must not outlive the source handle,
+because the source owns the dialog object itself.
 
 ### Config persistence
 

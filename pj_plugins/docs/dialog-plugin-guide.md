@@ -290,18 +290,22 @@ work like polling a server for available topics.
 | QDoubleSpinBox | `setValue(double)` | `onValueChanged(name, double)` |
 | QPushButton | `setButtonText` | `onClicked(name)` |
 | QPushButton (file picker) | `setFilePicker` | `onFileSelected(name, path)` |
+| QPushButton (folder picker) | `setFolderPicker` | `onFolderSelected(name, path)` |
 | QLabel | `setLabel` | (none — display only) |
 | QListWidget | `setListItems`, `setSelectedItems` | `onSelectionChanged(name, items)`, `onItemDoubleClicked(name, index)` |
 | QTableWidget | `setTableHeaders`, `setTableRows`, `setSelectedRows` | `onSelectionChanged(name, items)` |
+| QPlainTextEdit | `setPlainText`, `setCodeContent`, `setCodeLanguage` | `onCodeChanged(name, code)` for code editors |
+| QFrame (chart container) | `setChartSeries`, `clearChart`, `setChartZoomEnabled` | `onChartViewChanged(name, x_min, x_max, y_min, y_max)` |
 | QTabWidget | `setTabIndex` | `onTabChanged(name, index)` |
 | QDialogButtonBox | `setOkEnabled` | (none — host handles OK/Cancel) |
 
-All widgets also support `setEnabled(name, bool)` and `setVisible(name, bool)`.
+All widgets also support `setEnabled(name, bool)`, `setVisible(name, bool)`,
+and `setDropTarget(name, bool)`. Drop targets receive
+`onItemsDropped(name, items)`.
 
-> **Note:** `QTextEdit`, `QPlainTextEdit`, and `QTableView` (model-based) are
-> **not supported** by the widget binding system. Use `QTableWidget` for tabular
-> data (e.g. topic lists, preview tables) and `QLabel` or `QListWidget` for text
-> display.
+> **Note:** `QTextEdit` and `QTableView` (model-based) are not supported by the
+> widget binding system. Use `QPlainTextEdit` for plain text or code editing,
+> and `QTableWidget` for tabular data such as topic lists and preview tables.
 
 ## Optional Features
 
@@ -442,16 +446,10 @@ void onRejected() override {
 
 ### Error reporting
 
-Override `lastError()` to surface error messages to the host. Return an empty
-string when there is no error:
-
-```cpp
-std::string lastError() const override {
-  std::string err = std::move(error_);
-  error_.clear();
-  return err;
-}
-```
+Fallible dialog callbacks return `bool` through the C ABI and receive a
+`PJ_error_t*` out-param. In the C++ SDK, throw only for exceptional failures or
+return `false` from event handlers that do not handle an event. The SDK
+trampolines catch exceptions and populate `PJ_error_t` for the host.
 
 ### Dialog geometry persistence
 
@@ -576,6 +574,9 @@ PJ_DIALOG_PLUGIN(MyDialog)  // also specialises PJ::dialogVtableFor<MyDialog>()
 The host resolves both vtables, creates a borrowed `DialogHandle` from the
 source's dialog context, and drives the dialog through its dialog runtime. After
 the dialog completes, the source reads its dialog member's state directly.
+The source handle owns the dialog object storage and keeps the plugin DSO
+loaded, so any borrowed dialog handle must be scoped inside the source handle's
+lifetime.
 
 See `pj_plugins/docs/data-source-guide.md` for the full DataSource-side
 documentation of this pattern.

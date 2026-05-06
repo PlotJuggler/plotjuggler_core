@@ -45,7 +45,7 @@ extern "C" {
  * (e.g. DataSource + Dialog in one .so) work without any extra ceremony.
  * Do not redefine it manually.
  *
- * v4 plugins advertise version 4. Breaking v3→v4 changes:
+ * v4 plugins advertise version 4. Data-plane changes from the pre-v4 design:
  *   - Arrow C Data Interface replaces Arrow IPC bytes at the boundary
  *     (append_arrow_stream + read_series_arrow).
  *   - append_arrow_ipc removed from all write hosts.

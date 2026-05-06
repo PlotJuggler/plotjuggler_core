@@ -85,9 +85,11 @@ Stateful interactive tools with full data access.
 
 ## 4. Shared Host Services
 
-### 4.1 Write Surface
+### 4.1 Write Services
 
-Shared by DataSource, MessageParser, and Toolbox. Supports:
+DataSource, MessageParser, and Toolbox share the same datastore write
+contract and backend, but bind family-specific ABI services so each plugin
+only sees operations it is allowed to call. These services support:
 
 - **Incremental writes** — `appendRecord()` / `appendBoundRecord()` with
   named or pre-resolved field values. Used by parsers and streaming
@@ -98,11 +100,14 @@ Shared by DataSource, MessageParser, and Toolbox. Supports:
   path for file-based sources and toolbox bulk imports. The parser
   write surface is per-record only — the host coalesces parser output
   into Arrow batches internally before committing to storage.
-- **Topic and field management** — `ensureTopic()`, `ensureField()`.
+- **Topic and field management** — `ensureTopic()`, `ensureField()`, where
+  available for the family. Parsers are bound to one topic and only create
+  fields within that topic.
 
-Family-specific permissions differ (Toolbox can create data sources; DataSource
-and MessageParser are bound to one), but the underlying write contract is
-the same.
+The service names are `"pj.source_write.v1"`, `"pj.parser_write.v1"`, and
+`"pj.toolbox_write.v1"`. Family-specific permissions differ: Toolbox can
+create data sources, DataSource writes under its own source, and MessageParser
+is bound to one topic.
 
 ### 4.2 Read Surface
 

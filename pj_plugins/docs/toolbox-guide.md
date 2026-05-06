@@ -117,16 +117,17 @@ Toolbox plugins have no state machine — they are either alive or destroyed.
 Activation and deactivation are dialog visibility concerns handled by the host.
 
 ```
-create → bind_toolbox_host → bind_runtime_host → load_config
-  → [show dialog] → user interacts → plugin reads/writes via toolbox host
-  → plugin calls notifyDataChanged()
-  → save_config → destroy
+create -> bind(registry) -> load_config
+  -> [show dialog] -> user interacts -> plugin reads/writes via toolbox host
+  -> plugin calls notifyDataChanged()
+  -> save_config -> destroy
 ```
 
 The host guarantees the following call ordering:
 
 1. `create()` — always first.
-2. `bind_toolbox_host()` and `bind_runtime_host()` — before any interaction.
+2. `bind(registry)` — before any interaction. The SDK default bind resolves
+   `"pj.toolbox_write.v1"` and `"pj.toolbox_runtime.v1"`.
 3. `load_config()` — before showing the dialog, may be called multiple times.
 4. User interaction phase — plugin reads/writes data on demand.
 5. `save_config()` — before destroy, when the host persists layout.
@@ -134,7 +135,7 @@ The host guarantees the following call ordering:
 
 ## Host Services Available to Plugins
 
-Two host bindings are provided before the plugin becomes interactive:
+Two host services are provided before the plugin becomes interactive:
 
 ### Toolbox host — data plane
 
@@ -160,7 +161,6 @@ Access via `runtimeHost()`. Use this for diagnostics and UI refresh.
 |---|---|
 | `reportMessage(level, text)` | Send info/warning/error to the host UI log. |
 | `notifyDataChanged()` | Tell the host that data was modified; refresh UI. |
-| `lastError()` | Read the last host-side error message. |
 
 ### Reading a series via Arrow
 
@@ -262,12 +262,12 @@ if (!source) {
 ```
 
 **Exception safety** — the SDK base class catches all C++ exceptions in virtual
-method trampolines and converts them to `setLastError()` + false return. No
-exceptions cross the C ABI boundary.
+method trampolines and converts them to `PJ_error_t` out-params plus `false`.
+No exceptions cross the C ABI boundary.
 
 ## Threading Model
 
-All plugin callbacks — `bindToolboxHost()`, `bindRuntimeHost()`,
+All plugin callbacks — `bind()`,
 `loadConfig()`, `saveConfig()`, `getDialog()` — are called **on the host's
 thread**. The host guarantees single-threaded access per plugin instance.
 

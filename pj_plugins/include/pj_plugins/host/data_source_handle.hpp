@@ -23,6 +23,7 @@
 #pragma once
 
 #include <cassert>
+#include <memory>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -36,7 +37,8 @@ namespace PJ {
 /// RAII handle owning a DataSource plugin instance.
 class DataSourceHandle {
  public:
-  explicit DataSourceHandle(const PJ_data_source_vtable_t* vt) : vt_(vt) {
+  explicit DataSourceHandle(const PJ_data_source_vtable_t* vt, std::shared_ptr<void> library_owner = {})
+      : vt_(vt), library_owner_(std::move(library_owner)) {
     if (vt_ != nullptr) {
       assert(vt_->protocol_version == PJ_DATA_SOURCE_PROTOCOL_VERSION);
       ctx_ = vt_->create();
@@ -49,7 +51,8 @@ class DataSourceHandle {
     }
   }
 
-  DataSourceHandle(DataSourceHandle&& other) noexcept : vt_(other.vt_), ctx_(other.ctx_) {
+  DataSourceHandle(DataSourceHandle&& other) noexcept
+      : vt_(other.vt_), ctx_(other.ctx_), library_owner_(std::move(other.library_owner_)) {
     other.vt_ = nullptr;
     other.ctx_ = nullptr;
   }
@@ -58,6 +61,7 @@ class DataSourceHandle {
     if (this != &other) {
       std::swap(vt_, other.vt_);
       std::swap(ctx_, other.ctx_);
+      std::swap(library_owner_, other.library_owner_);
     }
     return *this;
   }
@@ -156,7 +160,7 @@ class DataSourceHandle {
   }
 
   /// Query a plugin-exposed extension by reverse-DNS id. Tail-slot gated —
-  /// returns nullptr if the plugin was compiled against a v3.0 header that
+  /// returns nullptr if the plugin was compiled against an older v4 header that
   /// didn't have this slot, or if the plugin doesn't know the id.
   [[nodiscard]] const void* getPluginExtension(std::string_view id) const {
     if (!PJ_HAS_TAIL_SLOT(PJ_data_source_vtable_t, vt_, get_plugin_extension)) {
@@ -177,6 +181,7 @@ class DataSourceHandle {
  private:
   const PJ_data_source_vtable_t* vt_ = nullptr;
   void* ctx_ = nullptr;
+  std::shared_ptr<void> library_owner_;
 };
 
 }  // namespace PJ

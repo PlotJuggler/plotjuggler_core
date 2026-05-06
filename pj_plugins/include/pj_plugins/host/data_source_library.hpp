@@ -2,8 +2,9 @@
  * @file data_source_library.hpp
  * @brief Host-side loader for DataSource plugin shared libraries.
  *
- * DataSourceLibrary wraps dlopen/dlclose and resolves the plugin's vtable
- * entry point. Create instances of the plugin via createHandle().
+ * DataSourceLibrary wraps dlopen and resolves the plugin's vtable entry point.
+ * Create instances of the plugin via createHandle(); those handles keep the
+ * shared library loaded until their plugin instances are destroyed.
  *
  * Typical usage:
  * @code
@@ -21,6 +22,7 @@
 #include <pj_plugins/dialog_protocol.h>
 
 #include <pj_plugins/host/data_source_handle.hpp>
+#include <memory>
 #include <string>
 #include <string_view>
 
@@ -31,9 +33,9 @@ namespace PJ {
 /**
  * Loads a DataSource plugin shared library and provides factory access.
  *
- * The library is dlopen'd with RTLD_LOCAL on load() and dlclose'd on
- * destruction. The vtable pointer remains valid for the library's lifetime.
- * Move-only; not copyable.
+ * The library is dlopen'd with RTLD_LOCAL on load(). Plugin handles created
+ * from this loader keep the DSO loaded even if the DataSourceLibrary object is
+ * destroyed or moved out of a runtime catalog. Move-only; not copyable.
  */
 class DataSourceLibrary {
  public:
@@ -54,14 +56,14 @@ class DataSourceLibrary {
     return handle_ != nullptr && vtable_ != nullptr;
   }
 
-  /// Raw vtable pointer. Valid for the lifetime of this DataSourceLibrary.
+  /// Raw vtable pointer. Valid while this library or any handle created from it is alive.
   [[nodiscard]] const PJ_data_source_vtable_t* vtable() const {
     return vtable_;
   }
 
   /// Create a new plugin instance. Each handle is independent.
   [[nodiscard]] DataSourceHandle createHandle() const {
-    return DataSourceHandle(vtable_);
+    return DataSourceHandle(vtable_, handle_);
   }
 
   /// Resolve the dialog vtable from this .so. Returns error if not exported.
@@ -73,11 +75,11 @@ class DataSourceLibrary {
   }
 
  private:
-  DataSourceLibrary(void* handle, const PJ_data_source_vtable_t* vtable, std::string path);
+  DataSourceLibrary(std::shared_ptr<void> handle, const PJ_data_source_vtable_t* vtable, std::string path);
 
   void reset();
 
-  void* handle_ = nullptr;
+  std::shared_ptr<void> handle_;
   const PJ_data_source_vtable_t* vtable_ = nullptr;
   std::string path_;
 };

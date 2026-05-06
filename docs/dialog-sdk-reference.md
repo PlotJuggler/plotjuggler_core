@@ -53,9 +53,10 @@ For the full tutorial, see [dialog-plugin-guide.md](../pj_plugins/docs/dialog-pl
 | Method | Description |
 |--------|-------------|
 | `setButtonText(name, text)` | Set button label |
-| `setShortcut(name, key_sequence)` | Assign keyboard shortcut (e.g. `"Ctrl+A"`) **NEW** |
+| `setButtonIcon(name, svg_data)` | Set an inline SVG icon |
+| `setShortcut(name, key_sequence)` | Assign keyboard shortcut (e.g. `"Ctrl+A"`) |
 | `setFilePicker(name, text, filter, title)` | Turn into file picker |
-| `setFolderPicker(name, text, title)` | Turn into folder picker **NEW** |
+| `setFolderPicker(name, text, title)` | Turn into folder picker |
 
 ### QListWidget
 
@@ -71,13 +72,23 @@ For the full tutorial, see [dialog-plugin-guide.md](../pj_plugins/docs/dialog-pl
 | `setTableHeaders(name, vector<string>)` | Set column headers |
 | `setTableRows(name, vector<vector<string>>)` | Set row data |
 | `setSelectedRows(name, vector<int>)` | Set selected row indices |
-| `setDisabledRows(name, vector<int>)` | Grey out rows (non-selectable) **NEW** |
+| `setDisabledRows(name, vector<int>)` | Grey out rows (non-selectable) |
+
+### QFrame Chart Container
+
+| Method | Description |
+|--------|-------------|
+| `setChartSeries(name, vector<ChartSeries>)` | Create/update chart series inside a QFrame |
+| `clearChart(name)` | Remove chart series |
+| `setChartZoomEnabled(name, bool)` | Enable chart zoom/pan events |
 
 ### QPlainTextEdit
 
 | Method | Description |
 |--------|-------------|
-| `setPlainText(name, text)` | Set plain text content **NEW** |
+| `setPlainText(name, text)` | Set plain text content |
+| `setCodeContent(name, code)` | Set editable code content |
+| `setCodeLanguage(name, lang)` | Set syntax highlighting language such as `"lua"` or `"python"` |
 
 ### QTabWidget
 
@@ -98,6 +109,7 @@ For the full tutorial, see [dialog-plugin-guide.md](../pj_plugins/docs/dialog-pl
 |--------|-------------|
 | `setEnabled(name, bool)` | Enable/disable widget |
 | `setVisible(name, bool)` | Show/hide widget |
+| `setDropTarget(name, bool)` | Accept dropped item labels and emit `onItemsDropped` |
 
 ### Dialog-level Commands
 
@@ -121,9 +133,12 @@ Override these in your `DialogPluginTyped` subclass. Return `true` when state ch
 | `onValueChanged(name, double)` | QDoubleSpinBox | New double value |
 | `onClicked(name)` | QPushButton | (no payload) |
 | `onFileSelected(name, path)` | QPushButton (file picker) | Selected file path |
-| `onFolderSelected(name, path)` | QPushButton (folder picker) | Selected folder path **NEW** |
+| `onFolderSelected(name, path)` | QPushButton (folder picker) | Selected folder path |
 | `onSelectionChanged(name, items)` | QListWidget, QTableWidget | Vector of selected item texts |
 | `onItemDoubleClicked(name, index)` | QListWidget, QTableWidget | Row index of double-clicked item |
+| `onCodeChanged(name, code)` | QPlainTextEdit code editor | Edited code |
+| `onItemsDropped(name, items)` | Any widget with `setDropTarget` | Dropped item labels |
+| `onChartViewChanged(name, x_min, x_max, y_min, y_max)` | QFrame chart container | Visible chart range |
 | `onTabChanged(name, index)` | QTabWidget | New tab index |
 
 ---
@@ -137,7 +152,6 @@ Override these in your `DialogPluginTyped` subclass. Return `true` when state ch
 | `onRejected()` | User clicked Cancel | void |
 | `saveConfig()` | Host persisting state | JSON string |
 | `loadConfig(json)` | Host restoring state | `true` if state changed |
-| `lastError()` | Host checking for errors | Error string or empty |
 
 ---
 
