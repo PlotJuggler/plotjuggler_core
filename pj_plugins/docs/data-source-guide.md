@@ -7,6 +7,15 @@
 > through the author-facing workflow; `ARCHITECTURE.md` is the binding
 > reference when the two disagree.
 
+> **Vocabulary used throughout this guide** (defined in `pj_base/expected.hpp`,
+> `pj_base/span.hpp`):
+> - `PJ::Status` — alias for `PJ::Expected<void>`. Return `PJ::okStatus()` on
+>   success or `PJ::unexpected("reason")` on failure.
+> - `PJ::Expected<T>` — like `std::expected<T, std::string>`. Test with
+>   `if (!result)`; access via `*result`; access the error via `result.error()`.
+> - `PJ::Span<T>` — non-owning view over contiguous `T` (like `std::span<T>`).
+> - `PJ::Timestamp` — `int64_t` nanoseconds since the Unix epoch.
+
 ## What is a DataSource?
 
 A DataSource plugin is a shared library (`.so` / `.dylib` / `.dll`) that
@@ -14,15 +23,57 @@ acquires data — from files, network streams, hardware, etc. — and feeds it
 into PlotJuggler. Plugins link only against `pj_base` (no Qt, no host
 internals) and communicate through a stable C ABI.
 
+## Choosing a Base Class
+
+Pick the first row that matches your input shape:
+
+| Your input | Base class | Capability flag | Override |
+|---|---|---|---|
+| One-shot file import (CSV, Parquet, MCAP) | `PJ::FileSourceBase` | `kCapabilityDirectIngest` | `importData()` |
+| Live stream, you decode the payload | `PJ::StreamSourceBase` | `kCapabilityDirectIngest` | `onStart()`, `onPoll()`, `onStop()` |
+| Live transport (MQTT/ZMQ/UDP) where payload encoding varies | `PJ::StreamSourceBase` | `kCapabilityDelegatedIngest` | `onStart()`, `onPoll()`, `onStop()` + bind a parser |
+| None of the above (full manual lifecycle) | `PJ::DataSourcePluginBase` | declare your own | `start()`, `stop()`, `currentState()`, … |
+
+Most plugins want one of the first three. Reach for `DataSourcePluginBase`
+directly only when the supplied state machines genuinely don't fit.
+
 ## Quick Start
 
-1. Subclass `PJ::FileSourceBase` (file importer) or `PJ::StreamSourceBase`
-   (live stream), or `PJ::DataSourcePluginBase` for full control.
+1. Pick a base class from the table above.
 2. Implement the required virtuals (see Common Patterns below).
 3. Export with `PJ_DATA_SOURCE_PLUGIN(YourClass, R"({"id":"...","name":"...","version":"..."})")`
 4. Build as a shared library linking `pj_base`
 
 A complete example lives at `pj_plugins/examples/mock_data_source.cpp`.
+
+## Plugin Contract
+
+Follow these rules. Some are enforced by the loader or SDK trampolines; others
+prevent runtime failures and confusing host behaviour.
+
+**MUST**
+- Return `PJ::okStatus()` on success and `PJ::unexpected("reason")` on failure
+  from every fallible method.
+- Call `runtimeHost().notifyState(...)` on every state transition you trigger.
+- Call host methods (`writeHost()`, `runtimeHost()`) only from the host's
+  callback thread — the same thread that invoked `onStart`/`onPoll`/`onStop`/
+  `importData`/`pause`/`resume`.
+- Make `onStop()` idempotent.
+- Persist all state needed for headless restart in `saveConfig()`. The host
+  must be able to `loadConfig(saved) → start()` without showing a dialog.
+
+**MUST NOT**
+- Throw exceptions across virtual overrides — the SDK trampolines catch them,
+  but the host receives a generic error and the plugin loses the chance to
+  report a useful reason.
+- Call host methods from a background thread you spawned. Buffer in plugin
+  memory and flush from `onPoll()`.
+- Call `runtimeHost().progressFinish()` from a `FileSourceBase` subclass —
+  the base class calls it for you after `importData()` returns.
+- Re-release an `ArrowArrayStream` after `appendArrowStream()` returns
+  success; the host already consumed and released it. Use
+  `PJ::sdk::ArrowStreamHolder` to get this right automatically.
+- Resume from a terminal state (`stopped`, `failed`). Create a new instance.
 
 ## Step by Step
 
@@ -895,3 +946,15 @@ Reference implementation: `pj_ported_plugins/data_load_mcap` — closure
 captures the open `mcap::McapReader` and the message offset, reads the
 bytes on demand. See `PLUGIN_DEVELOPMENT.md` in that repo for the
 catalog-side companion (`parser_ros`) and a top-down walkthrough.
+
+## Common Mistakes
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| Plugin loads but the host UI never shows progress | `progressStart()` not called before the loop, or progress bar finished early | Call `progressStart(label, total, cancellable)` once before the work loop; let `FileSourceBase` call `progressFinish()` for you |
+| Host crashes or terminates partway through ingest | A plugin method threw an exception across the C ABI | Catch within the override and convert to `PJ::unexpected("…")`; the SDK trampoline only catches as a last resort |
+| Streaming source drops messages under load | `recv()` is called inline in `onPoll()` at the host's polling rate | Spawn a background recv thread, buffer under a mutex, drain in `onPoll()` |
+| `appendArrowStream()` succeeds but the program crashes at scope exit | Stream released twice — once by the host, once by the plugin's RAII | Use `PJ::sdk::ArrowStreamHolder` and pass via `std::move(stream)`; the holder disarms on success |
+| Plugin restarts headlessly but loses configuration | State stored only in the dialog or only in `QSettings`, not in `saveConfig()` JSON | Round-trip every field through `saveConfig()` / `loadConfig()`; the host does not provide ambient persistence |
+| Host emits "DataSource protocol version mismatch" at load | Plugin built against an older or newer `pj_base` than the host | Rebuild against the host's `pj_base`; check `PJ_DATA_SOURCE_PROTOCOL_VERSION` |
+| `kCapabilitySupportsPause` declared but pause does nothing | `pause()`/`resume()` not overridden — `StreamSourceBase` does not wire them | Subclass `DataSourcePluginBase` directly, or override `pause()`/`resume()` and add the capability flag |

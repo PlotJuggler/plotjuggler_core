@@ -6,6 +6,29 @@
 > committing to storage). For ABI evolution rules, error semantics, and
 > noexcept discipline see `ARCHITECTURE.md`.
 
+> **Vocabulary used throughout this guide**:
+> - `PJ::Status` — alias for `PJ::Expected<void>`. Return `PJ::okStatus()` /
+>   `PJ::unexpected("reason")`.
+> - `PJ::Span<const uint8_t>` — non-owning view over the payload bytes.
+> - `PJ::Timestamp` — `int64_t` nanoseconds since the Unix epoch. The host
+>   provides one; the parser may override it from the payload (see
+>   "Embedded timestamp extraction").
+
+## When MessageParser is the Wrong Choice
+
+The parser write surface is **per-record only** in v4. If your input is
+naturally batch-shaped (Parquet, MCAP indices, Arrow IPC byte streams), prefer
+a **DataSource** that calls `writeHost().appendArrowStream(...)` unless the
+encoding is strongly parser-shaped. Writing a batch producer as a parser leaves
+throughput on the table and forces awkward single-record loops.
+
+A MessageParser is the right choice when:
+- Each message is independently decodable (JSON line, single Protobuf message,
+  ROS message, Influx line).
+- You produce up to a few dozen named numeric fields per call.
+- The encoding may be paired with multiple transports (a Protobuf parser used
+  by both an MQTT and a ZMQ source).
+
 ## What is a MessageParser?
 
 A MessageParser plugin is a shared library (`.so` / `.dylib` / `.dll`) that
@@ -27,6 +50,33 @@ the host, which routes them to the appropriate parser based on encoding name.
 4. Build as a shared library linking `pj_base`
 
 A complete example lives at `pj_plugins/examples/mock_json_parser.cpp`.
+
+## Plugin Contract
+
+Follow these rules. Some are enforced by manifest validation or SDK
+trampolines; others prevent runtime parse failures.
+
+**MUST**
+- Return `PJ::okStatus()` / `PJ::unexpected("reason")` from `parse()` and other
+  fallible methods.
+- Honour the encoding(s) declared in the manifest's `"encoding"` array — the
+  host routes binding requests by encoding name.
+- Leave the parser in a consistent state after a failed `parse()` so the next
+  `parse()` call still works (do not corrupt cached field handles or schemas).
+- Keep `parse()` topic-agnostic — the write host is already topic-scoped at
+  bind time. `writeHost().ensureField("x")` becomes `<topic>/x` in the
+  datastore automatically.
+
+**MUST NOT**
+- Throw exceptions across `parse()`/`bindSchema()`/`bind(registry)`/
+  `loadConfig()`/`saveConfig()`. The SDK trampolines catch as a fallback,
+  but the host loses the chance to report a useful reason.
+- Call any host method outside the host's callback thread.
+- Cache the write host view across instances or threads — it is bound to one
+  parser instance for one topic.
+- Assume `bindSchema()` is called for every encoding. JSON / text parsers may
+  never receive it. Only require schema for encodings that need it
+  (Protobuf, ROS, IDL).
 
 ## Step by Step
 
@@ -512,3 +562,15 @@ nature is forward-compatible by construction).
 Reference implementation: `pj_ported_plugins/parser_ros` —
 `SchemaHandler` table driven by a static `catalog()`. See
 `PLUGIN_DEVELOPMENT.md` in that repo for a top-down walkthrough.
+
+## Common Mistakes
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| Plugin loads but `parse()` is never called | `encoding` array in the manifest does not match the encoding name the source requests | Match the binding request's encoding string exactly (case-sensitive) |
+| Host cannot bind the parser at runtime | Manifest missing the `encoding` array entirely | Add `"encoding": ["…"]` (required for parsers) |
+| First `parse()` after restart fails silently | Schema-derived state lost; `bindSchema()` was not called for this encoding because none is needed | Initialize lazily in `parse()` for schema-less encodings |
+| `appendBoundRecord()` returns failure | Field handles obtained before `bind(registry)` completed (or reused after `destroy`) | Acquire field handles inside `parse()` or after `bind(registry)`; never cache them across instances |
+| Throughput is one quarter of the source's input rate | Wrong family — the source emits batches but the parser decodes one record at a time | Move bulk decoding to a DataSource that calls `appendArrowStream()` |
+| Embedded timestamp ignored even when configured | Parser uses the host-supplied `timestamp_ns` and never extracts from payload | Read the config flag in `loadConfig`; choose between extracted and host timestamps inside `parse()` |
+| Memory grows unboundedly across `parse()` calls | Per-message state leaked (e.g. descriptor pools rebuilt per call) | Build schema-derived caches in `bindSchema()` or `loadConfig()`, not in `parse()` |
