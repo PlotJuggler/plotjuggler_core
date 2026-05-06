@@ -13,6 +13,14 @@
 #error "PJ_MOCK_DIALOG_PLUGIN_PATH must be defined"
 #endif
 
+#ifndef PJ_MISSING_DIALOG_ABI_PLUGIN_PATH
+#error "PJ_MISSING_DIALOG_ABI_PLUGIN_PATH must be defined"
+#endif
+
+#ifndef PJ_MISSING_DIALOG_REQUIRED_SLOTS_PLUGIN_PATH
+#error "PJ_MISSING_DIALOG_REQUIRED_SLOTS_PLUGIN_PATH must be defined"
+#endif
+
 namespace {
 
 TEST(DialogLibraryTest, LoadAndCreateHandle) {
@@ -54,6 +62,18 @@ TEST(DialogLibraryTest, HandleLifecycle) {
 TEST(DialogLibraryTest, LoadInvalidPath) {
   auto lib = PJ::DialogLibrary::load("/nonexistent/path.so");
   EXPECT_FALSE(lib);
+}
+
+TEST(DialogLibraryTest, RejectsMissingAbiVersionSymbol) {
+  auto lib = PJ::DialogLibrary::load(PJ_MISSING_DIALOG_ABI_PLUGIN_PATH);
+  ASSERT_FALSE(lib);
+  EXPECT_NE(lib.error().find("pj_plugin_abi_version"), std::string::npos);
+}
+
+TEST(DialogLibraryTest, RejectsMissingRequiredSlot) {
+  auto lib = PJ::DialogLibrary::load(PJ_MISSING_DIALOG_REQUIRED_SLOTS_PLUGIN_PATH);
+  ASSERT_FALSE(lib);
+  EXPECT_NE(lib.error().find("Dialog vtable missing required slot: get_ui_content"), std::string::npos);
 }
 
 TEST(DialogLibraryTest, HandleKeepsSharedLibraryLoadedAfterLibraryObjectDies) {

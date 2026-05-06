@@ -86,6 +86,9 @@ Expected<const PJ_dialog_vtable_t*> DataSourceLibrary::resolveDialogVtable() con
   if (vt->struct_size < PJ_DIALOG_MIN_VTABLE_SIZE) {
     return unexpected("Dialog vtable smaller than v4.0 baseline");
   }
+  if (auto status = detail::validateRequiredSlots(vt); !status) {
+    return unexpected(status.error());
+  }
   return vt;
 }
 

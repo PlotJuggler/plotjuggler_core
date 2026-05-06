@@ -80,7 +80,7 @@ class ParserWriteRecorder {
     static const PJ_parser_write_host_vtable_t vtable = [] {
       PJ_parser_write_host_vtable_t table{};
       table.abi_version = PJ_PLUGIN_DATA_API_VERSION;
-      table.struct_size = offsetof(PJ_parser_write_host_vtable_t, append_arrow_stream);
+      table.struct_size = PJ_PARSER_WRITE_HOST_MIN_VTABLE_SIZE;
       table.ensure_field = &ParserWriteRecorder::trampolineEnsureField;
       table.append_record = &ParserWriteRecorder::trampolineAppendRecord;
       table.append_bound_record = &ParserWriteRecorder::trampolineAppendBoundRecord;

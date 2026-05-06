@@ -150,6 +150,9 @@ static_assert(offsetof(PJ_parser_write_host_vtable_t, append_bound_record) == 24
 static_assert(
     offsetof(PJ_parser_write_host_vtable_t, append_arrow_stream) == 32, "parser write host bulk tail slot pinned");
 static_assert(sizeof(PJ_parser_write_host_vtable_t) == 40, "Parser write host size updated deliberately on append");
+static_assert(PJ_PARSER_WRITE_HOST_MIN_VTABLE_SIZE == 32, "Parser write host min size remains v4.0 baseline");
+static_assert(
+    PJ_PARSER_WRITE_HOST_MIN_VTABLE_SIZE <= sizeof(PJ_parser_write_host_vtable_t), "MIN must never exceed current");
 
 static_assert(offsetof(PJ_toolbox_host_vtable_t, abi_version) == 0, "toolbox host prefix pinned");
 static_assert(offsetof(PJ_toolbox_host_vtable_t, struct_size) == 4, "toolbox host prefix pinned");

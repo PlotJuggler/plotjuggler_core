@@ -1,3 +1,17 @@
+find_package(fmt REQUIRED)
+find_package(nlohmann_json REQUIRED)
+
+add_library(pj_plugin_loader_detail STATIC
+  src/detail/vtable_validation.cpp
+)
+target_include_directories(pj_plugin_loader_detail PUBLIC
+  ${CMAKE_CURRENT_SOURCE_DIR}/src
+  ${CMAKE_CURRENT_SOURCE_DIR}/dialog_protocol/include
+)
+target_compile_features(pj_plugin_loader_detail PUBLIC cxx_std_20)
+target_compile_options(pj_plugin_loader_detail PRIVATE ${PJ_WARNING_FLAGS})
+target_link_libraries(pj_plugin_loader_detail PUBLIC pj_base)
+
 add_subdirectory(dialog_protocol)
 
 # ---------------------------------------------------------------------------
@@ -14,16 +28,6 @@ target_link_libraries(pj_plugin_sdk INTERFACE pj_base)
 # ---------------------------------------------------------------------------
 # pj_plugin_catalog — host-side embedded-manifest discovery
 # ---------------------------------------------------------------------------
-
-find_package(fmt REQUIRED)
-find_package(nlohmann_json REQUIRED)
-
-add_library(pj_plugin_loader_detail STATIC
-  src/detail/vtable_validation.cpp
-)
-target_compile_features(pj_plugin_loader_detail PUBLIC cxx_std_20)
-target_compile_options(pj_plugin_loader_detail PRIVATE ${PJ_WARNING_FLAGS})
-target_link_libraries(pj_plugin_loader_detail PUBLIC pj_base)
 
 add_library(pj_plugin_catalog STATIC
   src/plugin_catalog.cpp
@@ -314,6 +318,7 @@ target_compile_definitions(plugin_catalog_test PRIVATE
   PJ_MOCK_DIALOG_PLUGIN_PATH="$<TARGET_FILE:mock_dialog_plugin>"
   PJ_STATIC_MANIFEST_DIALOG_PLUGIN_PATH="$<TARGET_FILE:static_manifest_dialog_plugin>"
   PJ_LEGACY_MACRO_DIALOG_PLUGIN_PATH="$<TARGET_FILE:legacy_macro_dialog_plugin>"
+  PJ_MISSING_DIALOG_REQUIRED_SLOTS_PLUGIN_PATH="$<TARGET_FILE:missing_dialog_required_slots_plugin>"
   PJ_MISSING_ID_PLUGIN_PATH="$<TARGET_FILE:missing_id_data_source_plugin>"
   PJ_INVALID_OPTIONAL_PLUGIN_PATH="$<TARGET_FILE:invalid_optional_manifest_data_source_plugin>"
   PJ_MISSING_REQUIRED_SLOTS_PLUGIN_PATH="$<TARGET_FILE:missing_required_slots_plugin>"
@@ -325,7 +330,8 @@ target_link_libraries(plugin_catalog_test PRIVATE
 add_dependencies(plugin_catalog_test mock_data_source_plugin mock_json_parser_plugin
                  mock_toolbox_plugin mock_dialog_plugin missing_id_data_source_plugin
                  invalid_optional_manifest_data_source_plugin missing_required_slots_plugin
-                 static_manifest_dialog_plugin legacy_macro_dialog_plugin)
+                 static_manifest_dialog_plugin legacy_macro_dialog_plugin
+                 missing_dialog_required_slots_plugin)
 add_test(NAME plugin_catalog_test COMMAND plugin_catalog_test)
 
 endif() # PJ_BUILD_TESTS

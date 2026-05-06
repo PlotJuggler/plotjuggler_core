@@ -134,6 +134,18 @@ TEST_F(PluginCatalogTest, MissingRequiredVtableSlotIsReportedAsDiagnostic) {
   EXPECT_NE(result->diagnostics[0].message.find("missing_required_slots"), std::string::npos);
 }
 
+TEST_F(PluginCatalogTest, MissingRequiredDialogVtableSlotIsReportedAsDiagnostic) {
+  copyPlugin(PJ_MISSING_DIALOG_REQUIRED_SLOTS_PLUGIN_PATH, pluginFileName("missing_dialog_slot"));
+
+  auto result = scanPluginDsos(dir_);
+  ASSERT_TRUE(result.has_value()) << result.error();
+  EXPECT_TRUE(result->plugins.empty());
+  ASSERT_EQ(result->diagnostics.size(), 1U);
+  EXPECT_NE(
+      result->diagnostics[0].message.find("Dialog vtable missing required slot: get_ui_content"), std::string::npos);
+  EXPECT_NE(result->diagnostics[0].message.find("missing_dialog_slot"), std::string::npos);
+}
+
 TEST_F(PluginCatalogTest, ScanContinuesAfterBrokenDso) {
   copyPlugin(PJ_MOCK_DATA_SOURCE_PLUGIN_PATH, pluginFileName("valid"));
   std::ofstream(dir_ / pluginFileName("broken")) << "not a shared library";

@@ -3,6 +3,7 @@
 
 #include <gtest/gtest.h>
 
+#include <memory>
 #include <nlohmann/json.hpp>
 #include <string>
 
@@ -92,6 +93,32 @@ TEST(SourceDialogIntegration, BorrowedDialogHandleWorks) {
   // save_config should return valid JSON
   std::string cfg = dialog.save_config();
   EXPECT_FALSE(cfg.empty());
+}
+
+TEST(SourceDialogIntegration, BorrowedDialogWorksAfterLibraryObjectDiesWhileSourceLives) {
+  std::unique_ptr<PJ::DataSourceHandle> source;
+  std::unique_ptr<PJ::DialogHandle> dialog;
+
+  {
+    auto lib = PJ::DataSourceLibrary::load(PJ_MOCK_SOURCE_WITH_DIALOG_PLUGIN_PATH);
+    ASSERT_TRUE(lib) << lib.error();
+
+    source = std::make_unique<PJ::DataSourceHandle>(lib->createHandle());
+    ASSERT_TRUE(source->valid());
+
+    auto borrowed = source->getDialog();
+    ASSERT_NE(borrowed.ctx, nullptr);
+    ASSERT_NE(borrowed.vtable, nullptr);
+    dialog = std::make_unique<PJ::DialogHandle>(PJ::DialogHandle::fromBorrowed(borrowed));
+  }
+
+  std::string wd = dialog->widget_data();
+  EXPECT_FALSE(wd.empty());
+  auto j = nlohmann::json::parse(wd, nullptr, false);
+  EXPECT_FALSE(j.is_discarded());
+
+  dialog.reset();
+  source.reset();
 }
 
 // --- Test 6: Shared state ---

@@ -44,6 +44,7 @@ target_link_libraries(pj_dialog_library
     pj_dialog_host
     pj_base
   PRIVATE
+    pj_plugin_loader_detail
     ${CMAKE_DL_LIBS}
 )
 
@@ -54,6 +55,14 @@ if(PJ_BUILD_TESTS)
 add_library(mock_dialog_plugin SHARED examples/mock_dialog.cpp)
 target_compile_options(mock_dialog_plugin PRIVATE ${PJ_WARNING_FLAGS})
 target_link_libraries(mock_dialog_plugin PRIVATE pj_dialog_sdk)
+
+add_library(missing_dialog_abi_plugin SHARED tests/missing_dialog_abi_plugin.cpp)
+target_compile_options(missing_dialog_abi_plugin PRIVATE ${PJ_WARNING_FLAGS})
+target_link_libraries(missing_dialog_abi_plugin PRIVATE pj_dialog_protocol)
+
+add_library(missing_dialog_required_slots_plugin SHARED tests/missing_dialog_required_slots_plugin.cpp)
+target_compile_options(missing_dialog_required_slots_plugin PRIVATE ${PJ_WARNING_FLAGS})
+target_link_libraries(missing_dialog_required_slots_plugin PRIVATE pj_dialog_protocol)
 
 # --- Tests ---
 
@@ -107,9 +116,16 @@ add_test(NAME widget_event_builder_test COMMAND widget_event_builder_test)
 add_executable(dialog_library_test tests/dialog_library_test.cpp)
 target_compile_definitions(dialog_library_test PRIVATE
   PJ_MOCK_DIALOG_PLUGIN_PATH="$<TARGET_FILE:mock_dialog_plugin>"
+  PJ_MISSING_DIALOG_ABI_PLUGIN_PATH="$<TARGET_FILE:missing_dialog_abi_plugin>"
+  PJ_MISSING_DIALOG_REQUIRED_SLOTS_PLUGIN_PATH="$<TARGET_FILE:missing_dialog_required_slots_plugin>"
 )
 target_link_libraries(dialog_library_test PRIVATE
   pj_dialog_library pj_dialog_host pj_dialog_sdk GTest::gtest_main
+)
+add_dependencies(dialog_library_test
+  mock_dialog_plugin
+  missing_dialog_abi_plugin
+  missing_dialog_required_slots_plugin
 )
 add_test(NAME dialog_library_test COMMAND dialog_library_test)
 

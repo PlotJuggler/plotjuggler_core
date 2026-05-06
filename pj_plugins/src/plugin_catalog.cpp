@@ -109,10 +109,10 @@ Expected<ManifestCandidate> tryDialog(void* handle) {
   if (vt->struct_size < PJ_DIALOG_MIN_VTABLE_SIZE) {
     return unexpected("Dialog vtable smaller than v4.0 baseline");
   }
-  if (vt->create == nullptr || vt->destroy == nullptr || vt->get_manifest == nullptr) {
-    return unexpected("Dialog vtable missing required lifecycle slots");
+  if (auto status = detail::validateRequiredSlots(vt); !status) {
+    return unexpected(status.error());
   }
-  if (PJ_HAS_TAIL_SLOT(PJ_dialog_vtable_t, vt, manifest_json) && vt->manifest_json != nullptr) {
+  if (PJ_HAS_TAIL_SLOT(PJ_dialog_vtable_t, vt, manifest_json)) {
     return ManifestCandidate{PluginFamily::kDialog, vt->manifest_json};
   }
 

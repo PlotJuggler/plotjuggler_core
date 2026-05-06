@@ -5,66 +5,10 @@
 
 #include <utility>
 
-#if defined(_WIN32)
-#include <windows.h>
-#else
-#include <dlfcn.h>
-#endif
+#include "detail/library_loader.hpp"
+#include "detail/vtable_validation.hpp"
 
 namespace PJ {
-namespace {
-
-Expected<void*> loadLibraryHandle(std::string_view path) {
-#if defined(_WIN32)
-  HMODULE module = LoadLibraryA(std::string(path).c_str());
-  if (module == nullptr) {
-    return unexpected("LoadLibraryA failed");
-  }
-  return reinterpret_cast<void*>(module);
-#else
-  void* handle = dlopen(std::string(path).c_str(), RTLD_NOW | RTLD_LOCAL);
-  if (handle == nullptr) {
-    const char* error = dlerror();
-    return unexpected(error == nullptr ? "" : error);
-  }
-  return handle;
-#endif
-}
-
-void closeLibraryHandle(void* handle) {
-  if (handle == nullptr) {
-    return;
-  }
-#if defined(_WIN32)
-  FreeLibrary(reinterpret_cast<HMODULE>(handle));
-#else
-  dlclose(handle);
-#endif
-}
-
-std::shared_ptr<void> adoptLibraryHandle(void* handle) {
-  return std::shared_ptr<void>(handle, [](void* loaded_handle) { closeLibraryHandle(loaded_handle); });
-}
-
-Expected<PJ_get_dialog_vtable_fn> loadEntryPoint(void* handle) {
-#if defined(_WIN32)
-  auto symbol = GetProcAddress(reinterpret_cast<HMODULE>(handle), "PJ_get_dialog_vtable");
-  if (symbol == nullptr) {
-    return unexpected("PJ_get_dialog_vtable not found");
-  }
-  return reinterpret_cast<PJ_get_dialog_vtable_fn>(symbol);
-#else
-  dlerror();
-  void* symbol = dlsym(handle, "PJ_get_dialog_vtable");
-  const char* err = dlerror();
-  if (err != nullptr) {
-    return unexpected(err);
-  }
-  return reinterpret_cast<PJ_get_dialog_vtable_fn>(symbol);
-#endif
-}
-
-}  // namespace
 
 DialogLibrary::DialogLibrary(std::shared_ptr<void> handle, const PJ_dialog_vtable_t* vtable, std::string path)
     : handle_(std::move(handle)), vtable_(vtable), path_(std::move(path)) {}
@@ -90,18 +34,23 @@ DialogLibrary& DialogLibrary::operator=(DialogLibrary&& other) noexcept {
 }
 
 Expected<DialogLibrary> DialogLibrary::load(std::string_view path) {
-  auto raw_handle = loadLibraryHandle(path);
+  auto raw_handle = detail::loadLibraryHandle(path);
   if (!raw_handle) {
     return unexpected(raw_handle.error());
   }
-  auto handle = adoptLibraryHandle(*raw_handle);
+  auto handle = detail::adoptLibraryHandle(*raw_handle);
 
-  auto entry = loadEntryPoint(handle.get());
-  if (!entry) {
-    return unexpected(entry.error());
+  if (auto abi = detail::checkPluginAbiVersion(handle.get()); !abi) {
+    return unexpected(abi.error());
   }
 
-  const PJ_dialog_vtable_t* vtable = (*entry)();
+  auto sym = detail::resolveSymbol(handle.get(), "PJ_get_dialog_vtable");
+  if (!sym) {
+    return unexpected(sym.error());
+  }
+  auto entry = reinterpret_cast<PJ_get_dialog_vtable_fn>(*sym);
+
+  const PJ_dialog_vtable_t* vtable = entry();
   if (vtable == nullptr) {
     return unexpected("PJ_get_dialog_vtable returned null");
   }
@@ -110,6 +59,9 @@ Expected<DialogLibrary> DialogLibrary::load(std::string_view path) {
   }
   if (vtable->struct_size < PJ_DIALOG_MIN_VTABLE_SIZE) {
     return unexpected("Dialog vtable smaller than v4.0 baseline");
+  }
+  if (auto status = detail::validateRequiredSlots(vtable); !status) {
+    return unexpected(status.error());
   }
 
   return DialogLibrary(std::move(handle), vtable, std::string(path));

@@ -79,4 +79,21 @@ Status validateRequiredSlots(const PJ_toolbox_vtable_t* vtable) {
                  });
 }
 
+Status validateRequiredSlots(const PJ_dialog_vtable_t* vtable) {
+  return validateSlots(
+      "Dialog", {
+                    {"create", vtable->create != nullptr},
+                    {"destroy", vtable->destroy != nullptr},
+                    {"get_manifest", vtable->get_manifest != nullptr},
+                    {"get_ui_content", vtable->get_ui_content != nullptr},
+                    {"get_widget_data", vtable->get_widget_data != nullptr},
+                    {"on_widget_event", vtable->on_widget_event != nullptr},
+                    {"on_tick", vtable->on_tick != nullptr},
+                    {"on_accepted", vtable->on_accepted != nullptr},
+                    {"on_rejected", vtable->on_rejected != nullptr},
+                    {"save_config", vtable->save_config != nullptr},
+                    {"load_config", vtable->load_config != nullptr},
+                });
+}
+
 }  // namespace PJ::detail

@@ -419,6 +419,13 @@ typedef struct PJ_parser_write_host_vtable_t {
       void* ctx, struct ArrowArrayStream* stream, PJ_string_view_t timestamp_column, PJ_error_t* out_error) PJ_NOEXCEPT;
 } PJ_parser_write_host_vtable_t;
 
+/*
+ * Parser write-host v4.0 floor, before append_arrow_stream was added as an
+ * optional tail slot. Hosts/plugins that care about the batch path must use
+ * PJ_HAS_TAIL_SLOT(PJ_parser_write_host_vtable_t, vtable, append_arrow_stream).
+ */
+#define PJ_PARSER_WRITE_HOST_MIN_VTABLE_SIZE (offsetof(PJ_parser_write_host_vtable_t, append_arrow_stream))
+
 typedef struct {
   void* ctx;
   const PJ_parser_write_host_vtable_t* vtable;
