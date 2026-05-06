@@ -137,6 +137,27 @@ static_assert(
 static_assert(
     sizeof(PJ_data_source_runtime_host_vtable_t) == 104, "Runtime host vtable size (update deliberately on append)");
 
+// --- Write-host vtables (ABI-APPENDABLE within v4) --------------------------
+static_assert(offsetof(PJ_source_write_host_vtable_t, abi_version) == 0, "source write host prefix pinned");
+static_assert(offsetof(PJ_source_write_host_vtable_t, struct_size) == 4, "source write host prefix pinned");
+static_assert(offsetof(PJ_source_write_host_vtable_t, append_bound_record) == 32, "source write host baseline pinned");
+static_assert(offsetof(PJ_source_write_host_vtable_t, append_arrow_stream) == 40, "source write host bulk slot pinned");
+static_assert(sizeof(PJ_source_write_host_vtable_t) == 48, "Source write host size");
+
+static_assert(offsetof(PJ_parser_write_host_vtable_t, abi_version) == 0, "parser write host prefix pinned");
+static_assert(offsetof(PJ_parser_write_host_vtable_t, struct_size) == 4, "parser write host prefix pinned");
+static_assert(offsetof(PJ_parser_write_host_vtable_t, append_bound_record) == 24, "parser write host baseline pinned");
+static_assert(
+    offsetof(PJ_parser_write_host_vtable_t, append_arrow_stream) == 32, "parser write host bulk tail slot pinned");
+static_assert(sizeof(PJ_parser_write_host_vtable_t) == 40, "Parser write host size updated deliberately on append");
+
+static_assert(offsetof(PJ_toolbox_host_vtable_t, abi_version) == 0, "toolbox host prefix pinned");
+static_assert(offsetof(PJ_toolbox_host_vtable_t, struct_size) == 4, "toolbox host prefix pinned");
+static_assert(offsetof(PJ_toolbox_host_vtable_t, append_bound_record) == 40, "toolbox host baseline pinned");
+static_assert(offsetof(PJ_toolbox_host_vtable_t, append_arrow_stream) == 48, "toolbox host bulk slot pinned");
+static_assert(offsetof(PJ_toolbox_host_vtable_t, read_series_arrow) == 64, "toolbox host read slot pinned");
+static_assert(sizeof(PJ_toolbox_host_vtable_t) == 72, "Toolbox host size");
+
 // --- ABI version symbol ------------------------------------------------------
 static_assert(PJ_ABI_VERSION == 4, "v4 ABI version");
 

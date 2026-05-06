@@ -428,7 +428,9 @@ All three share a common internal `WriteCore` that handles:
 ### Arrow C Data Interface ownership rules
 
 The v4 write path, `append_arrow_stream(ctx, topic, stream,
-timestamp_column, err)`:
+timestamp_column, err)` for source/toolbox hosts and
+`append_arrow_stream(ctx, stream, timestamp_column, err)` for the
+parser host:
 
 - The plugin constructs the `ArrowArrayStream` (typically via
   nanoarrow's `ArrowIpcArrayStreamReaderInit`, Parquet's
@@ -448,6 +450,9 @@ timestamp_column, err)`:
   nanoseconds since Unix epoch. Passing an empty view means "synthesise
   a monotonic timestamp per row"; useful for streams with no natural
   time axis.
+- Parser writes are already bound to one topic by the host service, so
+  the parser variant does not take a topic handle. Ownership rules are
+  otherwise identical.
 
 The v4 read path, `read_series_arrow(ctx, field, out_schema,
 out_array, err)`:

@@ -5,8 +5,9 @@
  * v4 summary:
  *   - Every vtable slot is PJ_NOEXCEPT and carries a thread-class tag.
  *   - Parser write host (pj.parser_write.v1) no longer has
- *     append_arrow_ipc — see plugin_data_api.h. Parsers stay per-record;
- *     the host coalesces into Arrow batches internally.
+ *     append_arrow_ipc — see plugin_data_api.h. Parsers normally write
+ *     per-record, with an optional append_arrow_stream tail slot for
+ *     parser-shaped formats that naturally decode batches.
  *
  * Pure-functional production (scalars by value, canonical objects by
  * value with BufferAnchor) is a C++ SDK contract: parsers inheriting from

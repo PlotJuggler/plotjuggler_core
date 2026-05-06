@@ -97,9 +97,9 @@ only sees operations it is allowed to call. These services support:
 - **Bulk Arrow writes** — `appendArrowStream()` hands an
   `ArrowArrayStream*` (Arrow C Data Interface) to the host, which pulls
   all batches and takes ownership on success. This is the canonical
-  path for file-based sources and toolbox bulk imports. The parser
-  write surface is per-record only — the host coalesces parser output
-  into Arrow batches internally before committing to storage.
+  path for file-based sources, toolbox bulk imports, and parser-shaped
+  payloads that naturally decode many rows in one `parse()` call. Parser
+  batch writes are topic-scoped; the parser never names the topic.
 - **Topic and field management** — `ensureTopic()`, `ensureField()`, where
   available for the family. Parsers are bound to one topic and only create
   fields within that topic.

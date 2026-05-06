@@ -388,9 +388,10 @@ typedef struct {
  * Parser write host: single-topic writes. The bound topic is set at
  * service-creation time; the parser plugin never names it.
  *
- * No append_arrow_stream: parsers are inherently per-message. The host
- * internally coalesces per-record appends into Arrow batches before
- * committing to storage — plugin authors never see the batch grain. */
+ * append_arrow_stream is an optional tail slot for parser-shaped formats
+ * that naturally decode a batch in one parse() call. Ownership matches
+ * PJ_source_write_host_vtable_t::append_arrow_stream. Plugins must gate
+ * this slot with PJ_HAS_TAIL_SLOT when calling through the C ABI directly. */
 typedef struct PJ_parser_write_host_vtable_t {
   uint32_t abi_version;
   uint32_t struct_size;
@@ -409,6 +410,13 @@ typedef struct PJ_parser_write_host_vtable_t {
   bool (*append_bound_record)(
       void* ctx, int64_t timestamp, const PJ_bound_field_value_t* fields, size_t field_count,
       PJ_error_t* out_error) PJ_NOEXCEPT;
+
+  /* [stream-thread] Optional batch path. Plugin hands ownership of an Arrow
+   * C Data Interface stream for the bound topic. The timestamp column rule
+   * and success/failure ownership contract are identical to
+   * PJ_source_write_host_vtable_t::append_arrow_stream. */
+  bool (*append_arrow_stream)(
+      void* ctx, struct ArrowArrayStream* stream, PJ_string_view_t timestamp_column, PJ_error_t* out_error) PJ_NOEXCEPT;
 } PJ_parser_write_host_vtable_t;
 
 typedef struct {

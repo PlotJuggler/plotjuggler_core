@@ -2,9 +2,10 @@
  * @file arrow_stream_round_trip_test.cpp
  * @brief End-to-end round trip through the v4 Arrow C Data Interface path.
  *
- * Writes a known small time series into the datastore via
- * DatastoreSourceWriteHost::append_arrow_stream (the v4 ABI slot), then reads
- * it back via DatastoreToolboxHost::read_series_arrow, and verifies values.
+ * Writes known small time series into the datastore via
+ * DatastoreSourceWriteHost::append_arrow_stream and
+ * DatastoreParserWriteHost::append_arrow_stream (the v4 ABI slots), then
+ * reads them back via DatastoreToolboxHost::read_series_arrow.
  *
  * This exercises the Phase 1b host-side implementation without going through
  * a dlopen'd plugin — all ABI calls are made directly on the C vtable.
@@ -201,6 +202,80 @@ TEST(ArrowStreamRoundTripTest, WriteViaAppendArrowStreamReadViaReadSeriesArrow) 
   }
 
   // Release the host-owned structs as per the ABI contract.
+  out_schema.release(&out_schema);
+  out_array.release(&out_array);
+  EXPECT_EQ(out_schema.release, nullptr);
+  EXPECT_EQ(out_array.release, nullptr);
+}
+
+TEST(ArrowStreamRoundTripTest, ParserWriteHostAppendArrowStreamWritesBoundTopic) {
+  DataEngine engine;
+  auto td_id = engine.createTimeDomain("parser_td");
+  ASSERT_TRUE(td_id.has_value()) << td_id.error();
+  auto ds_id = engine.createDataset(DatasetDescriptor{.source_name = "parser", .time_domain_id = *td_id});
+  ASSERT_TRUE(ds_id.has_value()) << ds_id.error();
+
+  DatastoreSourceWriteHost source_write_host(engine, PJ_data_source_handle_t{static_cast<uint32_t>(*ds_id)});
+  auto source_vtable = source_write_host.raw();
+
+  PJ_topic_handle_t topic{};
+  PJ_error_t err{};
+  PJ_string_view_t topic_name{"parser_metric", 13};
+  ASSERT_TRUE(source_vtable.vtable->ensure_topic(source_vtable.ctx, topic_name, &topic, &err)) << err.message;
+
+  DatastoreParserWriteHost parser_write_host(engine, topic);
+  auto parser_vtable = parser_write_host.raw();
+
+  const std::vector<int64_t> timestamps = {10, 20, 30};
+  const std::vector<double> values = {7.0, 8.5, 9.25};
+  auto built = makeStream(timestamps, values);
+
+  ArrowArrayStream stream{};
+  initOneBatchStream(&stream, std::move(built));
+
+  PJ_string_view_t ts_col_name{"ts_col", 6};
+  ASSERT_TRUE(parser_vtable.vtable->append_arrow_stream(parser_vtable.ctx, &stream, ts_col_name, &err)) << err.message;
+  EXPECT_EQ(stream.release, nullptr);
+
+  parser_write_host.flushPending();
+
+  DatastoreToolboxHost tb_host(engine);
+  auto tb_vtable = tb_host.raw();
+
+  PJ_catalog_snapshot_t snapshot{};
+  ASSERT_TRUE(tb_vtable.vtable->acquire_catalog_snapshot(tb_vtable.ctx, &snapshot, &err)) << err.message;
+
+  PJ_field_handle_t value_field{};
+  bool value_found = false;
+  for (std::size_t i = 0; i < snapshot.field_count; ++i) {
+    const auto& f = snapshot.fields[i];
+    if (std::string(f.name.data, f.name.size).find("value") != std::string::npos) {
+      value_field = f.handle;
+      value_found = true;
+      break;
+    }
+  }
+  snapshot.release(snapshot.release_ctx);
+  ASSERT_TRUE(value_found) << "field 'value' missing from catalog";
+
+  ArrowSchema out_schema{};
+  ArrowArray out_array{};
+  ASSERT_TRUE(tb_vtable.vtable->read_series_arrow(tb_vtable.ctx, value_field, &out_schema, &out_array, &err))
+      << err.message;
+  ASSERT_NE(out_schema.release, nullptr);
+  ASSERT_NE(out_array.release, nullptr);
+
+  nanoarrow::UniqueArrayView view;
+  ArrowError vf_err;
+  ASSERT_EQ(ArrowArrayViewInitFromSchema(view.get(), &out_schema, &vf_err), NANOARROW_OK) << vf_err.message;
+  ASSERT_EQ(ArrowArrayViewSetArray(view.get(), &out_array, &vf_err), NANOARROW_OK) << vf_err.message;
+
+  ASSERT_EQ(out_array.length, static_cast<int64_t>(timestamps.size()));
+  for (int64_t i = 0; i < out_array.length; ++i) {
+    EXPECT_EQ(ArrowArrayViewGetIntUnsafe(view->children[0], i), timestamps[static_cast<std::size_t>(i)]);
+    EXPECT_DOUBLE_EQ(ArrowArrayViewGetDoubleUnsafe(view->children[1], i), values[static_cast<std::size_t>(i)]);
+  }
+
   out_schema.release(&out_schema);
   out_array.release(&out_array);
   EXPECT_EQ(out_schema.release, nullptr);

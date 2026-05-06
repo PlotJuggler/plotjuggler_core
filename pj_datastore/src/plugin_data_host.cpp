@@ -1080,6 +1080,21 @@ bool parserAppendBoundRecord(
   });
 }
 
+bool parserAppendArrowStream(
+    void* ctx, struct ArrowArrayStream* stream, PJ_string_view_t timestamp_column, PJ_error_t* out_error) noexcept {
+  return guardHostCallback(out_error, [&] {
+    auto* impl = static_cast<DatastoreParserWriteHostState*>(ctx);
+    if (!impl->core.appendArrowStream(impl->topic, stream, timestamp_column)) {
+      propagateError(out_error, impl->core.lastError());
+      return false;
+    }
+    if (stream != nullptr && stream->release != nullptr) {
+      stream->release(stream);
+    }
+    return true;
+  });
+}
+
 bool toolboxCreateDataSource(
     void* ctx, PJ_string_view_t name, DataSourceHandle* out_source, PJ_error_t* out_error) noexcept {
   return guardHostCallback(out_error, [&] {
@@ -1566,8 +1581,9 @@ const PJ_source_write_host_vtable_t kSourceWriteVTable = {
 };
 
 const PJ_parser_write_host_vtable_t kParserWriteVTable = {
-    PJ_PLUGIN_DATA_API_VERSION, sizeof(PJ_parser_write_host_vtable_t), parserEnsureField, parserAppendRecord,
-    parserAppendBoundRecord,
+    PJ_PLUGIN_DATA_API_VERSION, sizeof(PJ_parser_write_host_vtable_t),
+    parserEnsureField,          parserAppendRecord,
+    parserAppendBoundRecord,    parserAppendArrowStream,
 };
 
 const PJ_toolbox_host_vtable_t kToolboxVTable = {

@@ -245,7 +245,6 @@ class CatalogSnapshot {
 //
 // Arrow C Data Interface is the canonical bulk path (appendArrowStream).
 // Per-record helpers remain for streaming producers and simple plugins.
-// The parser write host is strictly per-record — host coalesces internally.
 // ---------------------------------------------------------------------------
 
 // --- PJ_error_t helpers ------------------------------------------------------
@@ -441,6 +440,9 @@ class SourceWriteHostView {
     if (!valid()) {
       return unexpected("source write host is not bound");
     }
+    if (!PJ_HAS_TAIL_SLOT(PJ_source_write_host_vtable_t, host_.vtable, append_arrow_stream)) {
+      return unexpected("source write host does not support append_arrow_stream");
+    }
     PJ_error_t err{};
     if (!host_.vtable->append_arrow_stream(host_.ctx, topic, stream, toAbiString(timestamp_column), &err)) {
       return unexpected(errorToString(err));
@@ -509,6 +511,36 @@ class ParserWriteHostView {
 
   [[nodiscard]] Status appendBoundRecord(Timestamp timestamp, std::initializer_list<BoundFieldValue> fields) const {
     return appendBoundRecord(timestamp, Span<const BoundFieldValue>(fields.begin(), fields.size()));
+  }
+
+  /// Bulk-write via Arrow C Data Interface into the parser's bound topic.
+  /// Recommended overload — takes an `ArrowStreamHolder` by rvalue reference
+  /// and disarms it on success. Same ownership rule as
+  /// `SourceWriteHostView::appendArrowStream`.
+  [[nodiscard]] Status appendArrowStream(
+      ArrowStreamHolder&& stream, std::string_view timestamp_column = "timestamp") const {
+    auto status = appendArrowStream(stream.get(), timestamp_column);
+    if (status) {
+      (void)stream.release();
+    }
+    return status;
+  }
+
+  /// Raw-pointer overload — ABI escape hatch. Prefer the rvalue-ref version
+  /// above. Ownership contract matches SourceWriteHostView::appendArrowStream.
+  [[nodiscard]] Status appendArrowStream(
+      struct ArrowArrayStream* stream, std::string_view timestamp_column = "timestamp") const {
+    if (!valid()) {
+      return unexpected("parser write host is not bound");
+    }
+    if (!PJ_HAS_TAIL_SLOT(PJ_parser_write_host_vtable_t, host_.vtable, append_arrow_stream)) {
+      return unexpected("parser write host does not support append_arrow_stream");
+    }
+    PJ_error_t err{};
+    if (!host_.vtable->append_arrow_stream(host_.ctx, stream, toAbiString(timestamp_column), &err)) {
+      return unexpected(errorToString(err));
+    }
+    return okStatus();
   }
 
   [[nodiscard]] const PJ_parser_write_host_t& raw() const noexcept {
@@ -1055,6 +1087,9 @@ class ToolboxHostView {
     if (!valid()) {
       return unexpected("toolbox host is not bound");
     }
+    if (!PJ_HAS_TAIL_SLOT(PJ_toolbox_host_vtable_t, host_.vtable, append_arrow_stream)) {
+      return unexpected("toolbox host does not support append_arrow_stream");
+    }
     PJ_error_t err{};
     if (!host_.vtable->append_arrow_stream(host_.ctx, topic, stream, toAbiString(timestamp_column), &err)) {
       return unexpected(errorToString(err));
@@ -1065,6 +1100,9 @@ class ToolboxHostView {
   [[nodiscard]] Expected<CatalogSnapshot> catalogSnapshot() const {
     if (!valid()) {
       return unexpected("toolbox host is not bound");
+    }
+    if (!PJ_HAS_TAIL_SLOT(PJ_toolbox_host_vtable_t, host_.vtable, acquire_catalog_snapshot)) {
+      return unexpected("toolbox host does not support acquire_catalog_snapshot");
     }
     PJ_catalog_snapshot_t raw{};
     PJ_error_t err{};
@@ -1089,6 +1127,9 @@ class ToolboxHostView {
     if (out_schema == nullptr || out_array == nullptr) {
       return unexpected("readSeriesArrow: out_schema and out_array must not be null");
     }
+    if (!PJ_HAS_TAIL_SLOT(PJ_toolbox_host_vtable_t, host_.vtable, read_series_arrow)) {
+      return unexpected("toolbox host does not support read_series_arrow");
+    }
     PJ_error_t err{};
     if (!host_.vtable->read_series_arrow(host_.ctx, field, out_schema, out_array, &err)) {
       return unexpected(errorToString(err));
@@ -1109,9 +1150,9 @@ class ToolboxHostView {
     }
     ArrowSchemaHolder schema;
     ArrowArrayHolder array;
-    PJ_error_t err{};
-    if (!host_.vtable->read_series_arrow(host_.ctx, field, schema.out(), array.out(), &err)) {
-      return unexpected(errorToString(err));
+    auto status = readSeriesArrow(field, schema.out(), array.out());
+    if (!status) {
+      return unexpected(status.error());
     }
     return MaterializedSeriesView(std::move(schema), std::move(array));
   }
