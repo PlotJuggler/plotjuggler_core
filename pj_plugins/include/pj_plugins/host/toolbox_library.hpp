@@ -21,8 +21,8 @@
 #include <pj_base/toolbox_protocol.h>
 #include <pj_plugins/dialog_protocol.h>
 
-#include <pj_plugins/host/toolbox_handle.hpp>
 #include <memory>
+#include <pj_plugins/host/toolbox_handle.hpp>
 #include <string>
 #include <string_view>
 

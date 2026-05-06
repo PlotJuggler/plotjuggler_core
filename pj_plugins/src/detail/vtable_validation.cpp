@@ -29,57 +29,54 @@ Status validateSlots(std::string_view family, std::initializer_list<RequiredSlot
 
 Status validateRequiredSlots(const PJ_data_source_vtable_t* vtable) {
   return validateSlots(
-      "DataSource",
-      {
-          {"create", vtable->create != nullptr},
-          {"destroy", vtable->destroy != nullptr},
-          {"manifest_json", vtable->manifest_json != nullptr},
-          {"capabilities", vtable->capabilities != nullptr},
-          {"bind", vtable->bind != nullptr},
-          {"save_config", vtable->save_config != nullptr},
-          {"load_config", vtable->load_config != nullptr},
-          {"start", vtable->start != nullptr},
-          {"stop", vtable->stop != nullptr},
-          {"pause", vtable->pause != nullptr},
-          {"resume", vtable->resume != nullptr},
-          {"poll", vtable->poll != nullptr},
-          {"current_state", vtable->current_state != nullptr},
-          {"get_dialog", vtable->get_dialog != nullptr},
-          {"get_plugin_extension", vtable->get_plugin_extension != nullptr},
-      });
+      "DataSource", {
+                        {"create", vtable->create != nullptr},
+                        {"destroy", vtable->destroy != nullptr},
+                        {"manifest_json", vtable->manifest_json != nullptr},
+                        {"capabilities", vtable->capabilities != nullptr},
+                        {"bind", vtable->bind != nullptr},
+                        {"save_config", vtable->save_config != nullptr},
+                        {"load_config", vtable->load_config != nullptr},
+                        {"start", vtable->start != nullptr},
+                        {"stop", vtable->stop != nullptr},
+                        {"pause", vtable->pause != nullptr},
+                        {"resume", vtable->resume != nullptr},
+                        {"poll", vtable->poll != nullptr},
+                        {"current_state", vtable->current_state != nullptr},
+                        {"get_dialog", vtable->get_dialog != nullptr},
+                        {"get_plugin_extension", vtable->get_plugin_extension != nullptr},
+                    });
 }
 
 Status validateRequiredSlots(const PJ_message_parser_vtable_t* vtable) {
   return validateSlots(
-      "MessageParser",
-      {
-          {"create", vtable->create != nullptr},
-          {"destroy", vtable->destroy != nullptr},
-          {"manifest_json", vtable->manifest_json != nullptr},
-          {"bind", vtable->bind != nullptr},
-          {"bind_schema", vtable->bind_schema != nullptr},
-          {"save_config", vtable->save_config != nullptr},
-          {"load_config", vtable->load_config != nullptr},
-          {"parse", vtable->parse != nullptr},
-          {"get_plugin_extension", vtable->get_plugin_extension != nullptr},
-      });
+      "MessageParser", {
+                           {"create", vtable->create != nullptr},
+                           {"destroy", vtable->destroy != nullptr},
+                           {"manifest_json", vtable->manifest_json != nullptr},
+                           {"bind", vtable->bind != nullptr},
+                           {"bind_schema", vtable->bind_schema != nullptr},
+                           {"save_config", vtable->save_config != nullptr},
+                           {"load_config", vtable->load_config != nullptr},
+                           {"parse", vtable->parse != nullptr},
+                           {"get_plugin_extension", vtable->get_plugin_extension != nullptr},
+                       });
 }
 
 Status validateRequiredSlots(const PJ_toolbox_vtable_t* vtable) {
   return validateSlots(
-      "Toolbox",
-      {
-          {"create", vtable->create != nullptr},
-          {"destroy", vtable->destroy != nullptr},
-          {"manifest_json", vtable->manifest_json != nullptr},
-          {"capabilities", vtable->capabilities != nullptr},
-          {"bind", vtable->bind != nullptr},
-          {"save_config", vtable->save_config != nullptr},
-          {"load_config", vtable->load_config != nullptr},
-          {"get_dialog", vtable->get_dialog != nullptr},
-          {"on_data_changed", vtable->on_data_changed != nullptr},
-          {"get_plugin_extension", vtable->get_plugin_extension != nullptr},
-      });
+      "Toolbox", {
+                     {"create", vtable->create != nullptr},
+                     {"destroy", vtable->destroy != nullptr},
+                     {"manifest_json", vtable->manifest_json != nullptr},
+                     {"capabilities", vtable->capabilities != nullptr},
+                     {"bind", vtable->bind != nullptr},
+                     {"save_config", vtable->save_config != nullptr},
+                     {"load_config", vtable->load_config != nullptr},
+                     {"get_dialog", vtable->get_dialog != nullptr},
+                     {"on_data_changed", vtable->on_data_changed != nullptr},
+                     {"get_plugin_extension", vtable->get_plugin_extension != nullptr},
+                 });
 }
 
 }  // namespace PJ::detail

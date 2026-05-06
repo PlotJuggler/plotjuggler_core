@@ -1,5 +1,4 @@
 #include <pj_plugins/sdk/dialog_plugin_base.hpp>
-
 #include <string>
 #include <string_view>
 

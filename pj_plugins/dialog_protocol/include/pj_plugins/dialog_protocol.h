@@ -4,8 +4,8 @@
 // SPDX-License-Identifier: MIT
 
 #include <stdbool.h>
-#include <stdint.h>
 #include <stddef.h>
+#include <stdint.h>
 
 #include "pj_base/plugin_data_api.h"
 

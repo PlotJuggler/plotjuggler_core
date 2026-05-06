@@ -5,8 +5,8 @@
 
 #include <gtest/gtest.h>
 
-#include <nlohmann/json.hpp>
 #include <memory>
+#include <nlohmann/json.hpp>
 #include <string>
 
 #ifndef PJ_MOCK_DIALOG_PLUGIN_PATH

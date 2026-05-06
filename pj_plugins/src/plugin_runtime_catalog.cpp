@@ -3,9 +3,8 @@
 
 #include "pj_plugins/host/plugin_runtime_catalog.hpp"
 
-#include <nlohmann/json.hpp>
-
 #include <algorithm>
+#include <nlohmann/json.hpp>
 #include <system_error>
 #include <utility>
 

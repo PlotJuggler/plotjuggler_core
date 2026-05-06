@@ -40,10 +40,7 @@ class DialogHandle {
   }
 
   DialogHandle(DialogHandle&& other) noexcept
-      : vt_(other.vt_),
-        ctx_(other.ctx_),
-        owned_(other.owned_),
-        library_owner_(std::move(other.library_owner_)) {
+      : vt_(other.vt_), ctx_(other.ctx_), owned_(other.owned_), library_owner_(std::move(other.library_owner_)) {
     other.vt_ = nullptr;
     other.ctx_ = nullptr;
     other.owned_ = false;

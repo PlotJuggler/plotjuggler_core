@@ -21,8 +21,8 @@
 #include <pj_base/message_parser_protocol.h>
 #include <pj_plugins/dialog_protocol.h>
 
-#include <pj_plugins/host/message_parser_handle.hpp>
 #include <memory>
+#include <pj_plugins/host/message_parser_handle.hpp>
 #include <string>
 #include <string_view>
 

@@ -86,7 +86,8 @@ extern "C" PJ_MESSAGE_PARSER_EXPORT const PJ_message_parser_vtable_t* PJ_get_mes
       .struct_size = sizeof(PJ_message_parser_vtable_t),
       .create = create,
       .destroy = destroy,
-      .manifest_json = R"({"id":"missing-parser-slot","name":"Missing Parser Slot","version":"1.0.0","encoding":["x"]})",
+      .manifest_json =
+          R"({"id":"missing-parser-slot","name":"Missing Parser Slot","version":"1.0.0","encoding":["x"]})",
       .bind = bind,
       .bind_schema = bindSchema,
       .save_config = saveConfig,
