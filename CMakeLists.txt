@@ -32,7 +32,10 @@ option(PJ_ENABLE_ABI_CHECK "Enable abidiff-based ABI drift gate (requires libabi
 # ---------------------------------------------------------------------------
 
 if(MSVC)
-  set(PJ_WARNING_FLAGS /W4 /WX /permissive-)
+  # /Zc:preprocessor: conformant preprocessor — required so __VA_ARGS__ inside
+  # nested macro calls (e.g. PJ_DIALOG_PLUGIN's overload-by-arg-count idiom)
+  # splits on commas instead of being passed as a single token.
+  set(PJ_WARNING_FLAGS /W4 /WX /permissive- /Zc:preprocessor)
 else()
   set(PJ_WARNING_FLAGS
     -Wall -Wextra -Werror -Wshadow -Wnon-virtual-dtor -Wold-style-cast
