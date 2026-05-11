@@ -4,10 +4,12 @@
  */
 #pragma once
 
+#include <pj_base/canonical_object_abi.h>
 #include <pj_base/message_parser_protocol.h>
 
 #include <cassert>
 #include <pj_base/expected.hpp>
+#include <pj_base/sdk/canonical_object.hpp>
 #include <pj_base/sdk/data_source_host_views.hpp>
 #include <pj_base/span.hpp>
 #include <pj_base/types.hpp>
@@ -101,6 +103,25 @@ class MessageParserHandle {
       return unexpected(errorToString(err));
     }
     return okStatus();
+  }
+
+  /// A priori classification of the bound schema. Tail-slot gated; when
+  /// the plugin doesn't expose classify_schema (older protocol header)
+  /// returns kNone, matching the host contract documented in
+  /// message_parser_protocol.h.
+  [[nodiscard]] sdk::CanonicalObjectKind classifySchema(
+      std::string_view type_name, Span<const uint8_t> schema) const {
+    if (!PJ_HAS_TAIL_SLOT(PJ_message_parser_vtable_t, vt_, classify_schema)) {
+      return sdk::CanonicalObjectKind::kNone;
+    }
+    PJ_string_view_t tn{type_name.data(), type_name.size()};
+    PJ_bytes_view_t sc{schema.data(), schema.size()};
+    PJ_schema_classification_t out{};
+    PJ_error_t err{};
+    if (!vt_->classify_schema(ctx_, tn, sc, &out, &err)) {
+      return sdk::CanonicalObjectKind::kNone;
+    }
+    return static_cast<sdk::CanonicalObjectKind>(out.object_kind);
   }
 
   /// Query a plugin-exposed extension by reverse-DNS id. Tail-slot gated.

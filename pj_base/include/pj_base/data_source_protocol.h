@@ -129,6 +129,58 @@ typedef struct {
 } PJ_parser_binding_handle_t;
 
 /**
+ * Ownership token kept alive while a non-owning byte buffer is in use.
+ * `ctx` is opaque to the host; `release(ctx)` is invoked once when the host
+ * no longer needs the bytes referenced by the buffer. `ctx` MAY be NULL —
+ * meaning the buffer was static / borrowed from an external lifetime — in
+ * which case `release` is also expected to be NULL.
+ *
+ * Mirrors the pattern of PJ_canonical_object_blob_t but applies to raw
+ * payload bytes, not to serialized canonical objects.
+ */
+typedef struct PJ_payload_anchor_t {
+  void* ctx;
+  void (*release)(void* ctx);
+} PJ_payload_anchor_t;
+
+/**
+ * Payload bytes plus an ownership anchor. The host treats `data` as a
+ * non-owning view, valid until `anchor.release(anchor.ctx)` is invoked.
+ *
+ * For zero-copy ingest, the producer (DataSource plugin) returns a payload
+ * whose anchor keeps the source buffer (mcap chunk, mmap, …) alive. The
+ * host hands the same payload to a parser (which can build canonical
+ * objects holding spans into the buffer) and only releases the anchor when
+ * everyone done with the bytes.
+ */
+typedef struct PJ_payload_t {
+  const uint8_t* data;
+  size_t size;
+  PJ_payload_anchor_t anchor;
+} PJ_payload_t;
+
+/**
+ * Idempotent fetcher of payload bytes. The host invokes `fetch(ctx, &out,
+ * &err)` zero, one, or many times depending on the active
+ * ObjectIngestPolicy and on consumer pulls. Returns true and populates
+ * `*out` on success; returns false and (optionally) populates `*err` on
+ * failure (file read error, source torn down, etc.).
+ *
+ * The host ALWAYS calls `release(ctx)` exactly once when it no longer
+ * needs the fetcher — at the end of ingest for kEager, when the
+ * corresponding ObjectStore entry is dropped for lazy modes. `release`
+ * MAY be NULL if the plugin manages the ctx via some external mechanism.
+ *
+ * `fetch` MUST be thread-safe: the host may invoke it from the ingest
+ * thread (kEager) or from consumer threads (lazy pull).
+ */
+typedef struct PJ_payload_fetcher_t {
+  void* ctx;
+  bool (*fetch)(void* ctx, PJ_payload_t* out_payload, PJ_error_t* out_error) PJ_NOEXCEPT;
+  void (*release)(void* ctx);
+} PJ_payload_fetcher_t;
+
+/**
  * Request to bind (or look up) a parser for a given topic.
  * All string views must remain valid for the duration of the call.
  */
@@ -232,6 +284,51 @@ typedef struct PJ_data_source_runtime_host_vtable_t {
    *         are loaded.
    */
   const char* (*list_available_encodings)(void* ctx)PJ_NOEXCEPT;
+
+  /* ---------------------------------------------------------------------
+   * Tail slots — appended after v4.0. Readers MUST gate access on
+   * `vtable->struct_size > offsetof(slot)` before calling.
+   * --------------------------------------------------------------------- */
+
+  /**
+   * [stream-thread] Push a message via a deferred byte fetcher. The plugin
+   * hands the host a callable that produces the payload bytes when
+   * invoked; the host applies the active ObjectIngestPolicy (resolved via
+   * the application-configured ObjectIngestPolicyResolver against
+   * source_id, topic, and the parser's classifySchema kind) to decide:
+   *
+   *   - kEager:                  invoke fetcher now, parser.parseScalars
+   *                              writes columns, parser.parseObject
+   *                              materializes the canonical object into
+   *                              the ObjectStore via pushOwned. Fetcher
+   *                              released after.
+   *   - kLazyObjectsEagerScalars: invoke fetcher now, parser.parseScalars
+   *                              writes columns. ObjectStore.pushLazy
+   *                              retains the fetcher closure for pull-time
+   *                              re-invocation; bytes dropped after
+   *                              parseScalars.
+   *   - kPureLazy:               do not invoke fetcher at ingest. Register
+   *                              ObjectStore entry that defers fetcher
+   *                              invocation until consumer pull. No
+   *                              scalar columns produced.
+   *
+   * The plugin is policy-agnostic: it does not query the policy nor
+   * track which mode is active. Just constructs the fetcher and hands
+   * it off via this slot.
+   *
+   * Lifetime: the fetcher's `ctx` is allocated by the plugin. The host
+   * is responsible for calling `fetcher.release(fetcher.ctx)` exactly
+   * once when the fetcher is no longer needed (kEager: after the
+   * single fetch; lazy modes: when the ObjectStore entry it backs is
+   * dropped). `fetcher.fetch` must be thread-safe.
+   *
+   * Returns false + error on failure (binding handle invalid,
+   * ObjectStore push failed, etc.). On failure the host still calls
+   * `fetcher.release` so the plugin's ctx leaks no resources.
+   */
+  bool (*push_message_v2)(
+      void* ctx, PJ_parser_binding_handle_t handle, int64_t host_timestamp_ns,
+      PJ_payload_fetcher_t fetcher, PJ_error_t* out_error) PJ_NOEXCEPT;
 } PJ_data_source_runtime_host_vtable_t;
 
 /** Fat pointer pairing a runtime host context with its vtable. */

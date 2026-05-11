@@ -21,6 +21,7 @@
 
 #include "pj_base/data_source_protocol.h"
 #include "pj_base/expected.hpp"
+#include "pj_base/sdk/object_ingest_policy.hpp"
 #include "pj_base/sdk/plugin_data_api.hpp"
 
 namespace PJ {
@@ -217,6 +218,108 @@ class DataSourceRuntimeHostView {
     return okStatus();
   }
 
+  /// Push a message via a deferred byte fetcher. The DataSource hands the
+  /// host a callable that produces the payload bytes when invoked. The host
+  /// applies the active ObjectIngestPolicy (resolved via the
+  /// ObjectIngestPolicyResolver below for source_id, topic, kind) to decide
+  /// whether to invoke the fetcher at ingest, only on consumer pull, or
+  /// never. The DataSource is policy-agnostic — it neither queries the
+  /// policy nor tracks which mode is active.
+  ///
+  /// The fetcher MUST be idempotent — the host may invoke it zero, one, or
+  /// many times depending on policy and consumer pulls. It MUST be
+  /// thread-safe: invocations may come from the ingest thread (kEager) or
+  /// from consumer threads (lazy pulls). Capture by shared_ptr (file
+  /// readers, mcap chunks) so the source buffer outlives every pending
+  /// pull.
+  ///
+  /// Fetcher return type:
+  ///   - sdk::PayloadView { bytes, anchor }  — preferred, zero-copy. The
+  ///     anchor is propagated through the C ABI as a heap-held shared_ptr
+  ///     copy that the host releases when no longer needed.
+  ///   - std::vector<uint8_t>                — legacy form. The vector is
+  ///     heap-relocated and used as its own anchor; bytes survive across
+  ///     the C ABI boundary at the cost of one alloc-and-move.
+  ///
+  /// The host MUST advertise the push_message_v2 tail slot. We wrap the
+  /// closure into a PJ_payload_fetcher_t and hand it over verbatim; the
+  /// host applies ObjectIngestPolicy and decides when (and whether) to
+  /// invoke it. There is no legacy fallback: a host that doesn't expose
+  /// the slot returns an explicit error here rather than silently
+  /// degrading to a kEager push_raw_message.
+  template <typename Fetcher>
+  [[nodiscard]] Status pushMessage(
+      ParserBindingHandle handle, Timestamp host_timestamp_ns, Fetcher&& fetcher) const {
+    if (!valid()) {
+      return unexpected(std::string("runtime host is not bound"));
+    }
+    if (!PJ_HAS_TAIL_SLOT(PJ_data_source_runtime_host_vtable_t, host_.vtable, push_message_v2)) {
+      return unexpected(std::string("runtime host does not expose push_message_v2"));
+    }
+
+    using FetcherT = std::decay_t<Fetcher>;
+    auto* ctx = new FetcherT(std::forward<Fetcher>(fetcher));
+
+    PJ_payload_fetcher_t abi_fetcher{
+        .ctx = ctx,
+        .fetch = +[](void* c, PJ_payload_t* out, PJ_error_t* err) noexcept -> bool {
+          try {
+            auto& fn = *static_cast<FetcherT*>(c);
+            using Result = std::decay_t<decltype(fn())>;
+            if constexpr (std::is_same_v<Result, sdk::PayloadView>) {
+              // Zero-copy path: hold a heap copy of the BufferAnchor so it
+              // survives across the C ABI; release_fn deletes the holder
+              // (and decrements the underlying shared_ptr ref count).
+              auto pv = fn();
+              auto* held = new sdk::BufferAnchor(std::move(pv.anchor));
+              out->data = pv.bytes.data();
+              out->size = pv.bytes.size();
+              out->anchor.ctx = held;
+              out->anchor.release = +[](void* h) noexcept {
+                delete static_cast<sdk::BufferAnchor*>(h);
+              };
+            } else {
+              // Closure returns std::vector<uint8_t>: heap-hold the vector;
+              // it owns its bytes.
+              auto* held = new std::vector<uint8_t>(fn());
+              out->data = held->data();
+              out->size = held->size();
+              out->anchor.ctx = held;
+              out->anchor.release = +[](void* h) noexcept {
+                delete static_cast<std::vector<uint8_t>*>(h);
+              };
+            }
+            return true;
+          } catch (const std::exception& e) {
+            sdk::fillError(err, 1, "plugin", e.what());
+            return false;
+          } catch (...) {
+            sdk::fillError(err, 1, "plugin", "unknown exception in payload fetcher");
+            return false;
+          }
+        },
+        .release = +[](void* c) noexcept { delete static_cast<FetcherT*>(c); },
+    };
+
+    PJ_error_t err{};
+    if (!host_.vtable->push_message_v2(host_.ctx, handle, host_timestamp_ns, abi_fetcher, &err)) {
+      return unexpected(errorToString(err));
+    }
+    return okStatus();
+  }
+
+  /// Access (mutable) the resolver of ObjectIngestPolicy for this runtime.
+  /// The application configures it during setup; the host (when the
+  /// push_message_v2 dispatch lands) consults it per message.
+  ///
+  /// Implementation status (RFC):
+  ///   The resolver is a per-DataSourceRuntimeHostView local instance for
+  ///   now. In production it will be host-owned and shared across views;
+  ///   the SDK surface stays the same.
+  [[nodiscard]] sdk::ObjectIngestPolicyResolver& objectIngestPolicy() const {
+    return policy_resolver_;
+  }
+
   /**
    * Display a modal message box and wait for user response.
    * @return The button clicked, or kOk if the host does not support dialogs.
@@ -277,6 +380,13 @@ class DataSourceRuntimeHostView {
 
  private:
   PJ_data_source_runtime_host_t host_{};
+
+  // RFC-only: local-to-view policy resolver. Production wiring will move
+  // this to a host-side singleton accessed through the service registry;
+  // the public surface (objectIngestPolicy()) stays the same. mutable
+  // because configuring the policy is conceptually a side concern, not
+  // a mutation of the view.
+  mutable sdk::ObjectIngestPolicyResolver policy_resolver_{};
 };
 
 }  // namespace PJ

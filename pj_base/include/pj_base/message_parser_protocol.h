@@ -8,9 +8,16 @@
  *     append_arrow_ipc — see plugin_data_api.h. Parsers stay per-record;
  *     the host coalesces into Arrow batches internally.
  *
+ * v4 appendable tail (no version bump — protocol stays at 4):
+ *   - classify_schema, parse_scalars, parse_object: pure-functional API
+ *     that returns typed values instead of writing to host views. Enables
+ *     lazy materialization and removes the parser's coupling to push policy.
+ *     See pj_base/canonical_object_abi.h for the wire format.
+ *
  * The host obtains the plugin's vtable via `PJ_get_message_parser_vtable()`
  * and drives the plugin through: create -> bind(registry) ->
- * (bind_schema) -> parse* -> destroy.
+ * (bind_schema) -> (classify_schema) -> parse* / parseScalars / parseObject
+ * -> destroy.
  */
 #ifndef PJ_MESSAGE_PARSER_PROTOCOL_H
 #define PJ_MESSAGE_PARSER_PROTOCOL_H
@@ -19,6 +26,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "pj_base/canonical_object_abi.h"
 #include "pj_base/plugin_data_api.h"
 
 #ifdef __cplusplus
@@ -110,6 +118,44 @@ typedef struct PJ_message_parser_vtable_t {
    * Tail slots beyond here are OPTIONAL. Host reads MUST check both
    * struct_size and slot-nullability via PJ_HAS_TAIL_SLOT.
    * ==================================================================== */
+
+  /**
+   * [thread-safe] A priori classification of the bound schema. Cheap; no
+   * payload required. Host invokes this after bind_schema(). Returns
+   * @p out_classification by value (POD).
+   *
+   * NULL or absent (struct_size too small) → host treats as
+   * PJ_CANONICAL_OBJECT_KIND_NONE.
+   *
+   * Pure-functional contract: no host side-effects.
+   */
+  bool (*classify_schema)(void* ctx, PJ_string_view_t type_name, PJ_bytes_view_t schema,
+                          PJ_schema_classification_t* out_classification, PJ_error_t* out_error) PJ_NOEXCEPT;
+
+  /**
+   * [stream-thread] Pure-functional alternative to parse(): returns the
+   * scalar fields by value (out parameter) instead of writing them to the
+   * parser write host. The host invokes this in preference to parse() when
+   * available; legacy plugins keep using parse().
+   *
+   * The plugin owns @p out_fields.fields buffer; @p out_fields.release is
+   * called by the host when done. release MAY be NULL.
+   */
+  bool (*parse_scalars)(void* ctx, int64_t timestamp_ns, PJ_bytes_view_t payload,
+                        PJ_named_field_value_buffer_t* out_fields, PJ_error_t* out_error) PJ_NOEXCEPT;
+
+  /**
+   * [stream-thread] Pure-functional production of a canonical object from
+   * the payload. Fills @p out_blob with the serialized object (see layout
+   * in canonical_object_abi.h). Only meaningful when classify_schema()
+   * returned a non-zero kind.
+   *
+   * Pure-functional contract: no writes to the object write host. The
+   * caller (DataSource / app) decides whether to push the blob eagerly,
+   * capture it inside a lazy lambda, or hand it directly to a consumer.
+   */
+  bool (*parse_object)(void* ctx, int64_t timestamp_ns, PJ_bytes_view_t payload,
+                       PJ_canonical_object_blob_t* out_blob, PJ_error_t* out_error) PJ_NOEXCEPT;
 } PJ_message_parser_vtable_t;
 /* The vtable above is ABI-APPENDABLE: new slots may be added at the tail;
  * host reads guard with PJ_HAS_TAIL_SLOT. See PJ_MESSAGE_PARSER_MIN_VTABLE_SIZE. */
