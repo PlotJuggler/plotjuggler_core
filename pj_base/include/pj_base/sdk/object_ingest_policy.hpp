@@ -9,8 +9,6 @@
  * fetcher immediately (parse and store now), invoke it once for scalars
  * and again on each pull, or never invoke it during ingest and only on
  * consumer pulls.
- *
- * Reference design: docs/claude_reports/2026.05.07-arquitectura-objectstore-pipeline-misalignment.md
  */
 #pragma once
 

@@ -9,8 +9,6 @@
  * itself remains agnostic to these types — it stores opaque bytes; the
  * decoding into a CanonicalObject happens in the consumer at pull time, by
  * invoking the parser's parseObject() against the bytes.
- *
- * Reference report: docs/claude_reports/2026.05.07-arquitectura-objectstore-pipeline-misalignment.md
  */
 #pragma once
 
