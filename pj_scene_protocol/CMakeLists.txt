@@ -2,8 +2,11 @@
 # pj_scene_protocol — schema + canonical wire codec (writer + reader) for
 # foxglove.ImageAnnotations and forthcoming scene primitive types. SDK
 # boundary for plugin authors that produce or consume markers / scene data.
-# Depends on pj_base only.
+# Depends on pj_base and magic_enum (header-only, for the builtin/
+# vocabulary reflection helpers).
 # ---------------------------------------------------------------------------
+
+find_package(magic_enum CONFIG REQUIRED)
 
 add_library(pj_scene_protocol STATIC
   src/image_annotation_codec.cpp
@@ -15,7 +18,7 @@ target_include_directories(pj_scene_protocol PUBLIC
   $<INSTALL_INTERFACE:include>
 )
 target_compile_options(pj_scene_protocol PRIVATE ${PJ_WARNING_FLAGS})
-target_link_libraries(pj_scene_protocol PUBLIC pj_base)
+target_link_libraries(pj_scene_protocol PUBLIC pj_base magic_enum::magic_enum)
 set_target_properties(pj_scene_protocol PROPERTIES
   POSITION_INDEPENDENT_CODE ON
 )

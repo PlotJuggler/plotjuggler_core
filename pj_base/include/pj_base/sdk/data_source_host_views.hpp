@@ -20,9 +20,9 @@
 #include <string_view>
 #include <type_traits>
 
+#include "pj_base/buffer_anchor.hpp"
 #include "pj_base/data_source_protocol.h"
 #include "pj_base/expected.hpp"
-#include "pj_base/sdk/canonical_object.hpp"
 #include "pj_base/sdk/plugin_data_api.hpp"
 
 namespace PJ {
@@ -243,7 +243,7 @@ class DataSourceRuntimeHostView {
   ///     the C ABI boundary at the cost of one alloc-and-move.
   ///
   /// The host MUST advertise the push_message_v2 tail slot. We wrap the
-  /// closure into a PJ_payload_fetcher_t and hand it over verbatim; the
+  /// closure into a PJ_message_data_fetcher_t and hand it over verbatim; the
   /// host applies ObjectIngestPolicy and decides when (and whether) to
   /// invoke it. There is no legacy fallback: a host that doesn't expose
   /// the slot returns an explicit error here rather than silently
@@ -265,9 +265,9 @@ class DataSourceRuntimeHostView {
 
     auto* ctx = new FetcherT(std::forward<Fetcher>(fetcher));
 
-    PJ_payload_fetcher_t abi_fetcher{
+    PJ_message_data_fetcher_t abi_fetcher{
         .ctx = ctx,
-        .fetch = +[](void* c, PJ_payload_t* out, PJ_error_t* err) noexcept -> bool {
+        .fetchMessageData = +[](void* c, PJ_payload_t* out, PJ_error_t* err) noexcept -> bool {
           try {
             auto& fn = *static_cast<FetcherT*>(c);
             using Result = std::decay_t<decltype(fn())>;

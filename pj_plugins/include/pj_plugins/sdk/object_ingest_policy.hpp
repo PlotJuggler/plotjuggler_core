@@ -16,7 +16,7 @@
 #include <string_view>
 #include <unordered_map>
 
-#include "pj_base/sdk/canonical_object.hpp"
+#include "pj_scene_protocol/builtin/BuiltinObject.h"
 
 namespace PJ {
 namespace sdk {
@@ -59,8 +59,8 @@ enum class ObjectIngestPolicy : uint8_t {
 /// Typical setup:
 ///
 ///   resolver.setDefault(kLazyObjectsEagerScalars);
-///   resolver.setForKind(CanonicalObjectKind::kCompressedImage, kPureLazy);
-///   resolver.setForKind(CanonicalObjectKind::kPointCloud, kPureLazy);
+///   resolver.setForKind(BuiltinObjectKind::kCompressedImage, kPureLazy);
+///   resolver.setForKind(BuiltinObjectKind::kPointCloud, kPureLazy);
 ///   // kImage stays at kLazyObjectsEagerScalars: width/height/encoding columns are useful
 ///
 class ObjectIngestPolicyResolver {
@@ -72,7 +72,7 @@ class ObjectIngestPolicyResolver {
 
   /// Override the default for a specific canonical object kind. Useful when
   /// (e.g.) all PointCloud2 topics should be lazy regardless of source.
-  void setForKind(CanonicalObjectKind kind, ObjectIngestPolicy policy) {
+  void setForKind(BuiltinObjectKind kind, ObjectIngestPolicy policy) {
     by_kind_[kind] = policy;
   }
 
@@ -91,7 +91,7 @@ class ObjectIngestPolicyResolver {
   /// Precedence: topic > source > kind > default. The first match wins —
   /// no merging or composition between levels.
   [[nodiscard]] ObjectIngestPolicy resolve(
-      std::string_view source_id, std::string_view topic_name, CanonicalObjectKind object_kind) const {
+      std::string_view source_id, std::string_view topic_name, BuiltinObjectKind object_kind) const {
     if (auto it = by_topic_.find(std::string(topic_name)); it != by_topic_.end()) {
       return it->second;
     }
@@ -106,7 +106,7 @@ class ObjectIngestPolicyResolver {
 
  private:
   ObjectIngestPolicy default_ = ObjectIngestPolicy::kLazyObjectsEagerScalars;
-  std::unordered_map<CanonicalObjectKind, ObjectIngestPolicy> by_kind_;
+  std::unordered_map<BuiltinObjectKind, ObjectIngestPolicy> by_kind_;
   std::unordered_map<std::string, ObjectIngestPolicy> by_source_;
   std::unordered_map<std::string, ObjectIngestPolicy> by_topic_;
 };

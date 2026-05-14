@@ -157,25 +157,25 @@ typedef struct PJ_payload_t {
 } PJ_payload_t;
 
 /**
- * Idempotent fetcher of payload bytes. The host invokes `fetch(ctx, &out,
- * &err)` zero, one, or many times depending on the active
- * ObjectIngestPolicy and on consumer pulls. Returns true and populates
- * `*out` on success; returns false and (optionally) populates `*err` on
- * failure (file read error, source torn down, etc.).
+ * Idempotent fetcher of one message's payload bytes. The host invokes
+ * `fetchMessageData(ctx, &out, &err)` zero, one, or many times depending
+ * on the active ObjectIngestPolicy and on consumer pulls. Returns true
+ * and populates `*out` on success; returns false and (optionally)
+ * populates `*err` on failure (file read error, source torn down, etc.).
  *
  * The host ALWAYS calls `release(ctx)` exactly once when it no longer
  * needs the fetcher — at the end of ingest for kEager, when the
  * corresponding ObjectStore entry is dropped for lazy modes. `release`
  * MAY be NULL if the plugin manages the ctx via some external mechanism.
  *
- * `fetch` MUST be thread-safe: the host may invoke it from the ingest
- * thread (kEager) or from consumer threads (lazy pull).
+ * `fetchMessageData` MUST be thread-safe: the host may invoke it from
+ * the ingest thread (kEager) or from consumer threads (lazy pull).
  */
-typedef struct PJ_payload_fetcher_t {
+typedef struct PJ_message_data_fetcher_t {
   void* ctx;
-  bool (*fetch)(void* ctx, PJ_payload_t* out_payload, PJ_error_t* out_error) PJ_NOEXCEPT;
+  bool (*fetchMessageData)(void* ctx, PJ_payload_t* out_payload, PJ_error_t* out_error) PJ_NOEXCEPT;
   void (*release)(void* ctx);
-} PJ_payload_fetcher_t;
+} PJ_message_data_fetcher_t;
 
 /**
  * Request to bind (or look up) a parser for a given topic.
@@ -323,14 +323,14 @@ typedef struct PJ_data_source_runtime_host_vtable_t {
    * is responsible for calling `fetcher.release(fetcher.ctx)` exactly
    * once when the fetcher is no longer needed (kEager: after the
    * single fetch; lazy modes: when the ObjectStore entry it backs is
-   * dropped). `fetcher.fetch` must be thread-safe.
+   * dropped). `fetcher.fetchMessageData` must be thread-safe.
    *
    * Returns false + error on failure (binding handle invalid,
    * ObjectStore push failed, etc.). On failure the host still calls
    * `fetcher.release` so the plugin's ctx leaks no resources.
    */
   bool (*push_message_v2)(
-      void* ctx, PJ_parser_binding_handle_t handle, int64_t host_timestamp_ns, PJ_payload_fetcher_t fetcher,
+      void* ctx, PJ_parser_binding_handle_t handle, int64_t host_timestamp_ns, PJ_message_data_fetcher_t fetcher,
       PJ_error_t* out_error) PJ_NOEXCEPT;
 } PJ_data_source_runtime_host_vtable_t;
 

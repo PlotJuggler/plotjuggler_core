@@ -1,6 +1,18 @@
 add_subdirectory(dialog_protocol)
 
 # ---------------------------------------------------------------------------
+# pj_plugin_sdk — INTERFACE library that exposes the C++ SDK headers
+# (MessageParserPluginBase, ObjectIngestPolicy, parser trampolines, ...)
+# and the dependencies they need (pj_base, pj_scene_protocol). Plugins link
+# this to get access to the SDK without having to repeat the include paths
+# and the transitive link to pj_scene_protocol's builtin object types.
+# ---------------------------------------------------------------------------
+
+add_library(pj_plugin_sdk INTERFACE)
+target_include_directories(pj_plugin_sdk INTERFACE include)
+target_link_libraries(pj_plugin_sdk INTERFACE pj_base pj_scene_protocol)
+
+# ---------------------------------------------------------------------------
 # pj_plugin_catalog — host-side embedded-manifest discovery
 # ---------------------------------------------------------------------------
 
@@ -100,6 +112,7 @@ target_link_libraries(pj_message_parser_host
   PUBLIC
     pj_base
     pj_dialog_protocol
+    pj_scene_protocol
   PRIVATE
     ${CMAKE_DL_LIBS}
 )
@@ -113,7 +126,7 @@ if(PJ_BUILD_TESTS)
 add_library(mock_json_parser_plugin SHARED examples/mock_json_parser.cpp)
 target_compile_features(mock_json_parser_plugin PRIVATE cxx_std_20)
 target_compile_options(mock_json_parser_plugin PRIVATE ${PJ_WARNING_FLAGS})
-target_link_libraries(mock_json_parser_plugin PRIVATE pj_base)
+target_link_libraries(mock_json_parser_plugin PRIVATE pj_plugin_sdk)
 
 # ---------------------------------------------------------------------------
 # Mock Schema Parser plugin (shared library, high-throughput bound-fields example)
@@ -122,7 +135,7 @@ target_link_libraries(mock_json_parser_plugin PRIVATE pj_base)
 add_library(mock_schema_parser_plugin SHARED examples/mock_schema_parser.cpp)
 target_compile_features(mock_schema_parser_plugin PRIVATE cxx_std_20)
 target_compile_options(mock_schema_parser_plugin PRIVATE ${PJ_WARNING_FLAGS})
-target_link_libraries(mock_schema_parser_plugin PRIVATE pj_base)
+target_link_libraries(mock_schema_parser_plugin PRIVATE pj_plugin_sdk)
 
 endif() # PJ_BUILD_TESTS
 
@@ -221,6 +234,15 @@ target_link_libraries(message_parser_library_test PRIVATE
   pj_message_parser_host pj_base GTest::gtest_main
 )
 add_test(NAME message_parser_library_test COMMAND message_parser_library_test)
+
+# Unit test: ObjectIngestPolicyResolver cascade rules.
+add_executable(object_ingest_policy_test tests/object_ingest_policy_test.cpp)
+target_compile_options(object_ingest_policy_test PRIVATE ${PJ_WARNING_FLAGS})
+target_link_libraries(object_ingest_policy_test PRIVATE
+  pj_base pj_scene_protocol GTest::gtest_main
+)
+target_include_directories(object_ingest_policy_test PRIVATE include)
+add_test(NAME object_ingest_policy_test COMMAND object_ingest_policy_test)
 
 # TODO(v3-port): delegated_ingest_integration_test.cpp uses old bindWriteHost /
 # bindRuntimeHost methods and get_last_error slots removed in v3. Pending port

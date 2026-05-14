@@ -95,9 +95,9 @@ static_assert(PJ_TOOLBOX_MIN_VTABLE_SIZE == 88, "MIN vtable size is pinned at v4
 static_assert(PJ_TOOLBOX_MIN_VTABLE_SIZE <= sizeof(PJ_toolbox_vtable_t), "MIN must never exceed current");
 
 // --- Canonical-object pipeline structs ---------------------------------------
-// Public ABI types crossing the boundary for the v4 canonical-object pipeline.
+// Public ABI types crossing the boundary for the v4 builtin-object pipeline.
 // Sizes and offsets are pinned; any change is a deliberate ABI revision.
-static_assert(sizeof(PJ_canonical_object_kind_t) == 4, "enum layout pinned");
+static_assert(sizeof(PJ_builtin_object_kind_t) == 4, "enum layout pinned");
 static_assert(sizeof(PJ_schema_classification_t) == 4, "PJ_schema_classification_t layout pinned");
 static_assert(offsetof(PJ_schema_classification_t, object_kind) == 0, "object_kind at offset 0");
 static_assert(offsetof(PJ_schema_classification_t, reserved) == 2, "reserved at offset 2");
@@ -111,10 +111,11 @@ static_assert(offsetof(PJ_payload_t, data) == 0, "data at offset 0");
 static_assert(offsetof(PJ_payload_t, size) == 8, "size at offset 8");
 static_assert(offsetof(PJ_payload_t, anchor) == 16, "anchor at offset 16");
 
-static_assert(sizeof(PJ_payload_fetcher_t) == 24, "PJ_payload_fetcher_t pinned (ctx + fetch + release)");
-static_assert(offsetof(PJ_payload_fetcher_t, ctx) == 0, "ctx at offset 0");
-static_assert(offsetof(PJ_payload_fetcher_t, fetch) == 8, "fetch at offset 8");
-static_assert(offsetof(PJ_payload_fetcher_t, release) == 16, "release at offset 16");
+static_assert(
+    sizeof(PJ_message_data_fetcher_t) == 24, "PJ_message_data_fetcher_t pinned (ctx + fetchMessageData + release)");
+static_assert(offsetof(PJ_message_data_fetcher_t, ctx) == 0, "ctx at offset 0");
+static_assert(offsetof(PJ_message_data_fetcher_t, fetchMessageData) == 8, "fetchMessageData at offset 8");
+static_assert(offsetof(PJ_message_data_fetcher_t, release) == 16, "release at offset 16");
 
 // --- DataSource runtime host vtable (ABI-APPENDABLE within v4) ---------------
 // The vtable the host exposes to plugins under "pj.runtime.v1". Offsets of

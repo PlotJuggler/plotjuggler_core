@@ -18,8 +18,8 @@
 #include <memory>
 #include <vector>
 
+#include "pj_base/buffer_anchor.hpp"
 #include "pj_base/data_source_protocol.h"
-#include "pj_base/sdk/canonical_object.hpp"
 #include "pj_base/sdk/data_source_host_views.hpp"
 
 namespace {
@@ -28,7 +28,7 @@ namespace {
 struct CapturedPush {
   PJ_parser_binding_handle_t handle{};
   int64_t timestamp_ns = 0;
-  PJ_payload_fetcher_t fetcher{};
+  PJ_message_data_fetcher_t fetcher{};
   bool received = false;
 };
 
@@ -73,7 +73,7 @@ class MockHost {
   }
 
   static bool pushMessageV2Thunk(
-      void* ctx, PJ_parser_binding_handle_t handle, int64_t ts, PJ_payload_fetcher_t fetcher,
+      void* ctx, PJ_parser_binding_handle_t handle, int64_t ts, PJ_message_data_fetcher_t fetcher,
       PJ_error_t* /*err*/) noexcept {
     auto* self = static_cast<MockHost*>(ctx);
     self->captured_.handle = handle;
@@ -91,11 +91,11 @@ class MockHost {
 
 // Helper: invoke a captured fetcher and assert the produced bytes match
 // the expected content. Releases the payload anchor.
-void invokeFetcherAndExpect(PJ_payload_fetcher_t& fetcher, const std::vector<uint8_t>& expected) {
+void invokeFetcherAndExpect(PJ_message_data_fetcher_t& fetcher, const std::vector<uint8_t>& expected) {
   PJ_payload_t payload{};
   PJ_error_t err{};
-  ASSERT_NE(fetcher.fetch, nullptr);
-  ASSERT_TRUE(fetcher.fetch(fetcher.ctx, &payload, &err));
+  ASSERT_NE(fetcher.fetchMessageData, nullptr);
+  ASSERT_TRUE(fetcher.fetchMessageData(fetcher.ctx, &payload, &err));
   ASSERT_EQ(payload.size, expected.size());
   EXPECT_EQ(0, std::memcmp(payload.data, expected.data(), expected.size()));
   if (payload.anchor.release) {
@@ -183,7 +183,7 @@ TEST(PushMessageV2Test, PayloadAnchorPropagates) {
   // buffer survives even past the closure's release.
   PJ_payload_t payload{};
   PJ_error_t err{};
-  ASSERT_TRUE(host.captured().fetcher.fetch(host.captured().fetcher.ctx, &payload, &err));
+  ASSERT_TRUE(host.captured().fetcher.fetchMessageData(host.captured().fetcher.ctx, &payload, &err));
   EXPECT_EQ(payload.size, 2U);
 
   // Releasing the fetcher (closure dies) does NOT kill the buffer because

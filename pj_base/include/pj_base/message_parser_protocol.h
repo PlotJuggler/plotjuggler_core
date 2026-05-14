@@ -26,7 +26,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include "pj_base/canonical_object_abi.h"
+#include "pj_base/builtin_object_abi.h"
 #include "pj_base/plugin_data_api.h"
 
 #ifdef __cplusplus
@@ -125,7 +125,7 @@ typedef struct PJ_message_parser_vtable_t {
    * @p out_classification by value (POD).
    *
    * NULL or absent (struct_size too small) → host treats as
-   * PJ_CANONICAL_OBJECT_KIND_NONE.
+   * PJ_BUILTIN_OBJECT_KIND_NONE.
    *
    * Pure-functional contract: no host side-effects.
    */

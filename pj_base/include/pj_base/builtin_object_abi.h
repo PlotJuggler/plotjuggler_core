@@ -1,11 +1,11 @@
 /**
- * @file canonical_object_abi.h
+ * @file builtin_object_abi.h
  * @brief C ABI vocabulary for schema classification.
  *
  * The host invokes classify_schema (a slot in PJ_message_parser_vtable_t)
  * after bind_schema to learn what kind of canonical object the parser will
  * produce for that schema. The parser returns a PJ_schema_classification_t
- * carrying a PJ_canonical_object_kind_t.
+ * carrying a PJ_builtin_object_kind_t.
  *
  * Canonical-object production (sdk::Image / sdk::CompressedImage /
  * sdk::PointCloud) and the pure-functional scalar production
@@ -16,8 +16,8 @@
  * directly on the C++ pointer. Pure-C plugins emit scalars via the
  * parse() slot (writing to writeHost).
  */
-#ifndef PJ_CANONICAL_OBJECT_ABI_H
-#define PJ_CANONICAL_OBJECT_ABI_H
+#ifndef PJ_BUILTIN_OBJECT_ABI_H
+#define PJ_BUILTIN_OBJECT_ABI_H
 
 #include <stdbool.h>
 #include <stddef.h>
@@ -35,15 +35,15 @@ extern "C" {
  * canonical object the parser will produce for this schema (or kNone if
  * the parser only produces scalars).
  */
-typedef enum PJ_canonical_object_kind_t {
-  PJ_CANONICAL_OBJECT_KIND_NONE = 0,
-  PJ_CANONICAL_OBJECT_KIND_IMAGE = 1,
-  PJ_CANONICAL_OBJECT_KIND_COMPRESSED_IMAGE = 2,
-  PJ_CANONICAL_OBJECT_KIND_POINTCLOUD = 3,
+typedef enum PJ_builtin_object_kind_t {
+  PJ_BUILTIN_OBJECT_KIND_NONE = 0,
+  PJ_BUILTIN_OBJECT_KIND_IMAGE = 1,
+  PJ_BUILTIN_OBJECT_KIND_POINTCLOUD = 3,
+  PJ_BUILTIN_OBJECT_KIND_DEPTH_IMAGE = 4,
+  PJ_BUILTIN_OBJECT_KIND_IMAGE_ANNOTATIONS = 5,
   /* Reserve future kinds; appended at the tail. */
-  /* PJ_CANONICAL_OBJECT_KIND_MARKERS         = 4, */
-  /* PJ_CANONICAL_OBJECT_KIND_OCCUPANCY_GRID  = 5, */
-} PJ_canonical_object_kind_t;
+  /* PJ_BUILTIN_OBJECT_KIND_OCCUPANCY_GRID  = 6, */
+} PJ_builtin_object_kind_t;
 
 /**
  * Schema classification — what kind a parser declares for a given schema.
@@ -54,7 +54,7 @@ typedef enum PJ_canonical_object_kind_t {
  * accept any value (forward compat).
  */
 typedef struct PJ_schema_classification_t {
-  uint16_t object_kind; /**< PJ_canonical_object_kind_t. */
+  uint16_t object_kind; /**< PJ_builtin_object_kind_t. */
   uint16_t reserved;
 } PJ_schema_classification_t;
 
@@ -62,4 +62,4 @@ typedef struct PJ_schema_classification_t {
 }
 #endif
 
-#endif /* PJ_CANONICAL_OBJECT_ABI_H */
+#endif /* PJ_BUILTIN_OBJECT_ABI_H */

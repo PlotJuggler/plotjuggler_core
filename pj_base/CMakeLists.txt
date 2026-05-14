@@ -56,7 +56,6 @@ if(PJ_BUILD_TESTS)
     tests/platform_test.cpp
     tests/arrow_holders_test.cpp
     tests/media_metadata_test.cpp
-    tests/object_ingest_policy_test.cpp
     tests/push_message_v2_test.cpp
   )
 

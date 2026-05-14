@@ -23,10 +23,10 @@
 #include "pj_base/expected.hpp"
 #include "pj_base/message_parser_protocol.h"
 #include "pj_base/plugin_abi_export.h"
-#include "pj_base/sdk/canonical_object.hpp"
 #include "pj_base/sdk/plugin_data_api.hpp"
 #include "pj_base/sdk/service_registry.hpp"
 #include "pj_base/sdk/service_traits.hpp"
+#include "pj_scene_protocol/builtin/BuiltinObject.h"
 
 namespace PJ {
 namespace sdk {
@@ -40,7 +40,7 @@ namespace sdk {
 /// schemas that produce only scalars, only objects, or that the plugin
 /// recognizes but routes through the legacy parse() path.
 struct SchemaHandler {
-  CanonicalObjectKind object_kind = CanonicalObjectKind::kNone;
+  BuiltinObjectKind object_kind = BuiltinObjectKind::kNone;
 
   /// Scalar route: returns owned column data — no anchor needed because the
   /// returned vector and any string_views inside it are materialized by the
@@ -48,11 +48,11 @@ struct SchemaHandler {
   std::function<Expected<std::vector<NamedFieldValue>>(Timestamp, Span<const uint8_t>)> parse_scalars;
 
   /// Canonical-object route: takes a PayloadView so the parser can return a
-  /// CanonicalObject whose internal Span(s) reference the same underlying
+  /// BuiltinObject whose internal Span(s) reference the same underlying
   /// buffer (zero-copy). The parser propagates `payload.anchor` into the
   /// returned object so its bytes outlive this call. When the caller passes
   /// an empty anchor, the parser must materialize whatever it wants to retain.
-  std::function<Expected<CanonicalObject>(Timestamp, PayloadView)> parse_object;
+  std::function<Expected<BuiltinObject>(Timestamp, PayloadView)> parse_object;
 };
 
 }  // namespace sdk
@@ -247,8 +247,8 @@ class MessageParserPluginBase {
   /// `payload.anchor` may be empty; in that case the parser is expected to
   /// materialize anything it wants to outlive this call. In-process callers
   /// that already own the payload buffer should pass a non-empty anchor so
-  /// the parser can return a zero-copy CanonicalObject.
-  virtual Expected<sdk::CanonicalObject> parseObject(Timestamp timestamp_ns, sdk::PayloadView payload) final {
+  /// the parser can return a zero-copy BuiltinObject.
+  virtual Expected<sdk::BuiltinObject> parseObject(Timestamp timestamp_ns, sdk::PayloadView payload) final {
     const auto* h = findSchemaHandler(bound_type_name_);
     if (h == nullptr) {
       return unexpected(std::string("parser does not register schema: ") + bound_type_name_);
@@ -352,7 +352,7 @@ class MessageParserPluginBase {
 
 }  // namespace PJ
 
-#include "pj_base/sdk/detail/message_parser_trampolines.hpp"
+#include "pj_plugins/sdk/detail/message_parser_trampolines.hpp"
 
 #define PJ_MESSAGE_PARSER_PLUGIN(ClassName, manifest)                                                             \
   PJ_EXPORT_PLUGIN_ABI_VERSION(PJ_MESSAGE_PARSER_EXPORT)                                                          \

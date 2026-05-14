@@ -128,7 +128,7 @@ inline const void* MessageParserPluginBase::trampoline_get_plugin_extension(void
 }
 
 // -----------------------------------------------------------------------------
-// Pure-functional API trampolines (canonical-object tail of the vtable)
+// Pure-functional API trampolines (builtin-object tail of the vtable)
 // -----------------------------------------------------------------------------
 
 inline bool MessageParserPluginBase::trampoline_classify_schema(

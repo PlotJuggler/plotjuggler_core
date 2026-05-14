@@ -1,4 +1,4 @@
-#include "pj_base/sdk/message_parser_plugin_base.hpp"
+#include "pj_plugins/sdk/message_parser_plugin_base.hpp"
 
 #include <gtest/gtest.h>
 

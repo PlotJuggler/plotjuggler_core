@@ -60,7 +60,6 @@ if(PJ_BUILD_TESTS)
     tests/object_store_test.cpp
     tests/plugin_data_host_object_test.cpp
     tests/plugin_data_host_object_read_test.cpp
-    tests/plugin_parser_object_write_test.cpp
     # tests/plugin_host_read_test.cpp  # disabled until Phase 1b lands
     #   (exercises v3 toolbox read path; rewrite for read_series_arrow)
   )
@@ -71,6 +70,15 @@ if(PJ_BUILD_TESTS)
     target_link_libraries(${test_name} PRIVATE pj_datastore GTest::gtest_main)
     add_test(NAME ${test_name} COMMAND ${test_name})
   endforeach()
+
+  # plugin_parser_object_write_test uses MessageParserPluginBase → needs
+  # the plugin SDK (pj_plugin_sdk gives access to message_parser_plugin_base.hpp
+  # and transitively pulls pj_scene_protocol for the BuiltinObject types).
+  add_executable(plugin_parser_object_write_test tests/plugin_parser_object_write_test.cpp)
+  target_link_libraries(plugin_parser_object_write_test PRIVATE
+    pj_datastore pj_plugin_sdk GTest::gtest_main
+  )
+  add_test(NAME plugin_parser_object_write_test COMMAND plugin_parser_object_write_test)
 
   # Arrow import test (needs nanoarrow explicitly for building test IPC data)
   add_executable(arrow_import_test tests/arrow_import_test.cpp)
