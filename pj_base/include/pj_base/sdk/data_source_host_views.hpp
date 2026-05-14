@@ -219,22 +219,22 @@ class DataSourceRuntimeHostView {
     return okStatus();
   }
 
-  /// Push a message via a deferred byte fetcher. The DataSource hands the
-  /// host a callable that produces the payload bytes when invoked. The host
-  /// applies the active ObjectIngestPolicy (resolved via the
+  /// Push a message via a deferred FetchMessageData callable. The DataSource
+  /// hands the host a callable that produces the payload bytes when invoked.
+  /// The host applies the active ObjectIngestPolicy (resolved via the
   /// ObjectIngestPolicyResolver below for source_id, topic, kind) to decide
-  /// whether to invoke the fetcher at ingest, only on consumer pull, or
+  /// whether to invoke the callable at ingest, only on consumer pull, or
   /// never. The DataSource is policy-agnostic — it neither queries the
   /// policy nor tracks which mode is active.
   ///
-  /// The fetcher MUST be idempotent — the host may invoke it zero, one, or
+  /// The callable MUST be idempotent — the host may invoke it zero, one, or
   /// many times depending on policy and consumer pulls. It MUST be
   /// thread-safe: invocations may come from the ingest thread (kEager) or
   /// from consumer threads (lazy pulls). Capture by shared_ptr (file
   /// readers, mcap chunks) so the source buffer outlives every pending
   /// pull.
   ///
-  /// Fetcher return type:
+  /// FetchMessageData return type:
   ///   - sdk::PayloadView { bytes, anchor }  — preferred, zero-copy. The
   ///     anchor is propagated through the C ABI as a heap-held shared_ptr
   ///     copy that the host releases when no longer needed.
@@ -248,13 +248,15 @@ class DataSourceRuntimeHostView {
   /// invoke it. There is no legacy fallback: a host that doesn't expose
   /// the slot returns an explicit error here rather than silently
   /// degrading to a kEager push_raw_message.
-  template <typename Fetcher>
-  [[nodiscard]] Status pushMessage(ParserBindingHandle handle, Timestamp host_timestamp_ns, Fetcher&& fetcher) const {
-    using FetcherT = std::decay_t<Fetcher>;
-    using FetcherResult = std::decay_t<std::invoke_result_t<FetcherT&>>;
+  template <typename FetchMessageData>
+  [[nodiscard]] Status pushMessage(
+      ParserBindingHandle handle, Timestamp host_timestamp_ns, FetchMessageData&& fetch_message_data) const {
+    using FetchMessageDataT = std::decay_t<FetchMessageData>;
+    using FetchMessageDataResult = std::decay_t<std::invoke_result_t<FetchMessageDataT&>>;
     static_assert(
-        std::is_same_v<FetcherResult, sdk::PayloadView> || std::is_same_v<FetcherResult, std::vector<uint8_t>>,
-        "Fetcher must return sdk::PayloadView (zero-copy) or std::vector<uint8_t>");
+        std::is_same_v<FetchMessageDataResult, sdk::PayloadView> ||
+            std::is_same_v<FetchMessageDataResult, std::vector<uint8_t>>,
+        "FetchMessageData must return sdk::PayloadView (zero-copy) or std::vector<uint8_t>");
 
     if (!valid()) {
       return unexpected(std::string("runtime host is not bound"));
@@ -263,13 +265,13 @@ class DataSourceRuntimeHostView {
       return unexpected(std::string("runtime host does not expose push_message_v2"));
     }
 
-    auto* ctx = new FetcherT(std::forward<Fetcher>(fetcher));
+    auto* ctx = new FetchMessageDataT(std::forward<FetchMessageData>(fetch_message_data));
 
-    PJ_message_data_fetcher_t abi_fetcher{
+    PJ_message_data_fetcher_t abi_fetch_message_data{
         .ctx = ctx,
         .fetchMessageData = +[](void* c, PJ_payload_t* out, PJ_error_t* err) noexcept -> bool {
           try {
-            auto& fn = *static_cast<FetcherT*>(c);
+            auto& fn = *static_cast<FetchMessageDataT*>(c);
             using Result = std::decay_t<decltype(fn())>;
             if constexpr (std::is_same_v<Result, sdk::PayloadView>) {
               // Zero-copy path: hold a heap copy of the BufferAnchor so it
@@ -295,15 +297,15 @@ class DataSourceRuntimeHostView {
             sdk::fillError(err, 1, "plugin", e.what());
             return false;
           } catch (...) {
-            sdk::fillError(err, 1, "plugin", "unknown exception in payload fetcher");
+            sdk::fillError(err, 1, "plugin", "unknown exception in FetchMessageData callable");
             return false;
           }
         },
-        .release = +[](void* c) noexcept { delete static_cast<FetcherT*>(c); },
+        .release = +[](void* c) noexcept { delete static_cast<FetchMessageDataT*>(c); },
     };
 
     PJ_error_t err{};
-    if (!host_.vtable->push_message_v2(host_.ctx, handle, host_timestamp_ns, abi_fetcher, &err)) {
+    if (!host_.vtable->push_message_v2(host_.ctx, handle, host_timestamp_ns, abi_fetch_message_data, &err)) {
       return unexpected(errorToString(err));
     }
     return okStatus();

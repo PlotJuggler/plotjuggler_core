@@ -1,12 +1,13 @@
 // Tests for the SDK template `DataSourceRuntimeHostView::pushMessage` and
 // its delegation to the C ABI slot `push_message_v2`. We exercise:
 //
-//   1. Vector closure → captured fetcher in the host yields the same bytes.
+//   1. Vector closure → the captured FetchMessageData callable yields the
+//      same bytes when invoked from the host.
 //   2. PayloadView closure → ditto, with the producer-supplied anchor
 //      flowing through the C ABI.
-//   3. Multiple fetcher invocations are idempotent (same bytes each time).
+//   3. Multiple invocations are idempotent (same bytes each time).
 //   4. The heap-held closure context is destroyed exactly once when the
-//      host calls fetcher.release.
+//      host calls `release`.
 //   5. When the host does not expose push_message_v2 (struct_size short
 //      or field NULL), pushMessage returns an explicit error rather than
 //      degrading silently.
@@ -28,7 +29,7 @@ namespace {
 struct CapturedPush {
   PJ_parser_binding_handle_t handle{};
   int64_t timestamp_ns = 0;
-  PJ_message_data_fetcher_t fetcher{};
+  PJ_message_data_fetcher_t fetch_message_data{};
   bool received = false;
 };
 
@@ -73,12 +74,12 @@ class MockHost {
   }
 
   static bool pushMessageV2Thunk(
-      void* ctx, PJ_parser_binding_handle_t handle, int64_t ts, PJ_message_data_fetcher_t fetcher,
+      void* ctx, PJ_parser_binding_handle_t handle, int64_t ts, PJ_message_data_fetcher_t fetch_message_data,
       PJ_error_t* /*err*/) noexcept {
     auto* self = static_cast<MockHost*>(ctx);
     self->captured_.handle = handle;
     self->captured_.timestamp_ns = ts;
-    self->captured_.fetcher = fetcher;
+    self->captured_.fetch_message_data = fetch_message_data;
     self->captured_.received = true;
     return true;
   }
@@ -89,13 +90,14 @@ class MockHost {
   std::vector<uint8_t> raw_bytes_;
 };
 
-// Helper: invoke a captured fetcher and assert the produced bytes match
+// Helper: invoke a captured FetchMessageData callable and assert the produced bytes match
 // the expected content. Releases the payload anchor.
-void invokeFetcherAndExpect(PJ_message_data_fetcher_t& fetcher, const std::vector<uint8_t>& expected) {
+void invokeFetchMessageDataAndExpect(
+    PJ_message_data_fetcher_t& fetch_message_data, const std::vector<uint8_t>& expected) {
   PJ_payload_t payload{};
   PJ_error_t err{};
-  ASSERT_NE(fetcher.fetchMessageData, nullptr);
-  ASSERT_TRUE(fetcher.fetchMessageData(fetcher.ctx, &payload, &err));
+  ASSERT_NE(fetch_message_data.fetchMessageData, nullptr);
+  ASSERT_TRUE(fetch_message_data.fetchMessageData(fetch_message_data.ctx, &payload, &err));
   ASSERT_EQ(payload.size, expected.size());
   EXPECT_EQ(0, std::memcmp(payload.data, expected.data(), expected.size()));
   if (payload.anchor.release) {
@@ -115,8 +117,8 @@ TEST(PushMessageV2Test, VectorClosureFlowsThroughSlot) {
   ASSERT_TRUE(host.captured().received);
   EXPECT_EQ(host.captured().handle.id, 42U);
   EXPECT_EQ(host.captured().timestamp_ns, 1000);
-  invokeFetcherAndExpect(host.captured().fetcher, expected);
-  host.captured().fetcher.release(host.captured().fetcher.ctx);
+  invokeFetchMessageDataAndExpect(host.captured().fetch_message_data, expected);
+  host.captured().fetch_message_data.release(host.captured().fetch_message_data.ctx);
 }
 
 TEST(PushMessageV2Test, PayloadViewClosureFlowsThroughSlot) {
@@ -129,8 +131,8 @@ TEST(PushMessageV2Test, PayloadViewClosureFlowsThroughSlot) {
   });
 
   ASSERT_TRUE(status);
-  invokeFetcherAndExpect(host.captured().fetcher, expected);
-  host.captured().fetcher.release(host.captured().fetcher.ctx);
+  invokeFetchMessageDataAndExpect(host.captured().fetch_message_data, expected);
+  host.captured().fetch_message_data.release(host.captured().fetch_message_data.ctx);
 }
 
 TEST(PushMessageV2Test, FetchIsIdempotent) {
@@ -141,12 +143,12 @@ TEST(PushMessageV2Test, FetchIsIdempotent) {
 
   // Multiple invocations must yield the same bytes each time.
   for (int i = 0; i < 3; ++i) {
-    invokeFetcherAndExpect(host.captured().fetcher, expected);
+    invokeFetchMessageDataAndExpect(host.captured().fetch_message_data, expected);
   }
-  host.captured().fetcher.release(host.captured().fetcher.ctx);
+  host.captured().fetch_message_data.release(host.captured().fetch_message_data.ctx);
 }
 
-TEST(PushMessageV2Test, FetcherCtxReleasedAfterHostCalls) {
+TEST(PushMessageV2Test, FetchMessageDataCtxReleasedAfterHostCalls) {
   MockHost host;
   auto canary = std::make_shared<int>(42);
   std::weak_ptr<int> witness = canary;
@@ -154,13 +156,13 @@ TEST(PushMessageV2Test, FetcherCtxReleasedAfterHostCalls) {
   ASSERT_TRUE(host.view().pushMessage(PJ::ParserBindingHandle{1}, 0, [canary]() { return std::vector<uint8_t>{}; }));
 
   // Drop our local reference; the heap-held closure copy keeps the canary
-  // alive while the fetcher is owned by the host.
+  // alive while the fetch_message_data is owned by the host.
   canary.reset();
-  EXPECT_FALSE(witness.expired()) << "closure should still keep the canary alive (held in heap fetcher ctx)";
+  EXPECT_FALSE(witness.expired()) << "closure should still keep the canary alive (held in heap fetch_message_data ctx)";
 
-  // Host releases the fetcher → closure destroyed → captured shared_ptr
+  // Host releases the fetch_message_data → closure destroyed → captured shared_ptr
   // destroyed → canary's last reference drops.
-  host.captured().fetcher.release(host.captured().fetcher.ctx);
+  host.captured().fetch_message_data.release(host.captured().fetch_message_data.ctx);
   EXPECT_TRUE(witness.expired()) << "after release, the captured shared_ptr should have been the last reference";
 }
 
@@ -178,17 +180,18 @@ TEST(PushMessageV2Test, PayloadAnchorPropagates) {
   owned.reset();
   EXPECT_FALSE(witness.expired());
 
-  // Invoke the fetcher: it builds a PayloadView into the same buffer; the
+  // Invoke the fetch_message_data: it builds a PayloadView into the same buffer; the
   // anchor returned to the host is yet another shared_ptr copy, so the
   // buffer survives even past the closure's release.
   PJ_payload_t payload{};
   PJ_error_t err{};
-  ASSERT_TRUE(host.captured().fetcher.fetchMessageData(host.captured().fetcher.ctx, &payload, &err));
+  ASSERT_TRUE(
+      host.captured().fetch_message_data.fetchMessageData(host.captured().fetch_message_data.ctx, &payload, &err));
   EXPECT_EQ(payload.size, 2U);
 
-  // Releasing the fetcher (closure dies) does NOT kill the buffer because
+  // Releasing the fetch_message_data (closure dies) does NOT kill the buffer because
   // the active payload anchor still holds a reference.
-  host.captured().fetcher.release(host.captured().fetcher.ctx);
+  host.captured().fetch_message_data.release(host.captured().fetch_message_data.ctx);
   EXPECT_FALSE(witness.expired()) << "active payload anchor should still keep the buffer alive";
 
   // Releasing the payload anchor drops the last reference.

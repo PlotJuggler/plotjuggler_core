@@ -1,12 +1,13 @@
 /**
  * @file object_ingest_policy.hpp
  * @brief Configurable policy that the host applies when a DataSource hands
- *        it a deferred byte fetcher via DataSourceRuntimeHostView::pushMessage.
+ *        it a deferred FetchMessageData callable via
+ *        DataSourceRuntimeHostView::pushMessage.
  *
  * The DataSource is policy-agnostic: it only fabricates a callable that
  * produces the raw payload bytes when invoked. The host decides — based on
  * the policy resolved for (source_id, topic, kind) — whether to invoke the
- * fetcher immediately (parse and store now), invoke it once for scalars
+ * callable immediately (parse and store now), invoke it once for scalars
  * and again on each pull, or never invoke it during ingest and only on
  * consumer pulls.
  */
@@ -22,24 +23,26 @@ namespace PJ {
 namespace sdk {
 
 enum class ObjectIngestPolicy : uint8_t {
-  /// Host never invokes the fetcher during ingest. The (timestamp, fetcher)
-  /// pair is registered in the ObjectStore and the fetcher fires only when a
-  /// consumer pulls. No scalar timeseries are produced for this topic — its
-  /// scalar fields (header.stamp, width, height, …) do not appear in the
-  /// Datastore. The topic shows up as an ObjectTopic without children in the
-  /// unified curve tree. Best for very large blobs (point clouds, 4K video)
-  /// when scalar timeseries are not interesting.
+  /// Host never invokes the FetchMessageData callable during ingest. The
+  /// (timestamp, callable) pair is registered in the ObjectStore and the
+  /// callable fires only when a consumer pulls. No scalar timeseries are
+  /// produced for this topic — its scalar fields (header.stamp, width,
+  /// height, …) do not appear in the Datastore. The topic shows up as an
+  /// ObjectTopic without children in the unified curve tree. Best for very
+  /// large blobs (point clouds, 4K video) when scalar timeseries are not
+  /// interesting.
   kPureLazy,
 
-  /// Host invokes the fetcher once during ingest to obtain bytes; parser's
-  /// parseScalars runs and writes scalar fields to the Datastore; bytes are
-  /// then dropped from RAM. The ObjectStore retains only the fetcher closure
-  /// for re-invocation on pull (which means the file/source is read again).
-  /// Best for the common case: scalar timeseries appear in the tree, the
-  /// blob does not stay in RAM, and pulls re-read on demand.
+  /// Host invokes the FetchMessageData callable once during ingest to
+  /// obtain bytes; parser's parseScalars runs and writes scalar fields to
+  /// the Datastore; bytes are then dropped from RAM. The ObjectStore
+  /// retains only the callable for re-invocation on pull (which means the
+  /// file/source is read again). Best for the common case: scalar
+  /// timeseries appear in the tree, the blob does not stay in RAM, and
+  /// pulls re-read on demand.
   kLazyObjectsEagerScalars,
 
-  /// Host invokes the fetcher once during ingest, parser's parseScalars and
+  /// Host invokes the FetchMessageData callable once during ingest, parser's parseScalars and
   /// parseObject both run, the canonical object is serialized into the
   /// ObjectStore via pushOwned. Pull is trivial — bytes are already there.
   /// Highest memory cost; the only viable mode for streaming sources that
