@@ -4,9 +4,9 @@
  */
 #pragma once
 
+#include <pj_base/builtin/BuiltinObject.h>
 #include <pj_base/builtin_object_abi.h>
 #include <pj_base/message_parser_protocol.h>
-#include <pj_scene_protocol/builtin/BuiltinObject.h>
 
 #include <cassert>
 #include <pj_base/expected.hpp>

@@ -526,6 +526,6 @@ struct on the DataSource side, in-process variant on the parser side)
 is opaque-payload-by-default: `BuiltinObject` is `std::any`, so
 appending a new builtin kind does not change the public type and
 forward compatibility is automatic. Concrete builtins live under
-`pj_scene_protocol/builtin/` (`Image`, `DepthImage`, `PointCloud`,
-`ImageAnnotations`); see `pj_scene_protocol/docs/USER_GUIDE.md` for
-producer/consumer recipes.
+`pj_base/builtin/` (`Image`, `DepthImage`, `PointCloud`,
+`ImageAnnotations`); see `docs/builtin_type.md` for the type catalog and
+`docs/image_annotations_format.md` for the canonical annotation wire format.

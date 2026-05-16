@@ -1,4 +1,4 @@
-#include "pj_scene_protocol/image_annotation_codec.h"
+#include "pj_base/builtin/image_annotations_codec.h"
 
 #include <gtest/gtest.h>
 
@@ -6,9 +6,6 @@
 #include <cstring>
 #include <string>
 #include <vector>
-
-#include "pj_scene_protocol/scene_decoder.h"  // existing reader, used for round-trips
-#include "pj_scene_protocol/scene_frame.h"
 
 namespace PJ {
 namespace {
@@ -22,8 +19,7 @@ using sdk::PointsAnnotation;
 using sdk::TextAnnotation;
 
 // -----------------------------------------------------------------------------
-// Hand-rolled Protobuf helpers — same style as the sibling decoder test
-// (`tests/scene_decoder_test.cpp`). Used to build expected byte sequences for
+// Hand-rolled Protobuf helpers. Used to build expected byte sequences for
 // golden-byte tests.
 // -----------------------------------------------------------------------------
 namespace pb {
@@ -56,20 +52,16 @@ inline void appendLenDelim(std::vector<uint8_t>& out, const std::vector<uint8_t>
 }  // namespace pb
 
 // Decode the bytes produced by serializeImageAnnotations back into an
-// sdk::ImageAnnotations. Returns the inner annotation; assumes the SceneFrame wraps
-// exactly one sdk::ImageAnnotations (the reader's contract).
+// sdk::ImageAnnotations.
 sdk::ImageAnnotations roundTrip(const sdk::ImageAnnotations& input) {
   auto bytes = serializeImageAnnotations(input);
-  auto decoder = makeSceneDecoder(kSchemaImageAnnotations);
-  EXPECT_NE(decoder.get(), nullptr);
-  auto result = decoder->decode(bytes.data(), bytes.size());
+  auto result = deserializeImageAnnotations(bytes.data(), bytes.size());
   EXPECT_TRUE(result.has_value());
-  EXPECT_EQ(result->annotations.size(), 1u);
-  return result->annotations[0];
+  return *result;
 }
 
 // Compare two ColorRGBA values allowing 1-LSB drift on each channel from the
-// double-quantization round-trip (uint8 → double in [0,1] → uint8).
+// double-quantization round-trip (uint8 -> double in [0,1] -> uint8).
 ::testing::AssertionResult ColorEq(const ColorRGBA& a, const ColorRGBA& b) {
   auto near = [](uint8_t x, uint8_t y) { return x > y ? (x - y) <= 1 : (y - x) <= 1; };
   if (near(a.r, b.r) && near(a.g, b.g) && near(a.b, b.b) && near(a.a, b.a)) {
@@ -90,7 +82,7 @@ TEST(ImageAnnotationCodecTest, EmptyAnnotationProducesEmptyBytes) {
 }
 
 // -----------------------------------------------------------------------------
-// 2. Golden-byte test — pins the wire format itself, not just round-trip behavior
+// 2. Golden-byte test: pins the wire format itself, not just round-trip behavior.
 // -----------------------------------------------------------------------------
 
 TEST(ImageAnnotationCodecTest, GoldenBytes_SinglePointsAnnotation) {
@@ -169,7 +161,7 @@ TEST(ImageAnnotationCodecTest, GoldenBytes_SinglePointsAnnotation) {
 }
 
 // -----------------------------------------------------------------------------
-// 3. Round-trip tests — build → serialize → existing reader → compare
+// 3. Round-trip tests: build, serialize, read, compare.
 // -----------------------------------------------------------------------------
 
 TEST(ImageAnnotationCodecTest, RoundTrip_LineLoopFourPoints) {
@@ -236,7 +228,7 @@ TEST(ImageAnnotationCodecTest, RoundTrip_TextUtf8) {
   ta.position = {320.5, 240.25};
   ta.font_size = 14.0;
   ta.color = {255, 255, 255, 255};
-  ta.text = "person 0.95 — \xc3\xa1\xc3\xa9\xc3\xad";  // UTF-8: "áéí"
+  ta.text = "person 0.95 \xe2\x80\x94 \xc3\xa1\xc3\xa9\xc3\xad";  // UTF-8 text
   in.texts.push_back(std::move(ta));
 
   auto out = roundTrip(in);

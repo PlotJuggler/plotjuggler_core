@@ -1,11 +1,9 @@
 #include <cstdint>
 #include <cstring>
-#include <memory>
 #include <string>
 #include <utility>
-#include <vector>
 
-#include "pj_scene_protocol/scene_decoder.h"
+#include "pj_base/builtin/image_annotations_codec.h"
 
 namespace PJ {
 namespace {
@@ -20,8 +18,7 @@ using sdk::TextAnnotation;
 
 // Minimal Protobuf wire-format reader for foxglove.ImageAnnotations. Decodes
 // PointsAnnotation, CircleAnnotation, and TextAnnotation in full. Round-trips
-// against the sibling writer at `src/image_annotation_codec.cpp` are covered
-// by `tests/image_annotation_codec_test.cpp`.
+// against the sibling writer are covered by image_annotations_codec_test.
 //
 // Spec reference: https://protobuf.dev/programming-guides/encoding/
 // Wire types we need: VARINT(0), I64(1), LEN(2). I32(5) skipped if encountered.
@@ -133,7 +130,7 @@ AnnotationTopology mapTopology(uint64_t type) {
       return AnnotationTopology::kLineList;
     case 0:
     default:
-      return AnnotationTopology::kPoints;  // UNKNOWN → safe default
+      return AnnotationTopology::kPoints;  // UNKNOWN maps to a safe default.
   }
 }
 
@@ -307,7 +304,7 @@ bool decodeCircleAnnotation(Reader& r, size_t len, CircleAnnotation& out) {
   if (sub_end > r.end) {
     return false;
   }
-  // Defaults match pj_scene_protocol/builtin/ImageAnnotations.h.
+  // Defaults match pj_base/builtin/ImageAnnotations.h.
   out.color = {0, 255, 0, 255};
   out.fill_color = {0, 0, 0, 0};
   out.thickness = 2.0;
@@ -364,8 +361,8 @@ bool decodeCircleAnnotation(Reader& r, size_t len, CircleAnnotation& out) {
 
 // Decode one foxglove.TextAnnotation sub-message:
 //   timestamp(1)=Time, position(2)=Point2, text(3)=string, font_size(4)=double,
-//   text_color(5)=Color, background_color(6)=Color  (background_color skipped — not
-//   present in pj_scene_protocol/builtin/ImageAnnotations.h::sdk::TextAnnotation).
+//   text_color(5)=Color, background_color(6)=Color  (background_color skipped; not
+//   present in pj_base/builtin/ImageAnnotations.h::sdk::TextAnnotation).
 bool decodeTextAnnotation(Reader& r, size_t len, TextAnnotation& out) {
   const uint8_t* sub_end = r.p + len;
   if (sub_end > r.end) {
@@ -419,73 +416,63 @@ bool decodeTextAnnotation(Reader& r, size_t len, TextAnnotation& out) {
   return true;
 }
 
-// Decode the top-level ImageAnnotations message.
-class ProtobufImageAnnotationsDecoder final : public ISceneDecoder {
- public:
-  Expected<SceneFrame> decode(const uint8_t* data, size_t size) override {
-    if (data == nullptr || size == 0) {
-      return unexpected(std::string("Protobuf ImageAnnotations: empty buffer"));
-    }
-    Reader r{data, data + size};
-
-    sdk::ImageAnnotations ia;
-    while (!r.eof()) {
-      uint64_t tag = 0;
-      if (!r.readVarint(tag)) {
-        return unexpected(std::string("Protobuf ImageAnnotations: bad tag"));
-      }
-      uint32_t field = static_cast<uint32_t>(tag >> 3);
-      uint32_t wire = static_cast<uint32_t>(tag & 0x7u);
-
-      if (field == 2 && wire == 2) {
-        uint64_t pa_len = 0;
-        if (!r.readVarint(pa_len)) {
-          return unexpected(std::string("Protobuf ImageAnnotations: bad PointsAnnotation length"));
-        }
-        PointsAnnotation pa;
-        pa.color = {0, 255, 0, 255};
-        pa.thickness = 2.0;
-        if (!decodePointsAnnotation(r, pa_len, pa)) {
-          return unexpected(std::string("Protobuf ImageAnnotations: PointsAnnotation decode failed"));
-        }
-        ia.points.push_back(std::move(pa));
-      } else if (field == 1 && wire == 2) {
-        uint64_t ca_len = 0;
-        if (!r.readVarint(ca_len)) {
-          return unexpected(std::string("Protobuf ImageAnnotations: bad CircleAnnotation length"));
-        }
-        CircleAnnotation ca;
-        if (!decodeCircleAnnotation(r, ca_len, ca)) {
-          return unexpected(std::string("Protobuf ImageAnnotations: CircleAnnotation decode failed"));
-        }
-        ia.circles.push_back(std::move(ca));
-      } else if (field == 3 && wire == 2) {
-        uint64_t ta_len = 0;
-        if (!r.readVarint(ta_len)) {
-          return unexpected(std::string("Protobuf ImageAnnotations: bad TextAnnotation length"));
-        }
-        TextAnnotation ta;
-        if (!decodeTextAnnotation(r, ta_len, ta)) {
-          return unexpected(std::string("Protobuf ImageAnnotations: TextAnnotation decode failed"));
-        }
-        ia.texts.push_back(std::move(ta));
-      } else {
-        if (!r.skipField(wire)) {
-          return unexpected(std::string("Protobuf ImageAnnotations: skip failed"));
-        }
-      }
-    }
-
-    SceneFrame sf;
-    sf.annotations.push_back(std::move(ia));
-    return sf;
-  }
-};
-
 }  // namespace
 
-std::unique_ptr<ISceneDecoder> makeSceneDecoderProtobufImageAnnotations() {
-  return std::make_unique<ProtobufImageAnnotationsDecoder>();
+Expected<sdk::ImageAnnotations> deserializeImageAnnotations(const uint8_t* data, size_t size) {
+  if (data == nullptr || size == 0) {
+    return unexpected(std::string("Protobuf ImageAnnotations: empty buffer"));
+  }
+  Reader r{data, data + size};
+
+  sdk::ImageAnnotations ia;
+  while (!r.eof()) {
+    uint64_t tag = 0;
+    if (!r.readVarint(tag)) {
+      return unexpected(std::string("Protobuf ImageAnnotations: bad tag"));
+    }
+    uint32_t field = static_cast<uint32_t>(tag >> 3);
+    uint32_t wire = static_cast<uint32_t>(tag & 0x7u);
+
+    if (field == 2 && wire == 2) {
+      uint64_t pa_len = 0;
+      if (!r.readVarint(pa_len)) {
+        return unexpected(std::string("Protobuf ImageAnnotations: bad PointsAnnotation length"));
+      }
+      PointsAnnotation pa;
+      pa.color = {0, 255, 0, 255};
+      pa.thickness = 2.0;
+      if (!decodePointsAnnotation(r, pa_len, pa)) {
+        return unexpected(std::string("Protobuf ImageAnnotations: PointsAnnotation decode failed"));
+      }
+      ia.points.push_back(std::move(pa));
+    } else if (field == 1 && wire == 2) {
+      uint64_t ca_len = 0;
+      if (!r.readVarint(ca_len)) {
+        return unexpected(std::string("Protobuf ImageAnnotations: bad CircleAnnotation length"));
+      }
+      CircleAnnotation ca;
+      if (!decodeCircleAnnotation(r, ca_len, ca)) {
+        return unexpected(std::string("Protobuf ImageAnnotations: CircleAnnotation decode failed"));
+      }
+      ia.circles.push_back(std::move(ca));
+    } else if (field == 3 && wire == 2) {
+      uint64_t ta_len = 0;
+      if (!r.readVarint(ta_len)) {
+        return unexpected(std::string("Protobuf ImageAnnotations: bad TextAnnotation length"));
+      }
+      TextAnnotation ta;
+      if (!decodeTextAnnotation(r, ta_len, ta)) {
+        return unexpected(std::string("Protobuf ImageAnnotations: TextAnnotation decode failed"));
+      }
+      ia.texts.push_back(std::move(ta));
+    } else {
+      if (!r.skipField(wire)) {
+        return unexpected(std::string("Protobuf ImageAnnotations: skip failed"));
+      }
+    }
+  }
+
+  return ia;
 }
 
 }  // namespace PJ

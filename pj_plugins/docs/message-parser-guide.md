@@ -504,7 +504,7 @@ parseObject(PJ::Timestamp ts, PJ::sdk::PayloadView payload) override;
   with `std::any_cast<PJ::sdk::Image>(&obj)` to dispatch to the
   matching viewer.
 
-Builtin types live under `pj_scene_protocol/builtin/`, one header per
+Builtin types live under `pj_base/builtin/`, one header per
 type. `sdk::Image` carries an open-ended `std::string encoding`
 (`"rgb8"`, `"bgr8"`, `"mono8"`, `"jpeg"`, `"png"`, `"compressedDepth"`,
 …) so raw and compressed images share a single type. New kinds are

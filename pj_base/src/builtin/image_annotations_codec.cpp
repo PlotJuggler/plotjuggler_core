@@ -1,4 +1,4 @@
-#include "pj_scene_protocol/image_annotation_codec.h"
+#include "pj_base/builtin/image_annotations_codec.h"
 
 #include <cstdint>
 #include <cstring>
@@ -15,14 +15,14 @@ using sdk::Point2;
 using sdk::PointsAnnotation;
 using sdk::TextAnnotation;
 
-// Hand-rolled Protobuf wire emission. Mirror of the reader at
-// `src/scene_decoder_protobuf.cpp` (same module).
+// Hand-rolled Protobuf wire emission. Mirror of the reader in
+// image_annotations_decoder.cpp.
 //
 // Wire format spec: https://protobuf.dev/programming-guides/encoding/
 // Wire types we emit: VARINT(0), I64(1), LEN(2). I32(5) is unused here.
 //
 // Sub-messages are length-delimited: write the body to a scratch buffer, then
-// write the parent's tag + length + body. Bodies are bounded (≤ a few hundred
+// write the parent's tag + length + body. Bodies are bounded (at most a few hundred
 // bytes for typical annotations), so the extra allocation is fine.
 
 void writeVarint(std::vector<uint8_t>& out, uint64_t v) {
@@ -115,7 +115,7 @@ std::vector<uint8_t> buildPointsAnnotation(const PointsAnnotation& pa) {
   writeLenDelim(body, buildColor(pa.color));
 
   // Per-vertex colors: emit one field-5 entry per element. An empty `colors`
-  // vector emits zero entries — critical, because the reader pushes_back on
+  // vector emits zero entries; the reader pushes_back on
   // every field-5 occurrence, so emitting an empty Color would smuggle a
   // default-constructed entry into out.colors.
   for (const auto& c : pa.colors) {
@@ -160,7 +160,7 @@ std::vector<uint8_t> buildCircleAnnotation(const CircleAnnotation& ca) {
 // foxglove.TextAnnotation
 //   { 2: position (Point2), 3: text (string), 4: font_size (double),
 //     5: text_color }
-// background_color (field 6) is intentionally NOT emitted — the C++ struct has
+// background_color (field 6) is intentionally not emitted. The C++ struct has
 // no equivalent field. The reader skips it on read.
 std::vector<uint8_t> buildTextAnnotation(const TextAnnotation& ta) {
   std::vector<uint8_t> body;

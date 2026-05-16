@@ -20,13 +20,13 @@
 #include <utility>
 #include <vector>
 
+#include "pj_base/builtin/BuiltinObject.h"
 #include "pj_base/expected.hpp"
 #include "pj_base/message_parser_protocol.h"
 #include "pj_base/plugin_abi_export.h"
 #include "pj_base/sdk/plugin_data_api.hpp"
 #include "pj_base/sdk/service_registry.hpp"
 #include "pj_base/sdk/service_traits.hpp"
-#include "pj_scene_protocol/builtin/BuiltinObject.h"
 
 namespace PJ {
 namespace sdk {

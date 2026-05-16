@@ -1,37 +1,24 @@
-#include "pj_scene_protocol/scene_decoder.h"
-
 #include <gtest/gtest.h>
 
 #include <cstdint>
 #include <cstring>
+#include <utility>
 #include <vector>
 
-#include "pj_scene_protocol/scene_frame.h"
+#include "pj_base/builtin/image_annotations_codec.h"
 
 namespace PJ {
 namespace {
 
 using sdk::AnnotationTopology;
-using sdk::CircleAnnotation;
-using sdk::ColorRGBA;
-using sdk::ImageAnnotations;
-using sdk::Point2;
-using sdk::PointsAnnotation;
-using sdk::TextAnnotation;
-
-TEST(SceneDecoderTest, FactoryReturnsNullForUnknownSchema) {
-  auto dec = makeSceneDecoder("nonsense/Schema");
-  EXPECT_EQ(dec.get(), nullptr);
-}
 
 // ---------------------------------------------------------------------------
-// Protobuf decoder tests (foxglove.ImageAnnotations) — the canonical wire
-// format. Per-source-format conversion (CDR vision_msgs, yolo, …) is
-// loader-side and tested elsewhere (see pj_media/demos/cdr_to_image_annotation_test).
+// Protobuf decoder tests for the canonical foxglove.ImageAnnotations wire
+// format. Source-specific conversion happens before this decoder sees bytes.
 // ---------------------------------------------------------------------------
 
 namespace pb {
-// Tiny encoder helpers for tests — protobuf wire format.
+// Tiny encoder helpers for tests: protobuf wire format.
 
 inline void appendVarint(std::vector<uint8_t>& out, uint64_t v) {
   while (v >= 0x80) {
@@ -128,33 +115,25 @@ std::vector<uint8_t> encodeCircleAnnotation(
   return body;
 }
 
-TEST(SceneDecoderProtobufTest, FactoryReturnsDecoderForImageAnnotations) {
-  auto dec = makeSceneDecoder("foxglove.ImageAnnotations");
-  ASSERT_NE(dec.get(), nullptr);
+TEST(ImageAnnotationsDecoderTest, SchemaNameMatchesFoxgloveImageAnnotations) {
+  EXPECT_EQ(kSchemaImageAnnotations, "foxglove.ImageAnnotations");
 }
 
-TEST(SceneDecoderProtobufTest, EmptyMessageProducesEmptyAnnotation) {
-  auto dec = makeSceneDecoder("foxglove.ImageAnnotations");
-  ASSERT_NE(dec.get(), nullptr);
-
+TEST(ImageAnnotationsDecoderTest, EmptyMessageProducesError) {
   std::vector<uint8_t> empty_body;
-  auto result = dec->decode(empty_body.data(), empty_body.size());
+  auto result = deserializeImageAnnotations(empty_body.data(), empty_body.size());
   // Empty buffer is treated as error per the decoder's contract.
   EXPECT_FALSE(result.has_value());
 }
 
-TEST(SceneDecoderProtobufTest, SingleLineLoopFourPoints) {
-  auto dec = makeSceneDecoder("foxglove.ImageAnnotations");
-  ASSERT_NE(dec.get(), nullptr);
-
+TEST(ImageAnnotationsDecoderTest, SingleLineLoopFourPoints) {
   // type=2 (LINE_LOOP), 4 corners, thickness=2.5
   auto pa = encodePointsAnnotation(2, {{10.0, 20.0}, {110.0, 20.0}, {110.0, 80.0}, {10.0, 80.0}}, 2.5);
   auto bytes = encodeImageAnnotations({pa});
 
-  auto result = dec->decode(bytes.data(), bytes.size());
+  auto result = deserializeImageAnnotations(bytes.data(), bytes.size());
   ASSERT_TRUE(result.has_value());
-  ASSERT_EQ(result->annotations.size(), 1u);
-  const auto& ia = result->annotations[0];
+  const auto& ia = *result;
   ASSERT_EQ(ia.points.size(), 1u);
 
   const auto& pts = ia.points[0];
@@ -167,25 +146,19 @@ TEST(SceneDecoderProtobufTest, SingleLineLoopFourPoints) {
   EXPECT_DOUBLE_EQ(pts.thickness, 2.5);
 }
 
-TEST(SceneDecoderProtobufTest, MultiplePointsAnnotations) {
-  auto dec = makeSceneDecoder("foxglove.ImageAnnotations");
-  ASSERT_NE(dec.get(), nullptr);
-
+TEST(ImageAnnotationsDecoderTest, MultiplePointsAnnotations) {
   auto pa1 = encodePointsAnnotation(2, {{0.0, 0.0}, {100.0, 0.0}, {100.0, 100.0}, {0.0, 100.0}}, 1.0);
   auto pa2 = encodePointsAnnotation(3, {{50.0, 50.0}, {150.0, 150.0}}, 3.0);  // LINE_STRIP
   auto bytes = encodeImageAnnotations({pa1, pa2});
 
-  auto result = dec->decode(bytes.data(), bytes.size());
+  auto result = deserializeImageAnnotations(bytes.data(), bytes.size());
   ASSERT_TRUE(result.has_value());
-  ASSERT_EQ(result->annotations[0].points.size(), 2u);
-  EXPECT_EQ(result->annotations[0].points[0].topology, AnnotationTopology::kLineLoop);
-  EXPECT_EQ(result->annotations[0].points[1].topology, AnnotationTopology::kLineStrip);
+  ASSERT_EQ(result->points.size(), 2u);
+  EXPECT_EQ(result->points[0].topology, AnnotationTopology::kLineLoop);
+  EXPECT_EQ(result->points[1].topology, AnnotationTopology::kLineStrip);
 }
 
-TEST(SceneDecoderProtobufTest, CircleAnnotationDecodes) {
-  auto dec = makeSceneDecoder("foxglove.ImageAnnotations");
-  ASSERT_NE(dec.get(), nullptr);
-
+TEST(ImageAnnotationsDecoderTest, CircleAnnotationDecodes) {
   // CircleAnnotation centered at (50, 60) with diameter 20 (radius 10), thickness 1.5,
   // semi-transparent red fill, opaque white outline.
   auto fill = encodeColor(1.0, 0.0, 0.0, 0.5);
@@ -196,26 +169,23 @@ TEST(SceneDecoderProtobufTest, CircleAnnotationDecodes) {
   pb::appendTag(bytes, 1, 2);
   pb::appendLenDelim(bytes, ca);
 
-  auto result = dec->decode(bytes.data(), bytes.size());
+  auto result = deserializeImageAnnotations(bytes.data(), bytes.size());
   ASSERT_TRUE(result.has_value());
-  ASSERT_EQ(result->annotations.size(), 1u);
-  ASSERT_EQ(result->annotations[0].circles.size(), 1u);
-  const auto& c = result->annotations[0].circles[0];
+  ASSERT_EQ(result->circles.size(), 1u);
+  const auto& c = result->circles[0];
   EXPECT_DOUBLE_EQ(c.center.x, 50.0);
   EXPECT_DOUBLE_EQ(c.center.y, 60.0);
   EXPECT_DOUBLE_EQ(c.radius, 10.0);
   EXPECT_DOUBLE_EQ(c.thickness, 1.5);
   EXPECT_EQ(c.color.r, 255u);  // outline = white
   EXPECT_EQ(c.color.a, 255u);
-  EXPECT_EQ(c.fill_color.r, 255u);  // fill = red, alpha 0.5 → 128
+  EXPECT_EQ(c.fill_color.r, 255u);  // fill = red, alpha 0.5 -> 128
   EXPECT_EQ(c.fill_color.g, 0u);
   EXPECT_NEAR(c.fill_color.a, 128u, 1u);
 }
 
-TEST(SceneDecoderProtobufTest, NullDataReturnsError) {
-  auto dec = makeSceneDecoder("foxglove.ImageAnnotations");
-  ASSERT_NE(dec.get(), nullptr);
-  auto result = dec->decode(nullptr, 0);
+TEST(ImageAnnotationsDecoderTest, NullDataReturnsError) {
+  auto result = deserializeImageAnnotations(nullptr, 0);
   EXPECT_FALSE(result.has_value());
 }
 

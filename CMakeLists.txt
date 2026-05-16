@@ -158,7 +158,6 @@ add_subdirectory(pj_base)
 if(PJ_BUILD_DATASTORE)
   add_subdirectory(pj_datastore)
 endif()
-add_subdirectory(pj_scene_protocol)
 add_subdirectory(pj_plugins)
 
 if(PJ_BUILD_PORTED_PLUGINS AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/pj_ported_plugins/CMakeLists.txt")

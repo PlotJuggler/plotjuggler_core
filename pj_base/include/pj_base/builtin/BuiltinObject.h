@@ -19,11 +19,11 @@
 
 #include <any>
 
-#include "pj_scene_protocol/builtin/BuiltinObjectKind.h"
-#include "pj_scene_protocol/builtin/DepthImage.h"
-#include "pj_scene_protocol/builtin/Image.h"
-#include "pj_scene_protocol/builtin/ImageAnnotations.h"
-#include "pj_scene_protocol/builtin/PointCloud.h"
+#include "pj_base/builtin/BuiltinObjectKind.h"
+#include "pj_base/builtin/DepthImage.h"
+#include "pj_base/builtin/Image.h"
+#include "pj_base/builtin/ImageAnnotations.h"
+#include "pj_base/builtin/PointCloud.h"
 
 namespace PJ {
 namespace sdk {

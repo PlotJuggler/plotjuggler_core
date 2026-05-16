@@ -35,7 +35,7 @@ namespace sdk {
 ///     `compressed_depth_max` carry the quantization range needed to map
 ///     the grayscale back to depth values.
 ///
-/// See pj_scene_protocol/builtin/CommonImageEncoding.h for the documented
+/// See pj_base/builtin/CommonImageEncoding.h for the documented
 /// vocabulary of canonical encoding strings, with helpers to parse and
 /// emit them.
 ///

@@ -17,7 +17,7 @@
 #include <string_view>
 #include <unordered_map>
 
-#include "pj_scene_protocol/builtin/BuiltinObject.h"
+#include "pj_base/builtin/BuiltinObject.h"
 
 namespace PJ {
 namespace sdk {

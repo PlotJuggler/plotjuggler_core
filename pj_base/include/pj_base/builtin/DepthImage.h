@@ -41,7 +41,7 @@ namespace sdk {
 ///   R: rectification rotation. Identity for rectified images.
 ///   P: projection matrix [K | 0_3] (3×4) for rectified images.
 ///
-/// Helpers in pj_scene_protocol/builtin/depth_image_utils.h produce R
+/// Helpers in pj_base/builtin/depth_image_utils.h produce R
 /// and P when a consumer wants them precomputed.
 ///
 /// `anchor` keeps the underlying buffer alive — the producer may have

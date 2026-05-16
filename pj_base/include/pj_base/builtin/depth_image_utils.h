@@ -13,7 +13,7 @@
 
 #include <array>
 
-#include "pj_scene_protocol/builtin/DepthImage.h"
+#include "pj_base/builtin/DepthImage.h"
 
 namespace PJ {
 namespace sdk {

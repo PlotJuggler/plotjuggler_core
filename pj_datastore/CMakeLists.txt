@@ -71,9 +71,8 @@ if(PJ_BUILD_TESTS)
     add_test(NAME ${test_name} COMMAND ${test_name})
   endforeach()
 
-  # plugin_parser_object_write_test uses MessageParserPluginBase → needs
-  # the plugin SDK (pj_plugin_sdk gives access to message_parser_plugin_base.hpp
-  # and transitively pulls pj_scene_protocol for the BuiltinObject types).
+  # plugin_parser_object_write_test uses MessageParserPluginBase, so it needs
+  # the plugin SDK for message_parser_plugin_base.hpp and builtin object types.
   add_executable(plugin_parser_object_write_test tests/plugin_parser_object_write_test.cpp)
   target_link_libraries(plugin_parser_object_write_test PRIVATE
     pj_datastore pj_plugin_sdk GTest::gtest_main
