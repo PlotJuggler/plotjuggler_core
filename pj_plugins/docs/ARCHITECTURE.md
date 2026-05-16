@@ -527,5 +527,6 @@ is opaque-payload-by-default: `BuiltinObject` is `std::any`, so
 appending a new builtin type does not change the public type and
 forward compatibility is automatic. Concrete builtins live under
 `pj_base/builtin/` (`Image`, `DepthImage`, `PointCloud`,
-`ImageAnnotations`); see `docs/builtin_type.md` for the type catalog and
-`docs/image_annotations_format.md` for the canonical annotation wire format.
+`ImageAnnotations`, `FrameTransforms`); see `docs/builtin_type.md` for the type
+catalog and `docs/image_annotations_format.md` for the canonical annotation
+wire format.

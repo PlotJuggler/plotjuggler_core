@@ -5,6 +5,7 @@
 find_package(magic_enum CONFIG REQUIRED)
 
 add_library(pj_base STATIC
+  src/builtin/frame_transforms_codec.cpp
   src/builtin/image_annotations_codec.cpp
   src/type_tree.cpp
 )
@@ -59,6 +60,8 @@ if(PJ_BUILD_TESTS)
     tests/abi_layout_sentinels_test.cpp
     tests/platform_test.cpp
     tests/arrow_holders_test.cpp
+    tests/builtin_object_test.cpp
+    tests/frame_transforms_codec_test.cpp
     tests/image_annotations_codec_test.cpp
     tests/image_annotations_decoder_test.cpp
     tests/media_metadata_test.cpp

@@ -470,8 +470,8 @@ dispatch code.
 Beyond the scalar-column output that `parse()` and the
 `sdk::ParserWriteHostService` cover, the SDK adds a second, narrow
 output channel for media-like payloads: a *builtin object* (image,
-depth image, point cloud, image annotations) returned by name from the
-parser, decoded once, and visualised by widgets that never learn the
+depth image, point cloud, image annotations, frame transforms) returned by name
+from the parser, decoded once, and visualised by widgets that never learn the
 wire format.
 
 Three optional virtual entry points on `MessageParserPluginBase`
@@ -493,9 +493,9 @@ parseObject(PJ::Timestamp ts, PJ::sdk::PayloadView payload) override;
 
 - `classifySchema` is the *a-priori* declaration — given a type name +
   schema bytes, announce which `BuiltinObjectType` (`kImage`,
-  `kDepthImage`, `kPointCloud`, `kImageAnnotations`, `kNone`) this
-  schema produces. The host consults the answer **before** it ever sees
-  the payload, so it can pick the right `ObjectIngestPolicy` for the
+  `kDepthImage`, `kPointCloud`, `kImageAnnotations`, `kFrameTransforms`,
+  `kNone`) this schema produces. The host consults the answer **before** it
+  ever sees the payload, so it can pick the right `ObjectIngestPolicy` for the
   topic.
 - `parseScalars` writes the small-metadata fields (`width`, `height`,
   `frame_id`, …) that should land in the curve tree as scalar columns.

@@ -4,8 +4,9 @@
  *
  * BuiltinObject is `std::any`. A producer constructs it by passing a
  * concrete builtin value (`sdk::Image`, `sdk::PointCloud`, `sdk::DepthImage`,
- * `sdk::ImageAnnotations`, …); a consumer recovers the concrete type via
- * `std::any_cast<T>(&obj)` and obtains the type tag via `typeOf(obj)`.
+ * `sdk::ImageAnnotations`, `sdk::FrameTransforms`, ...); a consumer recovers
+ * the concrete type via `std::any_cast<T>(&obj)` and obtains the type tag via
+ * `typeOf(obj)`.
  *
  * The type erasure is deliberate: choosing `std::any` over `std::variant`
  * keeps the SDK forward-compatible. Plugins built against an older SDK can
@@ -24,6 +25,7 @@
 #include <string_view>
 
 #include "pj_base/builtin/DepthImage.h"
+#include "pj_base/builtin/FrameTransforms.h"
 #include "pj_base/builtin/Image.h"
 #include "pj_base/builtin/ImageAnnotations.h"
 #include "pj_base/builtin/PointCloud.h"
@@ -37,8 +39,9 @@ enum class BuiltinObjectType : uint16_t {
   kPointCloud = 3,        ///< sdk::PointCloud — packed points + per-channel field layout.
   kDepthImage = 4,        ///< sdk::DepthImage — depth pixels + camera intrinsics.
   kImageAnnotations = 5,  ///< sdk::ImageAnnotations — 2D overlays (points, lines, text).
+  kFrameTransforms = 6,   ///< sdk::FrameTransforms — named 3D frame relationships.
   // Reserved for future types; keep numeric values stable across releases.
-  // kOccupancyGrid  = 6,
+  // kOccupancyGrid  = 7,
 };
 
 /// A-priori classification of a schema. Currently carries only the type;
@@ -81,6 +84,9 @@ using BuiltinObject = std::any;
   }
   if (t == typeid(ImageAnnotations)) {
     return BuiltinObjectType::kImageAnnotations;
+  }
+  if (t == typeid(FrameTransforms)) {
+    return BuiltinObjectType::kFrameTransforms;
   }
   return BuiltinObjectType::kNone;
 }

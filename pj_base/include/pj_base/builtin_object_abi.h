@@ -8,8 +8,8 @@
  * carrying a PJ_builtin_object_type_t.
  *
  * Canonical-object production (sdk::Image / sdk::DepthImage /
- * sdk::PointCloud / sdk::ImageAnnotations) and the pure-functional scalar production
- * (Expected<vector<NamedFieldValue>>) are C++ SDK contracts: plugins
+ * sdk::PointCloud / sdk::ImageAnnotations / sdk::FrameTransforms) and the
+ * pure-functional scalar production (Expected<vector<NamedFieldValue>>) are C++ SDK contracts: plugins
  * inheriting from MessageParserPluginBase register handlers in
  * SchemaHandler, and the in-process host consumes them via
  * MessageParserPluginBase::parseObject() and parseScalars() called
@@ -41,8 +41,9 @@ typedef enum PJ_builtin_object_type_t {
   PJ_BUILTIN_OBJECT_TYPE_POINTCLOUD = 3,
   PJ_BUILTIN_OBJECT_TYPE_DEPTH_IMAGE = 4,
   PJ_BUILTIN_OBJECT_TYPE_IMAGE_ANNOTATIONS = 5,
+  PJ_BUILTIN_OBJECT_TYPE_FRAME_TRANSFORMS = 6,
   /* Reserve future types; appended at the tail. */
-  /* PJ_BUILTIN_OBJECT_TYPE_OCCUPANCY_GRID  = 6, */
+  /* PJ_BUILTIN_OBJECT_TYPE_OCCUPANCY_GRID  = 7, */
 } PJ_builtin_object_type_t;
 
 /**

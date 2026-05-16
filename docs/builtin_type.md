@@ -19,7 +19,9 @@ The public headers live under:
 #include <pj_base/builtin/DepthImage.h>
 #include <pj_base/builtin/PointCloud.h>
 #include <pj_base/builtin/ImageAnnotations.h>
+#include <pj_base/builtin/FrameTransforms.h>
 #include <pj_base/builtin/image_annotations_codec.h>
+#include <pj_base/builtin/frame_transforms_codec.h>
 ```
 
 ## Design Principles
@@ -45,10 +47,10 @@ stores the payload itself as `Span<const uint8_t>` plus a `BufferAnchor`. The
 span points at the bytes; the anchor keeps the underlying allocation alive while
 consumers use it.
 
-**Keep small objects owned.** `ImageAnnotations` owns its vectors directly.
-Future transform and marker types should follow the same pattern unless they
-grow payload-sized byte arrays. These values are small enough that the zero-copy
-anchor pattern is unnecessary.
+**Keep small objects owned.** `ImageAnnotations` and `FrameTransforms` own
+their vectors, strings, and scalar fields directly. Future marker types should
+follow the same pattern unless they grow payload-sized byte arrays. These values
+are small enough that the zero-copy anchor pattern is unnecessary.
 
 **Do not force one serialization path on every builtin.** Large byte-backed
 types are views over source-native payload bytes whenever possible; they should
@@ -65,13 +67,13 @@ Builtin objects fall into two serialization families:
 | Family | Current types | Storage model | Codec policy |
 |--------|---------------|---------------|--------------|
 | Byte-backed views | `Image`, `DepthImage`, `PointCloud` | Header fields live in the SDK struct; payload bytes live behind `Span<const uint8_t>` plus `BufferAnchor`. | No mandatory canonical codec; preserve zero-copy views over ROS, MCAP, compressed image, point-cloud, or plugin-owned payloads. If conversion is unavoidable, allocate a new payload and anchor it. |
-| Owned values | `ImageAnnotations`; future transform and marker types | SDK structs own their vectors/strings/scalars directly. | Add explicit codecs when canonical bytes are needed. Codecs serialize the owned value to the protobuf-wire payload described by the `.proto` contract, using shared private wire primitives. |
+| Owned values | `ImageAnnotations`, `FrameTransforms`; future marker types | SDK structs own their vectors/strings/scalars directly. | Add explicit codecs when canonical bytes are needed. Codecs serialize the owned value to the protobuf-wire payload described by the `.proto` contract, using shared private wire primitives. |
 
 Canonical `.proto` files live under `pj_base/proto/pj` and act as the wire
-format contract. `PJ.ImageAnnotations` describes the current annotation codec
-payload. `PJ.FrameTransforms` is the schema reserved for future transform
-codecs. Shared geometry primitives are grouped in `Geometry.proto`: `Point2`,
-`Point3`, `Vector2`, `Vector3`, and `Quaternion`.
+format contract. `PJ.ImageAnnotations` describes the annotation codec payload.
+`PJ.FrameTransforms` describes the transform codec payload. Shared geometry
+primitives are grouped in `Geometry.proto`: `Point2`, `Point3`, `Vector2`,
+`Vector3`, and `Quaternion`.
 
 The codecs do not expose generated Protobuf types in public SDK headers. The
 current implementation does not require generated Protobuf code or a Protobuf
@@ -82,7 +84,7 @@ between bytes and SDK structs.
 
 `BuiltinObjectType` is the a-priori tag a parser reports for a schema. It lets
 the host decide that a topic produces images, point clouds, depth images, image
-annotations, or no builtin object.
+annotations, frame transforms, or no builtin object.
 
 | Type | Concrete type | Purpose |
 |------|---------------|---------|
@@ -91,6 +93,7 @@ annotations, or no builtin object.
 | `kPointCloud` | `PJ::sdk::PointCloud` | Packed 3D point records. |
 | `kDepthImage` | `PJ::sdk::DepthImage` | Depth pixels plus camera intrinsics. |
 | `kImageAnnotations` | `PJ::sdk::ImageAnnotations` | Pixel-space overlay primitives. |
+| `kFrameTransforms` | `PJ::sdk::FrameTransforms` | Named 3D frame relationships. |
 
 `BuiltinObject` is `std::any`. Producers store a concrete builtin value in it;
 consumers recover the concrete type with `std::any_cast<T>(&object)` or ask
@@ -233,6 +236,33 @@ type using the canonical `PJ.ImageAnnotations` protobuf wire format.
 See [image_annotations_format.md](image_annotations_format.md) for the field
 mapping and compatibility rules.
 
+## FrameTransforms
+
+`FrameTransforms` contains a batch of time-stamped 3D transforms between named
+reference frames. It is used for TF-style data where consumers need to place
+objects, point clouds, camera frustums, or markers in a shared frame graph.
+
+Use `FrameTransforms` when the semantic value is a parent/child frame
+relationship: a translation vector and quaternion rotation from
+`parent_frame_id` to `child_frame_id` at a specific timestamp.
+
+| Field | Type | Notes |
+|-------|------|-------|
+| `transforms` | `std::vector<FrameTransform>` | Transform records carried by one source payload. |
+
+Each `FrameTransform` contains:
+
+| Field | Type | Notes |
+|-------|------|-------|
+| `timestamp` | `Timestamp` | Timestamp associated with the transform. |
+| `parent_frame_id` | `std::string` | Name of the parent reference frame. |
+| `child_frame_id` | `std::string` | Name of the child reference frame. |
+| `translation` | `Vector3` | Child-frame origin in parent-frame coordinates. |
+| `rotation` | `Quaternion` | Child-frame orientation relative to the parent frame. |
+
+`pj_base/builtin/frame_transforms_codec.h` serializes and deserializes this type
+using the canonical `PJ.FrameTransforms` protobuf wire format.
+
 ## Conversion Examples
 
 | Source type | Canonical builtin type | Conversion intent |
@@ -241,6 +271,7 @@ mapping and compatibility rules.
 | ROS `sensor_msgs/CompressedImage` | `Image` | Preserve compressed bytes and set `encoding` to the codec. |
 | ROS `sensor_msgs/PointCloud2` | `PointCloud` | Map point fields, strides, density, endianness, and packed bytes. |
 | Detection or tracking message | `ImageAnnotations` | Convert boxes, points, circles, and labels into pixel-space primitives. |
+| ROS `tf2_msgs/TFMessage` | `FrameTransforms` | Convert transform batches into named parent/child frame relationships. |
 
 The builtin type is the boundary object. After conversion, consumers should not
 need to know which third-party schema produced it.
