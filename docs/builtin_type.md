@@ -7,15 +7,14 @@ PlotJuggler can classify, store, decode, and render consistently.
 A plugin that reads a ROS message, a Protobuf message, a JSON payload, or any
 other source-specific format converts that input into one of these types. The
 conversion removes source-specific naming and wire-layout details while keeping
-the semantic value intact. For example, a ROS `sensor_msgs/Image` and a
-Foxglove image message can both become `PJ::sdk::Image`; a ROS
+the semantic value intact. For example, a ROS `sensor_msgs/Image` and another
+image message schema can both become `PJ::sdk::Image`; a ROS
 `sensor_msgs/PointCloud2` can become `PJ::sdk::PointCloud`.
 
 The public headers live under:
 
 ```cpp
 #include <pj_base/builtin/BuiltinObject.h>
-#include <pj_base/builtin/BuiltinObjectKind.h>
 #include <pj_base/builtin/Image.h>
 #include <pj_base/builtin/DepthImage.h>
 #include <pj_base/builtin/PointCloud.h>
@@ -26,9 +25,9 @@ The public headers live under:
 ## Design Principles
 
 **Convert at the boundary.** DataSource and MessageParser plugins understand
-third-party schemas. PlotJuggler internals consume builtin types. This keeps ROS,
-Foxglove, dataset-specific, and vendor-specific details out of viewers and
-storage policy.
+third-party schemas. PlotJuggler internals consume builtin types. This keeps
+ROS, dataset-specific, and vendor-specific details out of viewers and storage
+policy.
 
 **Unify when only the encoding differs.** Raw `rgb8`, `jpeg`, and `png` are all
 images. They share the same consumer semantics, so they are represented by
@@ -39,20 +38,53 @@ images. They share the same consumer semantics, so they are represented by
 thing. Depth data is represented by `DepthImage` because consumers interpret it
 as metric distance with camera intrinsics.
 
-**Keep large buffers zero-copy capable.** Byte-backed types carry a
-`Span<const uint8_t>` plus a `BufferAnchor`. The span points at the payload; the
-anchor keeps the underlying allocation alive while consumers use it.
+**Keep large buffers zero-copy capable.** Byte-backed types split metadata from
+payload bytes. The SDK object stores the header fields PlotJuggler needs to
+interpret the payload, such as image dimensions or point-cloud field layout, and
+stores the payload itself as `Span<const uint8_t>` plus a `BufferAnchor`. The
+span points at the bytes; the anchor keeps the underlying allocation alive while
+consumers use it.
 
-**Keep small annotations owned.** `ImageAnnotations` owns its vectors directly.
-Overlay data is small enough that the zero-copy anchor pattern is unnecessary.
+**Keep small objects owned.** `ImageAnnotations` owns its vectors directly.
+Future transform and marker types should follow the same pattern unless they
+grow payload-sized byte arrays. These values are small enough that the zero-copy
+anchor pattern is unnecessary.
+
+**Do not force one serialization path on every builtin.** Large byte-backed
+types are views over source-native payload bytes whenever possible; they should
+not be repacked just to produce a canonical blob. Small owned types may define
+canonical codecs when storage or replay needs bytes. Those codecs serialize the
+owned SDK value directly to the canonical protobuf-wire payload described by the
+`.proto` contract. The schema and wire-format details stay private; public SDK
+headers expose only SDK structs.
+
+## Serialization Families
+
+Builtin objects fall into two serialization families:
+
+| Family | Current types | Storage model | Codec policy |
+|--------|---------------|---------------|--------------|
+| Byte-backed views | `Image`, `DepthImage`, `PointCloud` | Header fields live in the SDK struct; payload bytes live behind `Span<const uint8_t>` plus `BufferAnchor`. | No mandatory canonical codec; preserve zero-copy views over ROS, MCAP, compressed image, point-cloud, or plugin-owned payloads. If conversion is unavoidable, allocate a new payload and anchor it. |
+| Owned values | `ImageAnnotations`; future transform and marker types | SDK structs own their vectors/strings/scalars directly. | Add explicit codecs when canonical bytes are needed. Codecs serialize the owned value to the protobuf-wire payload described by the `.proto` contract, using shared private wire primitives. |
+
+Canonical `.proto` files live under `pj_base/proto/pj` and act as the wire
+format contract. `PJ.ImageAnnotations` describes the current annotation codec
+payload. `PJ.FrameTransforms` is the schema reserved for future transform
+codecs. Shared geometry primitives are grouped in `Geometry.proto`: `Point2`,
+`Point3`, `Vector2`, `Vector3`, and `Quaternion`.
+
+The codecs do not expose generated Protobuf types in public SDK headers. The
+current implementation does not require generated Protobuf code or a Protobuf
+runtime dependency; it uses private field-tagged wire primitives and maps only
+between bytes and SDK structs.
 
 ## Type Erasure and Classification
 
-`BuiltinObjectKind` is the a-priori tag a parser reports for a schema. It lets
+`BuiltinObjectType` is the a-priori tag a parser reports for a schema. It lets
 the host decide that a topic produces images, point clouds, depth images, image
 annotations, or no builtin object.
 
-| Kind | Concrete type | Purpose |
+| Type | Concrete type | Purpose |
 |------|---------------|---------|
 | `kNone` | none | Scalar-only schema or unknown object. |
 | `kImage` | `PJ::sdk::Image` | Raw or compressed image data. |
@@ -62,7 +94,7 @@ annotations, or no builtin object.
 
 `BuiltinObject` is `std::any`. Producers store a concrete builtin value in it;
 consumers recover the concrete type with `std::any_cast<T>(&object)` or ask
-`kindOf(object)` for the kind supported by the current SDK build.
+`typeOf(object)` for the type supported by the current SDK build.
 
 ## Image
 
@@ -197,7 +229,7 @@ per-vertex colors are used. `fill_color` applies to closed loops and circles
 when its alpha channel is non-zero.
 
 `pj_base/builtin/image_annotations_codec.h` serializes and deserializes this
-type using the canonical `foxglove.ImageAnnotations` protobuf wire format.
+type using the canonical `PJ.ImageAnnotations` protobuf wire format.
 See [image_annotations_format.md](image_annotations_format.md) for the field
 mapping and compatibility rules.
 

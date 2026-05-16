@@ -1,0 +1,31 @@
+// PlotJuggler canonical image annotations protobuf schema.
+// Field layout adapted from Foxglove SDK schemas (MIT License,
+// Copyright (c) Foxglove Technologies Inc).
+
+syntax = "proto3";
+
+import "pj/CircleAnnotation.proto";
+import "pj/KeyValuePair.proto";
+import "pj/PointsAnnotation.proto";
+import "pj/TextAnnotation.proto";
+import "google/protobuf/timestamp.proto";
+
+package PJ;
+
+// Array of annotations for a 2D image
+message ImageAnnotations {
+  // Timestamp of the image annotations. When set, individual annotation timestamps will be ignored.
+  optional google.protobuf.Timestamp timestamp = 5;
+
+  // Circle annotations
+  repeated PJ.CircleAnnotation circles = 1;
+
+  // Points annotations
+  repeated PJ.PointsAnnotation points = 2;
+
+  // Text annotations
+  repeated PJ.TextAnnotation texts = 3;
+
+  // Additional user-provided metadata associated with the image annotations. Keys must be unique within this object. Per-annotation metadata takes precedence over these values.
+  repeated PJ.KeyValuePair metadata = 4;
+}

@@ -13,7 +13,7 @@ namespace {
 using sdk::AnnotationTopology;
 
 // ---------------------------------------------------------------------------
-// Protobuf decoder tests for the canonical foxglove.ImageAnnotations wire
+// Protobuf decoder tests for the canonical PJ.ImageAnnotations wire
 // format. Source-specific conversion happens before this decoder sees bytes.
 // ---------------------------------------------------------------------------
 
@@ -47,7 +47,7 @@ inline void appendLenDelim(std::vector<uint8_t>& out, const std::vector<uint8_t>
 
 }  // namespace pb
 
-// Build a Foxglove Point2 sub-message: {1: double x, 2: double y}
+// Build a PJ.Point2 sub-message: {1: double x, 2: double y}
 std::vector<uint8_t> encodePoint2(double x, double y) {
   std::vector<uint8_t> body;
   pb::appendTag(body, 1, 1);
@@ -57,7 +57,7 @@ std::vector<uint8_t> encodePoint2(double x, double y) {
   return body;
 }
 
-// Build a Foxglove PointsAnnotation: {2: type, 3: repeated points, 7: thickness}
+// Build a PJ.PointsAnnotation: {2: type, 3: repeated points, 7: thickness}
 std::vector<uint8_t> encodePointsAnnotation(
     uint32_t type, const std::vector<std::pair<double, double>>& pts, double thickness) {
   std::vector<uint8_t> body;
@@ -72,7 +72,7 @@ std::vector<uint8_t> encodePointsAnnotation(
   return body;
 }
 
-// Build a Foxglove ImageAnnotations: {2: repeated PointsAnnotation}
+// Build a PJ.ImageAnnotations: {2: repeated PointsAnnotation}
 std::vector<uint8_t> encodeImageAnnotations(const std::vector<std::vector<uint8_t>>& point_annotations) {
   std::vector<uint8_t> out;
   for (const auto& pa : point_annotations) {
@@ -82,7 +82,7 @@ std::vector<uint8_t> encodeImageAnnotations(const std::vector<std::vector<uint8_
   return out;
 }
 
-// Build a Foxglove Color sub-message: {1: r, 2: g, 3: b, 4: a} (all double in [0,1]).
+// Build a PJ.Color sub-message: {1: r, 2: g, 3: b, 4: a} (all double in [0,1]).
 std::vector<uint8_t> encodeColor(double r, double g, double b, double a) {
   std::vector<uint8_t> body;
   pb::appendTag(body, 1, 1);
@@ -96,7 +96,7 @@ std::vector<uint8_t> encodeColor(double r, double g, double b, double a) {
   return body;
 }
 
-// Build a Foxglove CircleAnnotation: {2: position, 3: diameter, 4: thickness,
+// Build a PJ.CircleAnnotation: {2: position, 3: diameter, 4: thickness,
 // 5: fill_color, 6: outline_color}
 std::vector<uint8_t> encodeCircleAnnotation(
     double x, double y, double diameter, double thickness, const std::vector<uint8_t>& fill,
@@ -115,14 +115,22 @@ std::vector<uint8_t> encodeCircleAnnotation(
   return body;
 }
 
-TEST(ImageAnnotationsDecoderTest, SchemaNameMatchesFoxgloveImageAnnotations) {
-  EXPECT_EQ(kSchemaImageAnnotations, "foxglove.ImageAnnotations");
+TEST(ImageAnnotationsDecoderTest, SchemaNameMatchesImageAnnotations) {
+  EXPECT_EQ(kSchemaImageAnnotations, "PJ.ImageAnnotations");
 }
 
 TEST(ImageAnnotationsDecoderTest, EmptyMessageProducesError) {
   std::vector<uint8_t> empty_body;
   auto result = deserializeImageAnnotations(empty_body.data(), empty_body.size());
   // Empty buffer is treated as error per the decoder's contract.
+  EXPECT_FALSE(result.has_value());
+}
+
+TEST(ImageAnnotationsDecoderTest, OverflowingVarintProducesError) {
+  std::vector<uint8_t> bytes(10, 0xFF);
+  bytes.back() = 0x02;
+
+  auto result = deserializeImageAnnotations(bytes.data(), bytes.size());
   EXPECT_FALSE(result.has_value());
 }
 

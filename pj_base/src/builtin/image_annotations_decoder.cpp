@@ -1,123 +1,24 @@
+#include <algorithm>
 #include <cstdint>
-#include <cstring>
 #include <string>
 #include <utility>
 
 #include "pj_base/builtin/image_annotations_codec.h"
+#include "protobuf_wire.h"
 
 namespace PJ {
 namespace {
 
+using builtin_wire::Reader;
+using builtin_wire::Tag;
+using builtin_wire::WireType;
 using sdk::AnnotationTopology;
 using sdk::CircleAnnotation;
 using sdk::ColorRGBA;
-using sdk::ImageAnnotations;
 using sdk::Point2;
 using sdk::PointsAnnotation;
 using sdk::TextAnnotation;
 
-// Minimal Protobuf wire-format reader for foxglove.ImageAnnotations. Decodes
-// PointsAnnotation, CircleAnnotation, and TextAnnotation in full. Round-trips
-// against the sibling writer are covered by image_annotations_codec_test.
-//
-// Spec reference: https://protobuf.dev/programming-guides/encoding/
-// Wire types we need: VARINT(0), I64(1), LEN(2). I32(5) skipped if encountered.
-//
-// Foxglove schemas (https://github.com/foxglove/schemas, foxglove/proto/):
-//   ImageAnnotations { circles=1, points=2, texts=3 }
-//   PointsAnnotation { timestamp=1, type=2 (enum: 0/1/2/3/4),
-//                      points=3 (repeated Point2),
-//                      outline_color=4, outline_colors=5,
-//                      fill_color=6, thickness=7 }
-//   Point2 { x=1, y=2 }   (both double)
-//   Time   { sec=1 (int64), nanosec=2 (uint32) }
-
-struct Reader {
-  const uint8_t* p;
-  const uint8_t* end;
-
-  bool eof() const noexcept {
-    return p >= end;
-  }
-  size_t remaining() const noexcept {
-    return static_cast<size_t>(end - p);
-  }
-
-  // Returns false on overflow / end-of-buffer.
-  bool readVarint(uint64_t& out) {
-    out = 0;
-    int shift = 0;
-    while (p < end) {
-      uint8_t b = *p++;
-      out |= static_cast<uint64_t>(b & 0x7Fu) << shift;
-      if ((b & 0x80u) == 0) {
-        return true;
-      }
-      shift += 7;
-      if (shift > 63) {
-        return false;
-      }
-    }
-    return false;
-  }
-
-  bool readFixed64(uint64_t& out) {
-    if (remaining() < 8) {
-      return false;
-    }
-    std::memcpy(&out, p, 8);  // little-endian on x86_64; protobuf is also LE
-    p += 8;
-    return true;
-  }
-
-  bool readDouble(double& out) {
-    uint64_t bits = 0;
-    if (!readFixed64(bits)) {
-      return false;
-    }
-    std::memcpy(&out, &bits, 8);
-    return true;
-  }
-
-  // Skip a single field given its wire type. Advances p past the field body.
-  bool skipField(uint32_t wire_type) {
-    switch (wire_type) {
-      case 0: {  // VARINT
-        uint64_t dummy = 0;
-        return readVarint(dummy);
-      }
-      case 1: {  // I64
-        if (remaining() < 8) {
-          return false;
-        }
-        p += 8;
-        return true;
-      }
-      case 2: {  // LEN
-        uint64_t len = 0;
-        if (!readVarint(len)) {
-          return false;
-        }
-        if (len > remaining()) {
-          return false;
-        }
-        p += len;
-        return true;
-      }
-      case 5: {  // I32
-        if (remaining() < 4) {
-          return false;
-        }
-        p += 4;
-        return true;
-      }
-      default:
-        return false;  // groups (3/4) deprecated, not expected
-    }
-  }
-};
-
-// Map Foxglove PointsAnnotation.Type enum values to our AnnotationTopology.
 AnnotationTopology mapTopology(uint64_t type) {
   switch (type) {
     case 1:
@@ -130,287 +31,281 @@ AnnotationTopology mapTopology(uint64_t type) {
       return AnnotationTopology::kLineList;
     case 0:
     default:
-      return AnnotationTopology::kPoints;  // UNKNOWN maps to a safe default.
+      return AnnotationTopology::kPoints;
   }
 }
 
-// Decode a Point2 sub-message: {1: double x, 2: double y}.
-bool decodePoint2(Reader& r, size_t len, Point2& out) {
-  const uint8_t* sub_end = r.p + len;
-  if (sub_end > r.end) {
-    return false;
-  }
-  while (r.p < sub_end) {
-    uint64_t tag = 0;
-    if (!r.readVarint(tag)) {
+uint8_t normalizedToByte(double value) {
+  value = std::clamp(value, 0.0, 1.0);
+  return static_cast<uint8_t>(value * 255.0 + 0.5);
+}
+
+bool decodePoint2(Reader& reader, Point2& out) {
+  while (!reader.eof()) {
+    Tag tag;
+    if (!reader.readTag(tag)) {
       return false;
     }
-    uint32_t field = static_cast<uint32_t>(tag >> 3);
-    uint32_t wire = static_cast<uint32_t>(tag & 0x7u);
-    if (field == 1 && wire == 1) {
-      if (!r.readDouble(out.x)) {
+
+    if (tag.field == 1 && tag.type == WireType::kFixed64) {
+      if (!reader.readDouble(out.x)) {
         return false;
       }
-    } else if (field == 2 && wire == 1) {
-      if (!r.readDouble(out.y)) {
+    } else if (tag.field == 2 && tag.type == WireType::kFixed64) {
+      if (!reader.readDouble(out.y)) {
         return false;
       }
-    } else {
-      if (!r.skipField(wire)) {
-        return false;
-      }
+    } else if (!reader.skip(tag.type)) {
+      return false;
     }
   }
   return true;
 }
 
-// Decode a foxglove.Color sub-message: {1: double r, 2: double g, 3: double b, 4: double a}
-// with components in [0, 1]. Output is uint8 RGBA in [0, 255].
-bool decodeColor(Reader& r, size_t len, ColorRGBA& out) {
-  const uint8_t* sub_end = r.p + len;
-  if (sub_end > r.end) {
-    return false;
-  }
-  double rd = 0.0;
-  double gd = 0.0;
-  double bd = 0.0;
-  double ad = 1.0;
-  while (r.p < sub_end) {
-    uint64_t tag = 0;
-    if (!r.readVarint(tag)) {
+bool decodeColor(Reader& reader, ColorRGBA& out) {
+  double r = 0.0;
+  double g = 0.0;
+  double b = 0.0;
+  double a = 1.0;
+
+  while (!reader.eof()) {
+    Tag tag;
+    if (!reader.readTag(tag)) {
       return false;
     }
-    uint32_t field = static_cast<uint32_t>(tag >> 3);
-    uint32_t wire = static_cast<uint32_t>(tag & 0x7u);
-    if (wire == 1 && field >= 1 && field <= 4) {
-      double v = 0.0;
-      if (!r.readDouble(v)) {
+
+    if (tag.type == WireType::kFixed64 && tag.field >= 1 && tag.field <= 4) {
+      double value = 0.0;
+      if (!reader.readDouble(value)) {
         return false;
       }
-      switch (field) {
+      switch (tag.field) {
         case 1:
-          rd = v;
+          r = value;
           break;
         case 2:
-          gd = v;
+          g = value;
           break;
         case 3:
-          bd = v;
+          b = value;
           break;
         case 4:
-          ad = v;
+          a = value;
           break;
         default:
           break;
       }
-    } else {
-      if (!r.skipField(wire)) {
-        return false;
-      }
-    }
-  }
-  auto to_byte = [](double v) {
-    if (v < 0.0) {
-      v = 0.0;
-    }
-    if (v > 1.0) {
-      v = 1.0;
-    }
-    return static_cast<uint8_t>(v * 255.0 + 0.5);
-  };
-  out.r = to_byte(rd);
-  out.g = to_byte(gd);
-  out.b = to_byte(bd);
-  out.a = to_byte(ad);
-  return true;
-}
-
-// Decode one PointsAnnotation sub-message.
-bool decodePointsAnnotation(Reader& r, size_t len, PointsAnnotation& out) {
-  const uint8_t* sub_end = r.p + len;
-  if (sub_end > r.end) {
-    return false;
-  }
-  while (r.p < sub_end) {
-    uint64_t tag = 0;
-    if (!r.readVarint(tag)) {
+    } else if (!reader.skip(tag.type)) {
       return false;
     }
-    uint32_t field = static_cast<uint32_t>(tag >> 3);
-    uint32_t wire = static_cast<uint32_t>(tag & 0x7u);
+  }
 
-    if (field == 2 && wire == 0) {
-      uint64_t type_val = 0;
-      if (!r.readVarint(type_val)) {
-        return false;
+  out = {normalizedToByte(r), normalizedToByte(g), normalizedToByte(b), normalizedToByte(a)};
+  return true;
+}
+
+bool readPoint2Message(Reader& reader, Point2& out) {
+  Reader nested;
+  return reader.readMessage(nested) && decodePoint2(nested, out);
+}
+
+bool readColorMessage(Reader& reader, ColorRGBA& out) {
+  Reader nested;
+  return reader.readMessage(nested) && decodeColor(nested, out);
+}
+
+bool decodePointsAnnotation(Reader& reader, PointsAnnotation& out) {
+  while (!reader.eof()) {
+    Tag tag;
+    if (!reader.readTag(tag)) {
+      return false;
+    }
+
+    switch (tag.field) {
+      case 2: {
+        if (tag.type != WireType::kVarint) {
+          break;
+        }
+        uint64_t value = 0;
+        if (!reader.readVarint(value)) {
+          return false;
+        }
+        out.topology = mapTopology(value);
+        continue;
       }
-      out.topology = mapTopology(type_val);
-    } else if (field == 3 && wire == 2) {
-      uint64_t pt_len = 0;
-      if (!r.readVarint(pt_len)) {
-        return false;
+      case 3: {
+        if (tag.type != WireType::kLengthDelimited) {
+          break;
+        }
+        Point2 point;
+        if (!readPoint2Message(reader, point)) {
+          return false;
+        }
+        out.points.push_back(point);
+        continue;
       }
-      Point2 pt;
-      if (!decodePoint2(r, pt_len, pt)) {
-        return false;
+      case 4:
+        if (tag.type == WireType::kLengthDelimited) {
+          if (!readColorMessage(reader, out.color)) {
+            return false;
+          }
+          continue;
+        }
+        break;
+      case 5: {
+        if (tag.type != WireType::kLengthDelimited) {
+          break;
+        }
+        ColorRGBA color;
+        if (!readColorMessage(reader, color)) {
+          return false;
+        }
+        out.colors.push_back(color);
+        continue;
       }
-      out.points.push_back(pt);
-    } else if (field == 4 && wire == 2) {
-      uint64_t c_len = 0;
-      if (!r.readVarint(c_len)) {
-        return false;
-      }
-      if (!decodeColor(r, c_len, out.color)) {
-        return false;
-      }
-    } else if (field == 5 && wire == 2) {
-      uint64_t c_len = 0;
-      if (!r.readVarint(c_len)) {
-        return false;
-      }
-      ColorRGBA c{};
-      if (!decodeColor(r, c_len, c)) {
-        return false;
-      }
-      out.colors.push_back(c);
-    } else if (field == 6 && wire == 2) {
-      uint64_t c_len = 0;
-      if (!r.readVarint(c_len)) {
-        return false;
-      }
-      if (!decodeColor(r, c_len, out.fill_color)) {
-        return false;
-      }
-    } else if (field == 7 && wire == 1) {
-      if (!r.readDouble(out.thickness)) {
-        return false;
-      }
-    } else {
-      if (!r.skipField(wire)) {
-        return false;
-      }
+      case 6:
+        if (tag.type == WireType::kLengthDelimited) {
+          if (!readColorMessage(reader, out.fill_color)) {
+            return false;
+          }
+          continue;
+        }
+        break;
+      case 7:
+        if (tag.type == WireType::kFixed64) {
+          if (!reader.readDouble(out.thickness)) {
+            return false;
+          }
+          continue;
+        }
+        break;
+      default:
+        break;
+    }
+
+    if (!reader.skip(tag.type)) {
+      return false;
     }
   }
   return true;
 }
 
-// Decode one foxglove.CircleAnnotation sub-message:
-//   timestamp(1)=Time, position(2)=Point2, diameter(3)=double, thickness(4)=double,
-//   fill_color(5)=Color, outline_color(6)=Color
-// We map diameter/2 -> radius and outline_color -> color (the C++ struct has no
-// separate outline field; .color IS the outline).
-bool decodeCircleAnnotation(Reader& r, size_t len, CircleAnnotation& out) {
-  const uint8_t* sub_end = r.p + len;
-  if (sub_end > r.end) {
-    return false;
-  }
-  // Defaults match pj_base/builtin/ImageAnnotations.h.
+bool decodeCircleAnnotation(Reader& reader, CircleAnnotation& out) {
   out.color = {0, 255, 0, 255};
   out.fill_color = {0, 0, 0, 0};
   out.thickness = 2.0;
   out.radius = 1.0;
-  while (r.p < sub_end) {
-    uint64_t tag = 0;
-    if (!r.readVarint(tag)) {
+
+  while (!reader.eof()) {
+    Tag tag;
+    if (!reader.readTag(tag)) {
       return false;
     }
-    uint32_t field = static_cast<uint32_t>(tag >> 3);
-    uint32_t wire = static_cast<uint32_t>(tag & 0x7u);
-    if (field == 2 && wire == 2) {
-      uint64_t p_len = 0;
-      if (!r.readVarint(p_len)) {
-        return false;
+
+    switch (tag.field) {
+      case 2:
+        if (tag.type == WireType::kLengthDelimited) {
+          if (!readPoint2Message(reader, out.center)) {
+            return false;
+          }
+          continue;
+        }
+        break;
+      case 3: {
+        if (tag.type != WireType::kFixed64) {
+          break;
+        }
+        double diameter = 0.0;
+        if (!reader.readDouble(diameter)) {
+          return false;
+        }
+        out.radius = diameter * 0.5;
+        continue;
       }
-      if (!decodePoint2(r, p_len, out.center)) {
-        return false;
-      }
-    } else if (field == 3 && wire == 1) {
-      double diameter = 0.0;
-      if (!r.readDouble(diameter)) {
-        return false;
-      }
-      out.radius = diameter * 0.5;
-    } else if (field == 4 && wire == 1) {
-      if (!r.readDouble(out.thickness)) {
-        return false;
-      }
-    } else if (field == 5 && wire == 2) {
-      uint64_t c_len = 0;
-      if (!r.readVarint(c_len)) {
-        return false;
-      }
-      if (!decodeColor(r, c_len, out.fill_color)) {
-        return false;
-      }
-    } else if (field == 6 && wire == 2) {
-      uint64_t c_len = 0;
-      if (!r.readVarint(c_len)) {
-        return false;
-      }
-      if (!decodeColor(r, c_len, out.color)) {
-        return false;
-      }
-    } else {
-      if (!r.skipField(wire)) {
-        return false;
-      }
+      case 4:
+        if (tag.type == WireType::kFixed64) {
+          if (!reader.readDouble(out.thickness)) {
+            return false;
+          }
+          continue;
+        }
+        break;
+      case 5:
+        if (tag.type == WireType::kLengthDelimited) {
+          if (!readColorMessage(reader, out.fill_color)) {
+            return false;
+          }
+          continue;
+        }
+        break;
+      case 6:
+        if (tag.type == WireType::kLengthDelimited) {
+          if (!readColorMessage(reader, out.color)) {
+            return false;
+          }
+          continue;
+        }
+        break;
+      default:
+        break;
+    }
+
+    if (!reader.skip(tag.type)) {
+      return false;
     }
   }
   return true;
 }
 
-// Decode one foxglove.TextAnnotation sub-message:
-//   timestamp(1)=Time, position(2)=Point2, text(3)=string, font_size(4)=double,
-//   text_color(5)=Color, background_color(6)=Color  (background_color skipped; not
-//   present in pj_base/builtin/ImageAnnotations.h::sdk::TextAnnotation).
-bool decodeTextAnnotation(Reader& r, size_t len, TextAnnotation& out) {
-  const uint8_t* sub_end = r.p + len;
-  if (sub_end > r.end) {
-    return false;
-  }
+bool decodeTextAnnotation(Reader& reader, TextAnnotation& out) {
   out.color = {255, 255, 255, 255};
   out.font_size = 14.0;
-  while (r.p < sub_end) {
-    uint64_t tag = 0;
-    if (!r.readVarint(tag)) {
+
+  while (!reader.eof()) {
+    Tag tag;
+    if (!reader.readTag(tag)) {
       return false;
     }
-    uint32_t field = static_cast<uint32_t>(tag >> 3);
-    uint32_t wire = static_cast<uint32_t>(tag & 0x7u);
-    if (field == 2 && wire == 2) {
-      uint64_t p_len = 0;
-      if (!r.readVarint(p_len)) {
-        return false;
-      }
-      if (!decodePoint2(r, p_len, out.position)) {
-        return false;
-      }
-    } else if (field == 3 && wire == 2) {
-      uint64_t s_len = 0;
-      if (!r.readVarint(s_len)) {
-        return false;
-      }
-      if (s_len > r.remaining()) {
-        return false;
-      }
-      out.text.assign(reinterpret_cast<const char*>(r.p), static_cast<size_t>(s_len));
-      r.p += s_len;
-    } else if (field == 4 && wire == 1) {
-      if (!r.readDouble(out.font_size)) {
-        return false;
-      }
-    } else if (field == 5 && wire == 2) {
-      uint64_t c_len = 0;
-      if (!r.readVarint(c_len)) {
-        return false;
-      }
-      if (!decodeColor(r, c_len, out.color)) {
-        return false;
-      }
-    } else {
-      if (!r.skipField(wire)) {
-        return false;
-      }
+
+    switch (tag.field) {
+      case 2:
+        if (tag.type == WireType::kLengthDelimited) {
+          if (!readPoint2Message(reader, out.position)) {
+            return false;
+          }
+          continue;
+        }
+        break;
+      case 3:
+        if (tag.type == WireType::kLengthDelimited) {
+          if (!reader.readString(out.text)) {
+            return false;
+          }
+          continue;
+        }
+        break;
+      case 4:
+        if (tag.type == WireType::kFixed64) {
+          if (!reader.readDouble(out.font_size)) {
+            return false;
+          }
+          continue;
+        }
+        break;
+      case 5:
+        if (tag.type == WireType::kLengthDelimited) {
+          if (!readColorMessage(reader, out.color)) {
+            return false;
+          }
+          continue;
+        }
+        break;
+      default:
+        break;
+    }
+
+    if (!reader.skip(tag.type)) {
+      return false;
     }
   }
   return true;
@@ -420,59 +315,63 @@ bool decodeTextAnnotation(Reader& r, size_t len, TextAnnotation& out) {
 
 Expected<sdk::ImageAnnotations> deserializeImageAnnotations(const uint8_t* data, size_t size) {
   if (data == nullptr || size == 0) {
-    return unexpected(std::string("Protobuf ImageAnnotations: empty buffer"));
-  }
-  Reader r{data, data + size};
-
-  sdk::ImageAnnotations ia;
-  while (!r.eof()) {
-    uint64_t tag = 0;
-    if (!r.readVarint(tag)) {
-      return unexpected(std::string("Protobuf ImageAnnotations: bad tag"));
-    }
-    uint32_t field = static_cast<uint32_t>(tag >> 3);
-    uint32_t wire = static_cast<uint32_t>(tag & 0x7u);
-
-    if (field == 2 && wire == 2) {
-      uint64_t pa_len = 0;
-      if (!r.readVarint(pa_len)) {
-        return unexpected(std::string("Protobuf ImageAnnotations: bad PointsAnnotation length"));
-      }
-      PointsAnnotation pa;
-      pa.color = {0, 255, 0, 255};
-      pa.thickness = 2.0;
-      if (!decodePointsAnnotation(r, pa_len, pa)) {
-        return unexpected(std::string("Protobuf ImageAnnotations: PointsAnnotation decode failed"));
-      }
-      ia.points.push_back(std::move(pa));
-    } else if (field == 1 && wire == 2) {
-      uint64_t ca_len = 0;
-      if (!r.readVarint(ca_len)) {
-        return unexpected(std::string("Protobuf ImageAnnotations: bad CircleAnnotation length"));
-      }
-      CircleAnnotation ca;
-      if (!decodeCircleAnnotation(r, ca_len, ca)) {
-        return unexpected(std::string("Protobuf ImageAnnotations: CircleAnnotation decode failed"));
-      }
-      ia.circles.push_back(std::move(ca));
-    } else if (field == 3 && wire == 2) {
-      uint64_t ta_len = 0;
-      if (!r.readVarint(ta_len)) {
-        return unexpected(std::string("Protobuf ImageAnnotations: bad TextAnnotation length"));
-      }
-      TextAnnotation ta;
-      if (!decodeTextAnnotation(r, ta_len, ta)) {
-        return unexpected(std::string("Protobuf ImageAnnotations: TextAnnotation decode failed"));
-      }
-      ia.texts.push_back(std::move(ta));
-    } else {
-      if (!r.skipField(wire)) {
-        return unexpected(std::string("Protobuf ImageAnnotations: skip failed"));
-      }
-    }
+    return unexpected(std::string("ImageAnnotations wire: empty buffer"));
   }
 
-  return ia;
+  Reader reader(data, size);
+  sdk::ImageAnnotations annotations;
+
+  while (!reader.eof()) {
+    Tag tag;
+    if (!reader.readTag(tag)) {
+      return unexpected(std::string("ImageAnnotations wire: bad tag"));
+    }
+
+    if (tag.type != WireType::kLengthDelimited) {
+      if (!reader.skip(tag.type)) {
+        return unexpected(std::string("ImageAnnotations wire: skip failed"));
+      }
+      continue;
+    }
+
+    Reader nested;
+    if (!reader.readMessage(nested)) {
+      return unexpected(std::string("ImageAnnotations wire: bad nested message length"));
+    }
+
+    switch (tag.field) {
+      case 1: {
+        CircleAnnotation circle;
+        if (!decodeCircleAnnotation(nested, circle)) {
+          return unexpected(std::string("ImageAnnotations wire: CircleAnnotation decode failed"));
+        }
+        annotations.circles.push_back(std::move(circle));
+        break;
+      }
+      case 2: {
+        PointsAnnotation points;
+        points.color = {0, 255, 0, 255};
+        points.thickness = 2.0;
+        if (!decodePointsAnnotation(nested, points)) {
+          return unexpected(std::string("ImageAnnotations wire: PointsAnnotation decode failed"));
+        }
+        annotations.points.push_back(std::move(points));
+        break;
+      }
+      case 3: {
+        TextAnnotation text;
+        if (!decodeTextAnnotation(nested, text)) {
+          return unexpected(std::string("ImageAnnotations wire: TextAnnotation decode failed"));
+        }
+        annotations.texts.push_back(std::move(text));
+        break;
+      }
+      default:
+        break;
+    }
+  }
+
+  return annotations;
 }
 
 }  // namespace PJ

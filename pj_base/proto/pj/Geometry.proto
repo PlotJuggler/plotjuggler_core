@@ -1,0 +1,64 @@
+// PlotJuggler canonical geometry protobuf schemas.
+// Field layout adapted from Foxglove SDK schemas (MIT License,
+// Copyright (c) Foxglove Technologies Inc).
+
+syntax = "proto3";
+
+package PJ;
+
+// A point representing a position in 2D space
+message Point2 {
+  // x coordinate position
+  double x = 1;
+
+  // y coordinate position
+  double y = 2;
+}
+
+// A point representing a position in 3D space
+message Point3 {
+  // x coordinate position
+  double x = 1;
+
+  // y coordinate position
+  double y = 2;
+
+  // z coordinate position
+  double z = 3;
+}
+
+// A vector in 2D space that represents a direction only
+message Vector2 {
+  // x component
+  double x = 1;
+
+  // y component
+  double y = 2;
+}
+
+// A vector in 3D space that represents a direction only
+message Vector3 {
+  // x component
+  double x = 1;
+
+  // y component
+  double y = 2;
+
+  // z component
+  double z = 3;
+}
+
+// A quaternion representing a rotation in 3D space
+message Quaternion {
+  // x value
+  double x = 1;
+
+  // y value
+  double y = 2;
+
+  // z value
+  double z = 3;
+
+  // w value
+  double w = 4;
+}

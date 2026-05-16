@@ -1,0 +1,16 @@
+// PlotJuggler canonical metadata protobuf schema.
+// Field layout adapted from Foxglove SDK schemas (MIT License,
+// Copyright (c) Foxglove Technologies Inc).
+
+syntax = "proto3";
+
+package PJ;
+
+// A key with its associated value
+message KeyValuePair {
+  // Key
+  string key = 1;
+
+  // Value
+  string value = 2;
+}

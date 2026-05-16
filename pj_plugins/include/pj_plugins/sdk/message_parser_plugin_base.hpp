@@ -40,7 +40,7 @@ namespace sdk {
 /// schemas that produce only scalars, only objects, or that the plugin
 /// recognizes but routes through the legacy parse() path.
 struct SchemaHandler {
-  BuiltinObjectKind object_kind = BuiltinObjectKind::kNone;
+  BuiltinObjectType object_type = BuiltinObjectType::kNone;
 
   /// Scalar route: returns owned column data — no anchor needed because the
   /// returned vector and any string_views inside it are materialized by the
@@ -218,7 +218,7 @@ class MessageParserPluginBase {
   virtual sdk::SchemaClassification classifySchema(std::string_view type_name, Span<const uint8_t> schema) const final {
     (void)schema;
     if (const auto* h = findSchemaHandler(type_name)) {
-      return {h->object_kind};
+      return {h->object_type};
     }
     return {};
   }

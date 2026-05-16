@@ -109,18 +109,18 @@ class MessageParserHandle {
   /// the plugin doesn't expose classify_schema (older protocol header)
   /// returns kNone, matching the host contract documented in
   /// message_parser_protocol.h.
-  [[nodiscard]] sdk::BuiltinObjectKind classifySchema(std::string_view type_name, Span<const uint8_t> schema) const {
+  [[nodiscard]] sdk::BuiltinObjectType classifySchema(std::string_view type_name, Span<const uint8_t> schema) const {
     if (!PJ_HAS_TAIL_SLOT(PJ_message_parser_vtable_t, vt_, classify_schema)) {
-      return sdk::BuiltinObjectKind::kNone;
+      return sdk::BuiltinObjectType::kNone;
     }
     PJ_string_view_t tn{type_name.data(), type_name.size()};
     PJ_bytes_view_t sc{schema.data(), schema.size()};
     PJ_schema_classification_t out{};
     PJ_error_t err{};
     if (!vt_->classify_schema(ctx_, tn, sc, &out, &err)) {
-      return sdk::BuiltinObjectKind::kNone;
+      return sdk::BuiltinObjectType::kNone;
     }
-    return static_cast<sdk::BuiltinObjectKind>(out.object_kind);
+    return static_cast<sdk::BuiltinObjectType>(out.object_type);
   }
 
   /// Query a plugin-exposed extension by reverse-DNS id. Tail-slot gated.

@@ -43,7 +43,7 @@ CLAUDE.md -> relevant docs -> code
 | Document | Content |
 |----------|---------|
 | `docs/builtin_type.md` | Canonical builtin object types used as the shim between third-party schemas and PlotJuggler internals |
-| `docs/image_annotations_format.md` | Canonical `foxglove.ImageAnnotations` wire format for builtin `ImageAnnotations` payloads |
+| `docs/image_annotations_format.md` | Canonical `PJ.ImageAnnotations` wire format for builtin `ImageAnnotations` payloads |
 | `docs/cpp_design_recommendations.md` | C++ style, error handling, API design guidelines |
 | `docs/toolbox-porting-gap-analysis.md` | SDK gaps identified when porting PJ3 toolboxes (being addressed) |
 

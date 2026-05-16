@@ -6,8 +6,10 @@
 #pragma once
 
 #include <cstdint>
+#include <magic_enum/magic_enum.hpp>
 #include <optional>
 #include <string>
+#include <string_view>
 
 #include "pj_base/buffer_anchor.hpp"
 #include "pj_base/span.hpp"
@@ -15,6 +17,44 @@
 
 namespace PJ {
 namespace sdk {
+
+/// Optional vocabulary of canonical image encoding strings.
+///
+/// `Image::encoding` is an open std::string; producers and consumers are not
+/// required to use the values listed here. This enum documents the encodings
+/// the SDK recognizes and provides magic_enum-backed round-trip helpers.
+// NOLINTBEGIN(readability-identifier-naming)
+// Enumerator names are deliberately the canonical encoding strings, not the
+// project's kCamelCase constants.
+enum class CommonImageEncoding : uint8_t {
+  // Raw pixel layouts
+  rgb8,    ///< 3 bytes/pixel, R-G-B order.
+  rgba8,   ///< 4 bytes/pixel, R-G-B-A order.
+  bgr8,    ///< 3 bytes/pixel, B-G-R order.
+  bgra8,   ///< 4 bytes/pixel, B-G-R-A order.
+  mono8,   ///< 1 byte/pixel, grayscale.
+  mono16,  ///< 2 bytes/pixel, grayscale.
+  // Compressed wire formats
+  jpeg,
+  png,
+  qoi,
+  // ROS-specific
+  compressedDepth,  ///< PNG payload + depth quantization range in extras.
+};
+// NOLINTEND(readability-identifier-naming)
+
+/// Canonical string for an encoding value. Same as
+/// magic_enum::enum_name(e), but kept as a one-liner for callers that
+/// don't want to know about magic_enum.
+[[nodiscard]] inline constexpr std::string_view name(CommonImageEncoding e) noexcept {
+  return magic_enum::enum_name(e);
+}
+
+/// Parse an encoding string into the enum. Returns nullopt if the string is
+/// not one of the documented vocabulary entries.
+[[nodiscard]] inline constexpr std::optional<CommonImageEncoding> parseImageEncoding(std::string_view s) noexcept {
+  return magic_enum::enum_cast<CommonImageEncoding>(s);
+}
 
 /// Image. The `encoding` string distinguishes raw pixel layouts from
 /// compressed wire formats; the producer decides which.
@@ -35,9 +75,8 @@ namespace sdk {
 ///     `compressed_depth_max` carry the quantization range needed to map
 ///     the grayscale back to depth values.
 ///
-/// See pj_base/builtin/CommonImageEncoding.h for the documented
-/// vocabulary of canonical encoding strings, with helpers to parse and
-/// emit them.
+/// `CommonImageEncoding` above defines the documented vocabulary of canonical
+/// encoding strings, with helpers to parse and emit them.
 ///
 /// `anchor` keeps the underlying buffer alive — the producer may have made
 /// `data` a view into the source payload (zero-copy) or into a freshly

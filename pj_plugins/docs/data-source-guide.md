@@ -840,8 +840,8 @@ See `pj_plugins/docs/dialog-plugin-guide.md` for the dialog protocol itself.
 
 ## Builtin-object pipeline (PR #86) — `pushMessage` + FetchMessageData
 
-For sources that fan out raw bytes to a `MessageParser` (MCAP, foxglove
-bridge, future ROS-bag streamers), the runtime host exposes a v2 ingest
+For sources that fan out raw bytes to a `MessageParser` (MCAP, topic
+bridges, future ROS-bag streamers), the runtime host exposes a v2 ingest
 slot that takes a deferred callable instead of bytes. The plugin builds
 a closure that knows how to materialise the payload, hands it to the
 host, and stays policy-agnostic:

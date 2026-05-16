@@ -143,7 +143,7 @@ inline bool MessageParserPluginBase::trampoline_classify_schema(
     auto name_sv = type_name.data == nullptr ? std::string_view{} : std::string_view(type_name.data, type_name.size);
     Span<const uint8_t> schema_span(schema.data, schema.size);
     const auto cls = self->classifySchema(name_sv, schema_span);
-    out_classification->object_kind = static_cast<uint16_t>(cls.object_kind);
+    out_classification->object_type = static_cast<uint16_t>(cls.object_type);
     out_classification->reserved = 0;
     return true;
   } catch (const std::exception& e) {

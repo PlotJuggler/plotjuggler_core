@@ -509,7 +509,7 @@ which wraps any callable returning `PayloadView` (preferred, zero-copy)
 or `std::vector<uint8_t>` into the C ABI struct.
 
 The host orchestrates dispatch through an `ObjectIngestPolicyResolver`
-that cascades `topic > source > kind > default`:
+that cascades `topic > source > type > default`:
 
 - `kEager`: invoke `fetchMessageData` now, run `parseScalars` +
   `parseObject`, persist via `ObjectStore::pushOwned`.
@@ -524,7 +524,7 @@ Parsers participate via three optional virtual entry points on
 `SchemaHandler` table. The shape that crosses both ABI boundaries (C
 struct on the DataSource side, in-process variant on the parser side)
 is opaque-payload-by-default: `BuiltinObject` is `std::any`, so
-appending a new builtin kind does not change the public type and
+appending a new builtin type does not change the public type and
 forward compatibility is automatic. Concrete builtins live under
 `pj_base/builtin/` (`Image`, `DepthImage`, `PointCloud`,
 `ImageAnnotations`); see `docs/builtin_type.md` for the type catalog and

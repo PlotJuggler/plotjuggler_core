@@ -6,7 +6,7 @@
  *
  * The DataSource is policy-agnostic: it only fabricates a callable that
  * produces the raw payload bytes when invoked. The host decides — based on
- * the policy resolved for (source_id, topic, kind) — whether to invoke the
+ * the policy resolved for (source_id, topic, type) — whether to invoke the
  * callable immediately (parse and store now), invoke it once for scalars
  * and again on each pull, or never invoke it during ingest and only on
  * consumer pulls.
@@ -52,18 +52,18 @@ enum class ObjectIngestPolicy : uint8_t {
 
 /// Resolver with hierarchical overrides:
 ///
-///   topic > data_source > kind > default
+///   topic > data_source > type > default
 ///
 /// The application sets the levels it cares about during setup; the host
-/// queries resolve(source_id, topic, kind) for each message. The resolver
+/// queries resolve(source_id, topic, type) for each message. The resolver
 /// is intentionally an opaque carrier — its policy decisions are the
 /// host's concern, not the DataSource plugin's.
 ///
 /// Typical setup:
 ///
 ///   resolver.setDefault(kLazyObjectsEagerScalars);
-///   resolver.setForKind(BuiltinObjectKind::kCompressedImage, kPureLazy);
-///   resolver.setForKind(BuiltinObjectKind::kPointCloud, kPureLazy);
+///   resolver.setForType(BuiltinObjectType::kImage, kPureLazy);
+///   resolver.setForType(BuiltinObjectType::kPointCloud, kPureLazy);
 ///   // kImage stays at kLazyObjectsEagerScalars: width/height/encoding columns are useful
 ///
 class ObjectIngestPolicyResolver {
@@ -73,10 +73,10 @@ class ObjectIngestPolicyResolver {
     default_ = policy;
   }
 
-  /// Override the default for a specific canonical object kind. Useful when
+  /// Override the default for a specific canonical object type. Useful when
   /// (e.g.) all PointCloud2 topics should be lazy regardless of source.
-  void setForKind(BuiltinObjectKind kind, ObjectIngestPolicy policy) {
-    by_kind_[kind] = policy;
+  void setForType(BuiltinObjectType type, ObjectIngestPolicy policy) {
+    by_type_[type] = policy;
   }
 
   /// Override the default for all topics of a specific DataSource, keyed by
@@ -90,18 +90,18 @@ class ObjectIngestPolicyResolver {
     by_topic_[std::string(topic_name)] = policy;
   }
 
-  /// Resolve the policy for a given (source_id, topic_name, object_kind).
-  /// Precedence: topic > source > kind > default. The first match wins —
+  /// Resolve the policy for a given (source_id, topic_name, object_type).
+  /// Precedence: topic > source > type > default. The first match wins —
   /// no merging or composition between levels.
   [[nodiscard]] ObjectIngestPolicy resolve(
-      std::string_view source_id, std::string_view topic_name, BuiltinObjectKind object_kind) const {
+      std::string_view source_id, std::string_view topic_name, BuiltinObjectType object_type) const {
     if (auto it = by_topic_.find(std::string(topic_name)); it != by_topic_.end()) {
       return it->second;
     }
     if (auto it = by_source_.find(std::string(source_id)); it != by_source_.end()) {
       return it->second;
     }
-    if (auto it = by_kind_.find(object_kind); it != by_kind_.end()) {
+    if (auto it = by_type_.find(object_type); it != by_type_.end()) {
       return it->second;
     }
     return default_;
@@ -109,7 +109,7 @@ class ObjectIngestPolicyResolver {
 
  private:
   ObjectIngestPolicy default_ = ObjectIngestPolicy::kLazyObjectsEagerScalars;
-  std::unordered_map<BuiltinObjectKind, ObjectIngestPolicy> by_kind_;
+  std::unordered_map<BuiltinObjectType, ObjectIngestPolicy> by_type_;
   std::unordered_map<std::string, ObjectIngestPolicy> by_source_;
   std::unordered_map<std::string, ObjectIngestPolicy> by_topic_;
 };

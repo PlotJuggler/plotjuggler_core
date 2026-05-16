@@ -1,0 +1,37 @@
+// PlotJuggler canonical image annotation protobuf schema.
+// Field layout adapted from Foxglove SDK schemas (MIT License,
+// Copyright (c) Foxglove Technologies Inc).
+
+syntax = "proto3";
+
+import "pj/Color.proto";
+import "pj/Geometry.proto";
+import "pj/KeyValuePair.proto";
+import "google/protobuf/timestamp.proto";
+
+package PJ;
+
+// A circle annotation on a 2D image
+message CircleAnnotation {
+  // Timestamp of circle
+  google.protobuf.Timestamp timestamp = 1;
+
+  // Center of the circle in 2D image coordinates (pixels).
+  // The coordinate uses the top-left corner of the top-left pixel of the image as the origin.
+  PJ.Point2 position = 2;
+
+  // Circle diameter in pixels
+  double diameter = 3;
+
+  // Line thickness in pixels
+  double thickness = 4;
+
+  // Fill color
+  PJ.Color fill_color = 5;
+
+  // Outline color
+  PJ.Color outline_color = 6;
+
+  // Additional user-provided metadata associated with this annotation. Keys must be unique.
+  repeated PJ.KeyValuePair metadata = 7;
+}

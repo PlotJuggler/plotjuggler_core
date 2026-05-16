@@ -492,7 +492,7 @@ parseObject(PJ::Timestamp ts, PJ::sdk::PayloadView payload) override;
 ```
 
 - `classifySchema` is the *a-priori* declaration — given a type name +
-  schema bytes, announce which `BuiltinObjectKind` (`kImage`,
+  schema bytes, announce which `BuiltinObjectType` (`kImage`,
   `kDepthImage`, `kPointCloud`, `kImageAnnotations`, `kNone`) this
   schema produces. The host consults the answer **before** it ever sees
   the payload, so it can pick the right `ObjectIngestPolicy` for the
@@ -507,7 +507,7 @@ parseObject(PJ::Timestamp ts, PJ::sdk::PayloadView payload) override;
 Builtin types live under `pj_base/builtin/`, one header per
 type. `sdk::Image` carries an open-ended `std::string encoding`
 (`"rgb8"`, `"bgr8"`, `"mono8"`, `"jpeg"`, `"png"`, `"compressedDepth"`,
-…) so raw and compressed images share a single type. New kinds are
+…) so raw and compressed images share a single type. New types are
 appended without changing the `BuiltinObject` type (its `std::any`
 nature is forward-compatible by construction).
 

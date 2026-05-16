@@ -125,7 +125,7 @@ typedef struct PJ_message_parser_vtable_t {
    * @p out_classification by value (POD).
    *
    * NULL or absent (struct_size too small) → host treats as
-   * PJ_BUILTIN_OBJECT_KIND_NONE.
+   * PJ_BUILTIN_OBJECT_TYPE_NONE.
    *
    * Pure-functional contract: no host side-effects.
    */

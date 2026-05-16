@@ -1,12 +1,14 @@
 #include "pj_base/builtin/image_annotations_codec.h"
 
 #include <cstdint>
-#include <cstring>
 #include <vector>
+
+#include "protobuf_wire.h"
 
 namespace PJ {
 namespace {
 
+using builtin_wire::Writer;
 using sdk::AnnotationTopology;
 using sdk::CircleAnnotation;
 using sdk::ColorRGBA;
@@ -15,76 +17,20 @@ using sdk::Point2;
 using sdk::PointsAnnotation;
 using sdk::TextAnnotation;
 
-// Hand-rolled Protobuf wire emission. Mirror of the reader in
-// image_annotations_decoder.cpp.
-//
-// Wire format spec: https://protobuf.dev/programming-guides/encoding/
-// Wire types we emit: VARINT(0), I64(1), LEN(2). I32(5) is unused here.
-//
-// Sub-messages are length-delimited: write the body to a scratch buffer, then
-// write the parent's tag + length + body. Bodies are bounded (at most a few hundred
-// bytes for typical annotations), so the extra allocation is fine.
-
-void writeVarint(std::vector<uint8_t>& out, uint64_t v) {
-  while (v >= 0x80u) {
-    out.push_back(static_cast<uint8_t>((v & 0x7Fu) | 0x80u));
-    v >>= 7;
-  }
-  out.push_back(static_cast<uint8_t>(v));
+void writePoint2(Writer& writer, const Point2& point) {
+  writer.doubleField(1, point.x);
+  writer.doubleField(2, point.y);
 }
 
-void writeTag(std::vector<uint8_t>& out, uint32_t field, uint32_t wire) {
-  writeVarint(out, (static_cast<uint64_t>(field) << 3) | (wire & 0x7u));
+void writeColor(Writer& writer, const ColorRGBA& color) {
+  writer.doubleField(1, static_cast<double>(color.r) / 255.0);
+  writer.doubleField(2, static_cast<double>(color.g) / 255.0);
+  writer.doubleField(3, static_cast<double>(color.b) / 255.0);
+  writer.doubleField(4, static_cast<double>(color.a) / 255.0);
 }
 
-void writeDouble(std::vector<uint8_t>& out, double v) {
-  uint64_t bits = 0;
-  std::memcpy(&bits, &v, 8);
-  for (int i = 0; i < 8; ++i) {
-    out.push_back(static_cast<uint8_t>((bits >> (8 * i)) & 0xFFu));
-  }
-}
-
-void writeLenDelim(std::vector<uint8_t>& out, const std::vector<uint8_t>& body) {
-  writeVarint(out, body.size());
-  out.insert(out.end(), body.begin(), body.end());
-}
-
-void writeString(std::vector<uint8_t>& out, std::string_view s) {
-  writeVarint(out, s.size());
-  out.insert(out.end(), s.begin(), s.end());
-}
-
-// foxglove.Point2 { 1: double x, 2: double y }
-std::vector<uint8_t> buildPoint2(const Point2& p) {
-  std::vector<uint8_t> body;
-  writeTag(body, 1, 1);
-  writeDouble(body, p.x);
-  writeTag(body, 2, 1);
-  writeDouble(body, p.y);
-  return body;
-}
-
-// foxglove.Color { 1: double r, 2: double g, 3: double b, 4: double a }
-// Components in [0, 1]. We hold uint8 [0, 255] and convert by v/255.0.
-std::vector<uint8_t> buildColor(const ColorRGBA& c) {
-  std::vector<uint8_t> body;
-  writeTag(body, 1, 1);
-  writeDouble(body, static_cast<double>(c.r) / 255.0);
-  writeTag(body, 2, 1);
-  writeDouble(body, static_cast<double>(c.g) / 255.0);
-  writeTag(body, 3, 1);
-  writeDouble(body, static_cast<double>(c.b) / 255.0);
-  writeTag(body, 4, 1);
-  writeDouble(body, static_cast<double>(c.a) / 255.0);
-  return body;
-}
-
-// AnnotationTopology -> Foxglove enum. Inverse of `mapTopology` in the reader.
-// kPoints=1, kLineLoop=2, kLineStrip=3, kLineList=4. The Foxglove enum reserves
-// 0 for UNKNOWN; we never emit 0.
-uint32_t topologyToEnum(AnnotationTopology t) {
-  switch (t) {
+uint32_t topologyToEnum(AnnotationTopology topology) {
+  switch (topology) {
     case AnnotationTopology::kPoints:
       return 1;
     case AnnotationTopology::kLineLoop:
@@ -94,111 +40,55 @@ uint32_t topologyToEnum(AnnotationTopology t) {
     case AnnotationTopology::kLineList:
       return 4;
   }
-  return 1;  // unreachable; defensive
+  return 1;
 }
 
-// foxglove.PointsAnnotation
-//   { 2: type (varint enum), 3: repeated Point2, 4: outline_color,
-//     5: repeated outline_colors, 6: fill_color, 7: thickness (double) }
-std::vector<uint8_t> buildPointsAnnotation(const PointsAnnotation& pa) {
-  std::vector<uint8_t> body;
+void writePointsAnnotation(Writer& writer, const PointsAnnotation& points) {
+  writer.varint(2, topologyToEnum(points.topology));
 
-  writeTag(body, 2, 0);
-  writeVarint(body, topologyToEnum(pa.topology));
-
-  for (const auto& pt : pa.points) {
-    writeTag(body, 3, 2);
-    writeLenDelim(body, buildPoint2(pt));
+  for (const auto& point : points.points) {
+    writer.message(3, [&](Writer& nested) { writePoint2(nested, point); });
   }
 
-  writeTag(body, 4, 2);
-  writeLenDelim(body, buildColor(pa.color));
+  writer.message(4, [&](Writer& nested) { writeColor(nested, points.color); });
 
-  // Per-vertex colors: emit one field-5 entry per element. An empty `colors`
-  // vector emits zero entries; the reader pushes_back on
-  // every field-5 occurrence, so emitting an empty Color would smuggle a
-  // default-constructed entry into out.colors.
-  for (const auto& c : pa.colors) {
-    writeTag(body, 5, 2);
-    writeLenDelim(body, buildColor(c));
+  for (const auto& color : points.colors) {
+    writer.message(5, [&](Writer& nested) { writeColor(nested, color); });
   }
 
-  writeTag(body, 6, 2);
-  writeLenDelim(body, buildColor(pa.fill_color));
-
-  writeTag(body, 7, 1);
-  writeDouble(body, pa.thickness);
-
-  return body;
+  writer.message(6, [&](Writer& nested) { writeColor(nested, points.fill_color); });
+  writer.doubleField(7, points.thickness);
 }
 
-// foxglove.CircleAnnotation
-//   { 2: position (Point2), 3: diameter (double), 4: thickness (double),
-//     5: fill_color, 6: outline_color }
-// Note: our struct holds `radius`; we emit `diameter = radius * 2`.
-std::vector<uint8_t> buildCircleAnnotation(const CircleAnnotation& ca) {
-  std::vector<uint8_t> body;
-
-  writeTag(body, 2, 2);
-  writeLenDelim(body, buildPoint2(ca.center));
-
-  writeTag(body, 3, 1);
-  writeDouble(body, ca.radius * 2.0);
-
-  writeTag(body, 4, 1);
-  writeDouble(body, ca.thickness);
-
-  writeTag(body, 5, 2);
-  writeLenDelim(body, buildColor(ca.fill_color));
-
-  writeTag(body, 6, 2);
-  writeLenDelim(body, buildColor(ca.color));
-
-  return body;
+void writeCircleAnnotation(Writer& writer, const CircleAnnotation& circle) {
+  writer.message(2, [&](Writer& nested) { writePoint2(nested, circle.center); });
+  writer.doubleField(3, circle.radius * 2.0);
+  writer.doubleField(4, circle.thickness);
+  writer.message(5, [&](Writer& nested) { writeColor(nested, circle.fill_color); });
+  writer.message(6, [&](Writer& nested) { writeColor(nested, circle.color); });
 }
 
-// foxglove.TextAnnotation
-//   { 2: position (Point2), 3: text (string), 4: font_size (double),
-//     5: text_color }
-// background_color (field 6) is intentionally not emitted. The C++ struct has
-// no equivalent field. The reader skips it on read.
-std::vector<uint8_t> buildTextAnnotation(const TextAnnotation& ta) {
-  std::vector<uint8_t> body;
-
-  writeTag(body, 2, 2);
-  writeLenDelim(body, buildPoint2(ta.position));
-
-  writeTag(body, 3, 2);
-  writeString(body, ta.text);
-
-  writeTag(body, 4, 1);
-  writeDouble(body, ta.font_size);
-
-  writeTag(body, 5, 2);
-  writeLenDelim(body, buildColor(ta.color));
-
-  return body;
+void writeTextAnnotation(Writer& writer, const TextAnnotation& text) {
+  writer.message(2, [&](Writer& nested) { writePoint2(nested, text.position); });
+  writer.string(3, text.text);
+  writer.doubleField(4, text.font_size);
+  writer.message(5, [&](Writer& nested) { writeColor(nested, text.color); });
 }
 
 }  // namespace
 
-// foxglove.ImageAnnotations { 1: repeated CircleAnnotation,
-//                             2: repeated PointsAnnotation,
-//                             3: repeated TextAnnotation }
-std::vector<uint8_t> serializeImageAnnotations(const sdk::ImageAnnotations& ia) {
+std::vector<uint8_t> serializeImageAnnotations(const ImageAnnotations& annotations) {
   std::vector<uint8_t> out;
+  Writer writer(out);
 
-  for (const auto& c : ia.circles) {
-    writeTag(out, 1, 2);
-    writeLenDelim(out, buildCircleAnnotation(c));
+  for (const auto& circle : annotations.circles) {
+    writer.message(1, [&](Writer& nested) { writeCircleAnnotation(nested, circle); });
   }
-  for (const auto& p : ia.points) {
-    writeTag(out, 2, 2);
-    writeLenDelim(out, buildPointsAnnotation(p));
+  for (const auto& points : annotations.points) {
+    writer.message(2, [&](Writer& nested) { writePointsAnnotation(nested, points); });
   }
-  for (const auto& t : ia.texts) {
-    writeTag(out, 3, 2);
-    writeLenDelim(out, buildTextAnnotation(t));
+  for (const auto& text : annotations.texts) {
+    writer.message(3, [&](Writer& nested) { writeTextAnnotation(nested, text); });
   }
 
   return out;
