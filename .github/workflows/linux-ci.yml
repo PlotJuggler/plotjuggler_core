@@ -72,10 +72,11 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          # Hash every conanfile.txt under the tree (top-level today,
-          # pj_ported_plugins/ in the near future) so the key invalidates
-          # whenever any of them changes.
-          hash=$(find . -name conanfile.txt -not -path './build/*' -not -path './.git/*' \
+          # Hash every conanfile.{py,txt} under the tree so the key invalidates
+          # whenever any of them changes. The top-level is now conanfile.py
+          # (Conan recipe); subtrees like pj_ported_plugins/ still use .txt.
+          hash=$(find . \( -name 'conanfile.py' -o -name 'conanfile.txt' \) \
+                  -not -path './build/*' -not -path './.git/*' \
                   -print0 | sort -z | xargs -0 sha256sum | sha256sum | cut -c1-16)
           owner="${GITHUB_REPOSITORY_OWNER,,}"
           # Build-type suffix leaves room for a future debug-asan variant

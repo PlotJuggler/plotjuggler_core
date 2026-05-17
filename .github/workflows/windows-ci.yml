@@ -74,7 +74,7 @@ jobs:
         id: conan_cache
         shell: pwsh
         run: |
-          $hash = (Get-FileHash conanfile.txt -Algorithm SHA256).Hash.Substring(0, 16).ToLower()
+          $hash = (Get-FileHash conanfile.py -Algorithm SHA256).Hash.Substring(0, 16).ToLower()
           $owner = "${{ github.repository_owner }}".ToLower()
           $tag = "ghcr.io/$owner/plotjuggler-core-conan-cache:windows-msvc-$hash"
           "tag=$tag" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
