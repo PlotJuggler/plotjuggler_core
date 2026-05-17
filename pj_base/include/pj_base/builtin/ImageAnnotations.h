@@ -1,3 +1,15 @@
+/**
+ * @file ImageAnnotations.h
+ * @brief Vector primitives (points, lines, circles, text) overlaid on a
+ *        specific image at a specific timestamp.
+ *
+ * ImageAnnotations is the 2D overlay builtin. Unlike Image / DepthImage /
+ * PointCloud — which carry potentially-megabyte buffers and use the
+ * BufferAnchor zero-copy pattern — annotation data is small (a few
+ * hundred bytes typically) so the type owns its contents via std::vector
+ * outright. Eager ingestion is the natural default; no anchor lifetime
+ * concerns to worry about.
+ */
 #pragma once
 
 #include <cstdint>
@@ -7,9 +19,9 @@
 #include "pj_base/types.hpp"
 
 namespace PJ {
+namespace sdk {
 
-/// Vertex topology for vector annotations. See `docs/ARCHITECTURE.md`
-/// for the full type catalog and wire format spec.
+/// Vertex topology for vector annotations.
 enum class AnnotationTopology : uint8_t {
   kPoints,     ///< Each point is independent.
   kLineList,   ///< Consecutive pairs form segments (0-1, 2-3, ...).
@@ -69,13 +81,13 @@ struct TextAnnotation {
 
 /// All annotations for one image at one timestamp. References its base image
 /// explicitly via `image_topic` so the renderer knows which frame to overlay.
-struct ImageAnnotation {
+struct ImageAnnotations {
   Timestamp timestamp = 0;
   std::string image_topic;
   std::vector<PointsAnnotation> points;
   std::vector<CircleAnnotation> circles;
   std::vector<TextAnnotation> texts;
-  bool operator==(const ImageAnnotation&) const = default;
+  bool operator==(const ImageAnnotations&) const = default;
 
   /// True if no primitives are present.
   [[nodiscard]] bool empty() const noexcept {
@@ -83,17 +95,5 @@ struct ImageAnnotation {
   }
 };
 
-/// Top-level output of a SceneDecoder. Wraps a list of ImageAnnotations for
-/// this iteration; future iterations will extend with 3D ScenePrimitive (§7),
-/// Grid (§9), etc.
-struct SceneFrame {
-  Timestamp timestamp = 0;
-  std::vector<ImageAnnotation> annotations;
-  bool operator==(const SceneFrame&) const = default;
-
-  [[nodiscard]] bool empty() const noexcept {
-    return annotations.empty();
-  }
-};
-
+}  // namespace sdk
 }  // namespace PJ

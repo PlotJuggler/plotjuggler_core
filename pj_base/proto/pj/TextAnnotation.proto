@@ -1,0 +1,37 @@
+// PlotJuggler canonical image annotation protobuf schema.
+// Field layout adapted from Foxglove SDK schemas (MIT License,
+// Copyright (c) Foxglove Technologies Inc).
+
+syntax = "proto3";
+
+import "pj/Color.proto";
+import "pj/Geometry.proto";
+import "pj/KeyValuePair.proto";
+import "google/protobuf/timestamp.proto";
+
+package PJ;
+
+// A text label on a 2D image
+message TextAnnotation {
+  // Timestamp of annotation
+  google.protobuf.Timestamp timestamp = 1;
+
+  // Bottom-left origin of the text label in 2D image coordinates (pixels).
+  // The coordinate uses the top-left corner of the top-left pixel of the image as the origin.
+  PJ.Point2 position = 2;
+
+  // Text to display
+  string text = 3;
+
+  // Font size in pixels
+  double font_size = 4;
+
+  // Text color
+  PJ.Color text_color = 5;
+
+  // Background fill color
+  PJ.Color background_color = 6;
+
+  // Additional user-provided metadata associated with this annotation. Keys must be unique.
+  repeated PJ.KeyValuePair metadata = 7;
+}

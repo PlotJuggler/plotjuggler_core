@@ -18,7 +18,9 @@
 #include <cstdint>
 #include <string>
 #include <string_view>
+#include <type_traits>
 
+#include "pj_base/buffer_anchor.hpp"
 #include "pj_base/data_source_protocol.h"
 #include "pj_base/expected.hpp"
 #include "pj_base/sdk/plugin_data_api.hpp"
@@ -212,6 +214,98 @@ class DataSourceRuntimeHostView {
     }
     PJ_error_t err{};
     if (!host_.vtable->push_raw_message(host_.ctx, handle, host_timestamp_ns, sdk::toAbiBytes(payload), &err)) {
+      return unexpected(errorToString(err));
+    }
+    return okStatus();
+  }
+
+  /// Push a message via a deferred FetchMessageData callable. The DataSource
+  /// hands the host a callable that produces the payload bytes when invoked.
+  /// The host applies the active ObjectIngestPolicy (resolved via the
+  /// ObjectIngestPolicyResolver below for source_id, topic, kind) to decide
+  /// whether to invoke the callable at ingest, only on consumer pull, or
+  /// never. The DataSource is policy-agnostic — it neither queries the
+  /// policy nor tracks which mode is active.
+  ///
+  /// The callable MUST be idempotent — the host may invoke it zero, one, or
+  /// many times depending on policy and consumer pulls. It MUST be
+  /// thread-safe: invocations may come from the ingest thread (kEager) or
+  /// from consumer threads (lazy pulls). Capture by shared_ptr (file
+  /// readers, mcap chunks) so the source buffer outlives every pending
+  /// pull.
+  ///
+  /// FetchMessageData return type:
+  ///   - sdk::PayloadView { bytes, anchor }  — preferred, zero-copy. The
+  ///     anchor is propagated through the C ABI as a heap-held shared_ptr
+  ///     copy that the host releases when no longer needed.
+  ///   - std::vector<uint8_t>                — legacy form. The vector is
+  ///     heap-relocated and used as its own anchor; bytes survive across
+  ///     the C ABI boundary at the cost of one alloc-and-move.
+  ///
+  /// The host MUST advertise the push_message_v2 tail slot. We wrap the
+  /// closure into a PJ_message_data_fetcher_t and hand it over verbatim; the
+  /// host applies ObjectIngestPolicy and decides when (and whether) to
+  /// invoke it. There is no legacy fallback: a host that doesn't expose
+  /// the slot returns an explicit error here rather than silently
+  /// degrading to a kEager push_raw_message.
+  template <typename FetchMessageData>
+  [[nodiscard]] Status pushMessage(
+      ParserBindingHandle handle, Timestamp host_timestamp_ns, FetchMessageData&& fetch_message_data) const {
+    using FetchMessageDataT = std::decay_t<FetchMessageData>;
+    using FetchMessageDataResult = std::decay_t<std::invoke_result_t<FetchMessageDataT&>>;
+    static_assert(
+        std::is_same_v<FetchMessageDataResult, sdk::PayloadView> ||
+            std::is_same_v<FetchMessageDataResult, std::vector<uint8_t>>,
+        "FetchMessageData must return sdk::PayloadView (zero-copy) or std::vector<uint8_t>");
+
+    if (!valid()) {
+      return unexpected(std::string("runtime host is not bound"));
+    }
+    if (!PJ_HAS_TAIL_SLOT(PJ_data_source_runtime_host_vtable_t, host_.vtable, push_message_v2)) {
+      return unexpected(std::string("runtime host does not expose push_message_v2"));
+    }
+
+    auto* ctx = new FetchMessageDataT(std::forward<FetchMessageData>(fetch_message_data));
+
+    PJ_message_data_fetcher_t abi_fetch_message_data{
+        .ctx = ctx,
+        .fetchMessageData = +[](void* c, PJ_payload_t* out, PJ_error_t* err) noexcept -> bool {
+          try {
+            auto& fn = *static_cast<FetchMessageDataT*>(c);
+            using Result = std::decay_t<decltype(fn())>;
+            if constexpr (std::is_same_v<Result, sdk::PayloadView>) {
+              // Zero-copy path: hold a heap copy of the BufferAnchor so it
+              // survives across the C ABI; release_fn deletes the holder
+              // (and decrements the underlying shared_ptr ref count).
+              auto pv = fn();
+              auto* held = new sdk::BufferAnchor(std::move(pv.anchor));
+              out->data = pv.bytes.data();
+              out->size = pv.bytes.size();
+              out->anchor.ctx = held;
+              out->anchor.release = +[](void* h) noexcept { delete static_cast<sdk::BufferAnchor*>(h); };
+            } else {
+              // Closure returns std::vector<uint8_t>: heap-hold the vector;
+              // it owns its bytes.
+              auto* held = new std::vector<uint8_t>(fn());
+              out->data = held->data();
+              out->size = held->size();
+              out->anchor.ctx = held;
+              out->anchor.release = +[](void* h) noexcept { delete static_cast<std::vector<uint8_t>*>(h); };
+            }
+            return true;
+          } catch (const std::exception& e) {
+            sdk::fillError(err, 1, "plugin", e.what());
+            return false;
+          } catch (...) {
+            sdk::fillError(err, 1, "plugin", "unknown exception in FetchMessageData callable");
+            return false;
+          }
+        },
+        .release = +[](void* c) noexcept { delete static_cast<FetchMessageDataT*>(c); },
+    };
+
+    PJ_error_t err{};
+    if (!host_.vtable->push_message_v2(host_.ctx, handle, host_timestamp_ns, abi_fetch_message_data, &err)) {
       return unexpected(errorToString(err));
     }
     return okStatus();

@@ -11,12 +11,12 @@
 #include <string>
 #include <vector>
 
-#include "pj_base/sdk/message_parser_plugin_base.hpp"
 #include "pj_base/sdk/plugin_data_api.hpp"
 #include "pj_base/sdk/service_registry.hpp"
 #include "pj_datastore/engine.hpp"
 #include "pj_datastore/object_store.hpp"
 #include "pj_datastore/plugin_data_host.hpp"
+#include "pj_plugins/sdk/message_parser_plugin_base.hpp"
 
 namespace PJ {
 namespace {

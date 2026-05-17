@@ -1,8 +1,12 @@
 # ---------------------------------------------------------------------------
-# pj_base — vocabulary types, zero external dependencies
+# pj_base — SDK vocabulary types and ABI surface
 # ---------------------------------------------------------------------------
 
+find_package(magic_enum CONFIG REQUIRED)
+
 add_library(pj_base STATIC
+  src/builtin/frame_transforms_codec.cpp
+  src/builtin/image_annotations_codec.cpp
   src/type_tree.cpp
 )
 target_include_directories(pj_base PUBLIC
@@ -17,6 +21,7 @@ set_target_properties(pj_base PROPERTIES
   POSITION_INDEPENDENT_CODE ON
   EXPORT_NAME DataSource
 )
+target_link_libraries(pj_base PUBLIC magic_enum::magic_enum)
 if(PJ_ASSERT_THROWS)
   target_compile_definitions(pj_base PUBLIC PJ_ASSERT_THROWS)
 endif()
@@ -55,7 +60,12 @@ if(PJ_BUILD_TESTS)
     tests/abi_layout_sentinels_test.cpp
     tests/platform_test.cpp
     tests/arrow_holders_test.cpp
+    tests/builtin_object_test.cpp
+    tests/frame_transforms_codec_test.cpp
+    tests/image_annotations_codec_test.cpp
+    tests/image_annotations_decoder_test.cpp
     tests/media_metadata_test.cpp
+    tests/push_message_v2_test.cpp
   )
 
   foreach(test_src ${PJ_BASE_TESTS})

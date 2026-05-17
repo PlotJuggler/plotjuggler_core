@@ -1,0 +1,15 @@
+// PlotJuggler canonical frame transforms protobuf schema.
+// Field layout adapted from Foxglove SDK schemas (MIT License,
+// Copyright (c) Foxglove Technologies Inc).
+
+syntax = "proto3";
+
+import "pj/FrameTransform.proto";
+
+package PJ;
+
+// An array of FrameTransform messages
+message FrameTransforms {
+  // Array of transforms
+  repeated PJ.FrameTransform transforms = 1;
+}

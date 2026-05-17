@@ -1,4 +1,4 @@
-#include "pj_scene_protocol/image_annotation_codec.h"
+#include "pj_base/builtin/image_annotations_codec.h"
 
 #include <gtest/gtest.h>
 
@@ -7,15 +7,19 @@
 #include <string>
 #include <vector>
 
-#include "pj_scene_protocol/image_annotation.h"
-#include "pj_scene_protocol/scene_decoder.h"  // existing reader, used for round-trips
-
 namespace PJ {
 namespace {
 
+using sdk::AnnotationTopology;
+using sdk::CircleAnnotation;
+using sdk::ColorRGBA;
+using sdk::ImageAnnotations;
+using sdk::Point2;
+using sdk::PointsAnnotation;
+using sdk::TextAnnotation;
+
 // -----------------------------------------------------------------------------
-// Hand-rolled Protobuf helpers — same style as the sibling decoder test
-// (`tests/scene_decoder_test.cpp`). Used to build expected byte sequences for
+// Hand-rolled Protobuf helpers. Used to build expected byte sequences for
 // golden-byte tests.
 // -----------------------------------------------------------------------------
 namespace pb {
@@ -47,21 +51,17 @@ inline void appendLenDelim(std::vector<uint8_t>& out, const std::vector<uint8_t>
 
 }  // namespace pb
 
-// Decode the bytes produced by serializeImageAnnotation back into an
-// ImageAnnotation. Returns the inner annotation; assumes the SceneFrame wraps
-// exactly one ImageAnnotation (the reader's contract).
-ImageAnnotation roundTrip(const ImageAnnotation& input) {
-  auto bytes = serializeImageAnnotation(input);
-  auto decoder = makeSceneDecoder(kSchemaImageAnnotations);
-  EXPECT_NE(decoder.get(), nullptr);
-  auto result = decoder->decode(bytes.data(), bytes.size());
+// Decode the bytes produced by serializeImageAnnotations back into an
+// sdk::ImageAnnotations.
+sdk::ImageAnnotations roundTrip(const sdk::ImageAnnotations& input) {
+  auto bytes = serializeImageAnnotations(input);
+  auto result = deserializeImageAnnotations(bytes.data(), bytes.size());
   EXPECT_TRUE(result.has_value());
-  EXPECT_EQ(result->annotations.size(), 1u);
-  return result->annotations[0];
+  return *result;
 }
 
 // Compare two ColorRGBA values allowing 1-LSB drift on each channel from the
-// double-quantization round-trip (uint8 → double in [0,1] → uint8).
+// double-quantization round-trip (uint8 -> double in [0,1] -> uint8).
 ::testing::AssertionResult ColorEq(const ColorRGBA& a, const ColorRGBA& b) {
   auto near = [](uint8_t x, uint8_t y) { return x > y ? (x - y) <= 1 : (y - x) <= 1; };
   if (near(a.r, b.r) && near(a.g, b.g) && near(a.b, b.b) && near(a.a, b.a)) {
@@ -76,20 +76,20 @@ ImageAnnotation roundTrip(const ImageAnnotation& input) {
 // -----------------------------------------------------------------------------
 
 TEST(ImageAnnotationCodecTest, EmptyAnnotationProducesEmptyBytes) {
-  ImageAnnotation ia;
-  auto bytes = serializeImageAnnotation(ia);
+  sdk::ImageAnnotations ia;
+  auto bytes = serializeImageAnnotations(ia);
   EXPECT_TRUE(bytes.empty());
 }
 
 // -----------------------------------------------------------------------------
-// 2. Golden-byte test — pins the wire format itself, not just round-trip behavior
+// 2. Golden-byte test: pins the wire format itself, not just round-trip behavior.
 // -----------------------------------------------------------------------------
 
 TEST(ImageAnnotationCodecTest, GoldenBytes_SinglePointsAnnotation) {
   // Build the canonical input: one PointsAnnotation, kLineLoop, two points,
   // outline color = pure red (255, 0, 0, 255), fill = transparent default,
   // thickness = 2.0.
-  ImageAnnotation ia;
+  sdk::ImageAnnotations ia;
   PointsAnnotation pa;
   pa.topology = AnnotationTopology::kLineLoop;
   pa.points = {{1.0, 2.0}, {3.0, 4.0}};
@@ -156,16 +156,16 @@ TEST(ImageAnnotationCodecTest, GoldenBytes_SinglePointsAnnotation) {
   pb::appendTag(expected, 2, 2);
   pb::appendLenDelim(expected, pa_body);
 
-  auto actual = serializeImageAnnotation(ia);
+  auto actual = serializeImageAnnotations(ia);
   EXPECT_EQ(actual, expected) << "wire format mismatch";
 }
 
 // -----------------------------------------------------------------------------
-// 3. Round-trip tests — build → serialize → existing reader → compare
+// 3. Round-trip tests: build, serialize, read, compare.
 // -----------------------------------------------------------------------------
 
 TEST(ImageAnnotationCodecTest, RoundTrip_LineLoopFourPoints) {
-  ImageAnnotation in;
+  sdk::ImageAnnotations in;
   PointsAnnotation pa;
   pa.topology = AnnotationTopology::kLineLoop;
   pa.points = {{75.0, 185.0}, {125.0, 185.0}, {125.0, 215.0}, {75.0, 215.0}};
@@ -187,7 +187,7 @@ TEST(ImageAnnotationCodecTest, RoundTrip_AllTopologies) {
   for (auto topology :
        {AnnotationTopology::kPoints, AnnotationTopology::kLineList, AnnotationTopology::kLineStrip,
         AnnotationTopology::kLineLoop}) {
-    ImageAnnotation in;
+    sdk::ImageAnnotations in;
     PointsAnnotation pa;
     pa.topology = topology;
     pa.points = {{0.0, 0.0}, {10.0, 10.0}};
@@ -203,7 +203,7 @@ TEST(ImageAnnotationCodecTest, RoundTrip_AllTopologies) {
 }
 
 TEST(ImageAnnotationCodecTest, RoundTrip_CirclePreservesDiameterRadiusInverse) {
-  ImageAnnotation in;
+  sdk::ImageAnnotations in;
   CircleAnnotation ca;
   ca.center = {50.0, 60.0};
   ca.radius = 10.0;  // wire emits diameter = 20; reader halves back to 10.
@@ -223,12 +223,12 @@ TEST(ImageAnnotationCodecTest, RoundTrip_CirclePreservesDiameterRadiusInverse) {
 }
 
 TEST(ImageAnnotationCodecTest, RoundTrip_TextUtf8) {
-  ImageAnnotation in;
+  sdk::ImageAnnotations in;
   TextAnnotation ta;
   ta.position = {320.5, 240.25};
   ta.font_size = 14.0;
   ta.color = {255, 255, 255, 255};
-  ta.text = "person 0.95 — \xc3\xa1\xc3\xa9\xc3\xad";  // UTF-8: "áéí"
+  ta.text = "person 0.95 \xe2\x80\x94 \xc3\xa1\xc3\xa9\xc3\xad";  // UTF-8 text
   in.texts.push_back(std::move(ta));
 
   auto out = roundTrip(in);
@@ -241,7 +241,7 @@ TEST(ImageAnnotationCodecTest, RoundTrip_TextUtf8) {
 }
 
 TEST(ImageAnnotationCodecTest, RoundTrip_FullImageAnnotationAllThreeKinds) {
-  ImageAnnotation in;
+  sdk::ImageAnnotations in;
 
   // Two points annotations.
   PointsAnnotation pa1;
@@ -292,7 +292,7 @@ TEST(ImageAnnotationCodecTest, EmptyColorsVectorDoesNotInjectDefaultEntry) {
   // A PointsAnnotation with empty `colors` must round-trip to empty `colors`.
   // If the writer emitted a default Color for the empty vector, the reader
   // would push a phantom entry, breaking per-vertex coloring semantics.
-  ImageAnnotation in;
+  sdk::ImageAnnotations in;
   PointsAnnotation pa;
   pa.topology = AnnotationTopology::kPoints;
   pa.points = {{1.0, 1.0}, {2.0, 2.0}};
@@ -307,7 +307,7 @@ TEST(ImageAnnotationCodecTest, EmptyColorsVectorDoesNotInjectDefaultEntry) {
 }
 
 TEST(ImageAnnotationCodecTest, RoundTrip_PerVertexColors) {
-  ImageAnnotation in;
+  sdk::ImageAnnotations in;
   PointsAnnotation pa;
   pa.topology = AnnotationTopology::kLineStrip;
   pa.points = {{0.0, 0.0}, {10.0, 10.0}, {20.0, 0.0}};

@@ -127,4 +127,32 @@ inline const void* MessageParserPluginBase::trampoline_get_plugin_extension(void
   }
 }
 
+// -----------------------------------------------------------------------------
+// Pure-functional API trampolines (builtin-object tail of the vtable)
+// -----------------------------------------------------------------------------
+
+inline bool MessageParserPluginBase::trampoline_classify_schema(
+    void* ctx, PJ_string_view_t type_name, PJ_bytes_view_t schema, PJ_schema_classification_t* out_classification,
+    PJ_error_t* out_error) noexcept {
+  auto* self = static_cast<MessageParserPluginBase*>(ctx);
+  if (out_classification == nullptr) {
+    self->storeError(out_error, 2, "plugin", "classify_schema called with null out_classification");
+    return false;
+  }
+  try {
+    auto name_sv = type_name.data == nullptr ? std::string_view{} : std::string_view(type_name.data, type_name.size);
+    Span<const uint8_t> schema_span(schema.data, schema.size);
+    const auto cls = self->classifySchema(name_sv, schema_span);
+    out_classification->object_type = static_cast<uint16_t>(cls.object_type);
+    out_classification->reserved = 0;
+    return true;
+  } catch (const std::exception& e) {
+    self->storeError(out_error, 1, "plugin", std::string("classify_schema threw: ") + e.what());
+    return false;
+  } catch (...) {
+    self->storeError(out_error, 1, "plugin", "unknown exception in classify_schema");
+    return false;
+  }
+}
+
 }  // namespace PJ

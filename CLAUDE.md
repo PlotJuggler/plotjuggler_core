@@ -6,16 +6,35 @@ PlotJuggler Core — C++20 foundation libraries for PlotJuggler storage, plugin 
 
 ### Modules
 
-- **pj_base** — vocabulary types, plugin ABI headers, plugin SDK headers (zero external deps)
+- **pj_base** — foundational SDK/ABI types, canonical builtin object vocabulary, plugin ABI headers,
+  host-view helpers, ImageAnnotations codec, and shared utilities; public `magic_enum` dependency for enum/string helpers
 - **pj_datastore** — columnar storage engine + `ObjectStore` (for media blobs) + `DerivedEngine` (fmt, tsl::robin_map, nanoarrow)
-- **pj_plugins** — C-ABI plugin protocol, C++ SDK base classes, plugin discovery, host-side loaders, config envelope helpers, and dialog protocol primitives; four plugin families: DataSource, MessageParser, Dialog, Toolbox
-- **pj_scene_protocol** — canonical schema + Foxglove `ImageAnnotations` Protobuf codec (writer + reader); SDK boundary for plugin authors producing or consuming 2D markers / scene primitives. `pj_base`-only deps.
+- **pj_plugins** — C++ plugin SDK base classes, plugin discovery, host-side loaders, config envelope
+  helpers, and dialog protocol primitives; four plugin families: DataSource, MessageParser, Dialog, Toolbox
 
 ### Dependency graph
 
+- `pj_base` → `magic_enum`
 - `pj_datastore` → `pj_base`
 - `pj_plugins` → `pj_base`
-- `pj_scene_protocol` → `pj_base`
+
+## Documentation Workflow
+
+Coding agents should use this context hierarchy:
+
+```text
+CLAUDE.md -> relevant docs -> code
+```
+
+- Start with this file to identify the module and the relevant source-of-truth documents.
+- Read the relevant docs before treating code as authoritative for intent. Code shows current implementation
+  details; docs define the intended architecture, public contracts, terminology, and module boundaries.
+- If docs and code disagree, treat that as a documentation consistency problem. Do not silently let stale docs survive.
+- Any change to behavior, public APIs, ABI structs, SDK types, module ownership, plugin workflows,
+  storage formats, or user-facing semantics must include a documentation check.
+- Before any commit, verify that documentation is up to date for the change. If docs are stale and the user did
+  not explicitly ask for a docs update, ask whether to update the docs before committing. Do not commit
+  known-stale documentation.
 
 ## Key Documentation
 
@@ -23,6 +42,8 @@ PlotJuggler Core — C++20 foundation libraries for PlotJuggler storage, plugin 
 
 | Document | Content |
 |----------|---------|
+| `docs/builtin_type.md` | Canonical builtin object types used as the shim between third-party schemas and PlotJuggler internals |
+| `docs/image_annotations_format.md` | Canonical `PJ.ImageAnnotations` wire format for builtin `ImageAnnotations` payloads |
 | `docs/cpp_design_recommendations.md` | C++ style, error handling, API design guidelines |
 | `docs/toolbox-porting-gap-analysis.md` | SDK gaps identified when porting PJ3 toolboxes (being addressed) |
 
@@ -46,13 +67,6 @@ PlotJuggler Core — C++20 foundation libraries for PlotJuggler storage, plugin 
 | `dialog-plugin-guide.md` | SDK tutorial: WidgetData, typed events, EmbedUi, requestAccept, onTick |
 | `toolbox-guide.md` | SDK tutorial: read+write access, catalog, notifyDataChanged |
 
-**Scene protocol** (`pj_scene_protocol/docs/`):
-
-| Document | Content |
-|----------|---------|
-| `ARCHITECTURE.md` | Wire format spec (`foxglove.ImageAnnotations` Protobuf), type catalog, encoding rules, design rationale (single canonical decoder, loader-side conversion) |
-| `USER_GUIDE.md` | Producer recipe (loader writing markers) and consumer recipe (sink/viewer decoding), common pitfalls, pointer to PJ4 reference adapters |
-
 ## Build & Test
 
 ```bash
@@ -65,6 +79,9 @@ Dependencies: Conan (`conanfile.txt`).
 
 ## Pre-commit Validation
 
+Before committing, first check whether the code changes require documentation updates. If documentation is stale
+and the requested task did not include updating it, ask the user whether to update the docs before committing.
+
 Before committing, always run:
 
 ```bash
@@ -73,9 +90,13 @@ Before committing, always run:
 
 ## Instructions Glossary
 
-- **"Read all documentation"** means: find and read every `.md` file in the entire project tree (all subdirectories). Use `find . -name "*.md"` or equivalent. This includes docs in `pj_base/`, `pj_datastore/docs/`, `pj_plugins/docs/`, `pj_scene_protocol/docs/`, and any other location.
+- **"Read all documentation"** means: find and read every `.md` file in the entire project tree (all subdirectories). Use `find . -name "*.md"` or equivalent. This includes docs in `docs/`, `pj_datastore/docs/`, `pj_plugins/docs/`, and any other location.
 
 - **"Update the documentation"** means: based on what you learned during this session, correct any documentation that is outdated or inaccurate, and clarify any ambiguity that caused confusion or errors. If a doc says one thing but the code does another, fix the doc to match reality. If missing information led to a bug, add it.
+
+- **"Check documentation"** means: review the docs listed above that are related to the changed module or API.
+  Confirm they still describe the current intent and behavior. If not, update them or ask the user before
+  committing.
 
 ## Coding Conventions
 

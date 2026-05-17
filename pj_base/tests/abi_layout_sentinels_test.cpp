@@ -79,7 +79,8 @@ static_assert(offsetof(PJ_message_parser_vtable_t, struct_size) == 4, "v4 prefix
 static_assert(offsetof(PJ_message_parser_vtable_t, bind) == 32, "v4 bind slot pinned");
 static_assert(offsetof(PJ_message_parser_vtable_t, parse) == 64, "v4 parse slot pinned");
 static_assert(offsetof(PJ_message_parser_vtable_t, get_plugin_extension) == 72, "v4 last baseline slot pinned");
-static_assert(sizeof(PJ_message_parser_vtable_t) == 80, "MessageParser vtable size (update deliberately on append)");
+// 80 baseline (v4.0) + 1 tail slot × 8 bytes = 88.
+static_assert(sizeof(PJ_message_parser_vtable_t) == 88, "MessageParser vtable size (update deliberately on append)");
 static_assert(PJ_MESSAGE_PARSER_MIN_VTABLE_SIZE == 80, "MIN vtable size is pinned at v4.0 — NEVER INCREASE");
 static_assert(PJ_MESSAGE_PARSER_MIN_VTABLE_SIZE <= sizeof(PJ_message_parser_vtable_t), "MIN must never exceed current");
 
@@ -92,6 +93,46 @@ static_assert(offsetof(PJ_toolbox_vtable_t, get_plugin_extension) == 80, "v4 las
 static_assert(sizeof(PJ_toolbox_vtable_t) == 88, "Toolbox vtable size (update deliberately on append)");
 static_assert(PJ_TOOLBOX_MIN_VTABLE_SIZE == 88, "MIN vtable size is pinned at v4.0 — NEVER INCREASE");
 static_assert(PJ_TOOLBOX_MIN_VTABLE_SIZE <= sizeof(PJ_toolbox_vtable_t), "MIN must never exceed current");
+
+// --- Canonical-object pipeline structs ---------------------------------------
+// Public ABI types crossing the boundary for the v4 builtin-object pipeline.
+// Sizes and offsets are pinned; any change is a deliberate ABI revision.
+static_assert(sizeof(PJ_builtin_object_type_t) == 4, "enum layout pinned");
+static_assert(PJ_BUILTIN_OBJECT_TYPE_FRAME_TRANSFORMS == 6, "FrameTransforms type id pinned");
+static_assert(sizeof(PJ_schema_classification_t) == 4, "PJ_schema_classification_t layout pinned");
+static_assert(offsetof(PJ_schema_classification_t, object_type) == 0, "object_type at offset 0");
+static_assert(offsetof(PJ_schema_classification_t, reserved) == 2, "reserved at offset 2");
+
+static_assert(sizeof(PJ_payload_anchor_t) == 16, "PJ_payload_anchor_t pinned (ctx + release fn ptr)");
+static_assert(offsetof(PJ_payload_anchor_t, ctx) == 0, "ctx at offset 0");
+static_assert(offsetof(PJ_payload_anchor_t, release) == 8, "release at offset 8");
+
+static_assert(sizeof(PJ_payload_t) == 32, "PJ_payload_t pinned (data + size + anchor)");
+static_assert(offsetof(PJ_payload_t, data) == 0, "data at offset 0");
+static_assert(offsetof(PJ_payload_t, size) == 8, "size at offset 8");
+static_assert(offsetof(PJ_payload_t, anchor) == 16, "anchor at offset 16");
+
+static_assert(
+    sizeof(PJ_message_data_fetcher_t) == 24, "PJ_message_data_fetcher_t pinned (ctx + fetchMessageData + release)");
+static_assert(offsetof(PJ_message_data_fetcher_t, ctx) == 0, "ctx at offset 0");
+static_assert(offsetof(PJ_message_data_fetcher_t, fetchMessageData) == 8, "fetchMessageData at offset 8");
+static_assert(offsetof(PJ_message_data_fetcher_t, release) == 16, "release at offset 16");
+
+// --- DataSource runtime host vtable (ABI-APPENDABLE within v4) ---------------
+// The vtable the host exposes to plugins under "pj.runtime.v1". Offsets of
+// existing slots are pinned; size grows deliberately as tail slots append.
+static_assert(offsetof(PJ_data_source_runtime_host_vtable_t, protocol_version) == 0, "v1 prefix pinned");
+static_assert(offsetof(PJ_data_source_runtime_host_vtable_t, struct_size) == 4, "v1 prefix pinned");
+static_assert(offsetof(PJ_data_source_runtime_host_vtable_t, report_message) == 8, "v1 first slot pinned");
+static_assert(
+    offsetof(PJ_data_source_runtime_host_vtable_t, push_raw_message) == 72, "v1 push_raw_message slot pinned");
+static_assert(
+    offsetof(PJ_data_source_runtime_host_vtable_t, list_available_encodings) == 88,
+    "v1 list_available_encodings slot pinned");
+static_assert(
+    offsetof(PJ_data_source_runtime_host_vtable_t, push_message_v2) == 96, "v1 push_message_v2 tail slot pinned");
+static_assert(
+    sizeof(PJ_data_source_runtime_host_vtable_t) == 104, "Runtime host vtable size (update deliberately on append)");
 
 // --- ABI version symbol ------------------------------------------------------
 static_assert(PJ_ABI_VERSION == 4, "v4 ABI version");

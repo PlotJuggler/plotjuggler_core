@@ -20,9 +20,8 @@ TEST(MediaMetadataBuilderTest, SingleKeyRoundtrip) {
 }
 
 TEST(MediaMetadataBuilderTest, AllThreeKeysInCanonicalOrder) {
-  const auto json =
-      MediaMetadataBuilder().mediaClass("video").encoding("h264").schema("foxglove/CompressedVideo").build();
-  EXPECT_EQ(json, R"({"media_class":"video","encoding":"h264","schema":"foxglove/CompressedVideo"})");
+  const auto json = MediaMetadataBuilder().mediaClass("video").encoding("h264").schema("PJ.CompressedVideo").build();
+  EXPECT_EQ(json, R"({"media_class":"video","encoding":"h264","schema":"PJ.CompressedVideo"})");
 }
 
 TEST(MediaMetadataBuilderTest, EmptyKeysAreOmitted) {

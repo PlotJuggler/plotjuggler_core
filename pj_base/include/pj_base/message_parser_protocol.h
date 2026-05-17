@@ -8,9 +8,16 @@
  *     append_arrow_ipc — see plugin_data_api.h. Parsers stay per-record;
  *     the host coalesces into Arrow batches internally.
  *
+ * Pure-functional production (scalars by value, canonical objects by
+ * value with BufferAnchor) is a C++ SDK contract: parsers inheriting from
+ * MessageParserPluginBase register handlers in SchemaHandler and the
+ * in-process host calls parseScalars() / parseObject() directly on the
+ * C++ pointer. Pure-C plugins use the parse() slot to write scalars to
+ * writeHost.
+ *
  * The host obtains the plugin's vtable via `PJ_get_message_parser_vtable()`
  * and drives the plugin through: create -> bind(registry) ->
- * (bind_schema) -> parse* -> destroy.
+ * (bind_schema) -> (classify_schema) -> parse -> destroy.
  */
 #ifndef PJ_MESSAGE_PARSER_PROTOCOL_H
 #define PJ_MESSAGE_PARSER_PROTOCOL_H
@@ -19,6 +26,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "pj_base/builtin_object_abi.h"
 #include "pj_base/plugin_data_api.h"
 
 #ifdef __cplusplus
@@ -110,6 +118,20 @@ typedef struct PJ_message_parser_vtable_t {
    * Tail slots beyond here are OPTIONAL. Host reads MUST check both
    * struct_size and slot-nullability via PJ_HAS_TAIL_SLOT.
    * ==================================================================== */
+
+  /**
+   * [thread-safe] A priori classification of the bound schema. Cheap; no
+   * payload required. Host invokes this after bind_schema(). Returns
+   * @p out_classification by value (POD).
+   *
+   * NULL or absent (struct_size too small) → host treats as
+   * PJ_BUILTIN_OBJECT_TYPE_NONE.
+   *
+   * Pure-functional contract: no host side-effects.
+   */
+  bool (*classify_schema)(
+      void* ctx, PJ_string_view_t type_name, PJ_bytes_view_t schema, PJ_schema_classification_t* out_classification,
+      PJ_error_t* out_error) PJ_NOEXCEPT;
 } PJ_message_parser_vtable_t;
 /* The vtable above is ABI-APPENDABLE: new slots may be added at the tail;
  * host reads guard with PJ_HAS_TAIL_SLOT. See PJ_MESSAGE_PARSER_MIN_VTABLE_SIZE. */
