@@ -38,6 +38,9 @@
  * `ArrowArrayHolder` destructors can fire in either order without
  * double-free.
  */
+// Copyright 2026 Davide Faconti
+// SPDX-License-Identifier: MIT
+
 #pragma once
 
 #include <algorithm>

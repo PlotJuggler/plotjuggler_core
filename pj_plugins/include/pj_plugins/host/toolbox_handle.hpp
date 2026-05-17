@@ -2,6 +2,9 @@
  * @file toolbox_handle.hpp
  * @brief RAII wrapper around a single Toolbox plugin instance (protocol v4).
  */
+// Copyright 2026 Davide Faconti
+// SPDX-License-Identifier: MIT
+
 #pragma once
 
 #include <pj_base/toolbox_protocol.h>

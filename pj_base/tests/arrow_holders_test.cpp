@@ -5,6 +5,9 @@
  * These holders are pure stdlib; no nanoarrow needed. We verify the
  * release-callback semantics with a simple instrumented struct.
  */
+// Copyright 2026 Davide Faconti
+// SPDX-License-Identifier: MIT
+
 #include <gtest/gtest.h>
 
 #include <cstring>

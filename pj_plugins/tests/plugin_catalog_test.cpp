@@ -1,3 +1,6 @@
+// Copyright 2026 Davide Faconti
+// SPDX-License-Identifier: MIT
+
 #include "pj_plugins/host/plugin_catalog.hpp"
 
 #include <gtest/gtest.h>

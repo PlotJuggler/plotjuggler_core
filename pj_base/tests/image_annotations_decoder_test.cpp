@@ -1,3 +1,6 @@
+// Copyright 2026 Davide Faconti
+// SPDX-License-Identifier: MIT
+
 #include <gtest/gtest.h>
 
 #include <cstdint>
@@ -5,7 +8,7 @@
 #include <utility>
 #include <vector>
 
-#include "pj_base/builtin/image_annotations_codec.h"
+#include "pj_base/builtin/image_annotations_codec.hpp"
 
 namespace PJ {
 namespace {

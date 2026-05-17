@@ -24,7 +24,7 @@ PJ.ImageAnnotations
 The public C++ helpers live in:
 
 ```cpp
-#include <pj_base/builtin/image_annotations_codec.h>
+#include <pj_base/builtin/image_annotations_codec.hpp>
 ```
 
 `serializeImageAnnotations()` writes this payload. `deserializeImageAnnotations()`

@@ -1,3 +1,6 @@
+// Copyright 2026 Davide Faconti
+// SPDX-License-Identifier: MIT
+
 #include "pj_datastore/arrow_import.hpp"
 
 #include <fmt/format.h>

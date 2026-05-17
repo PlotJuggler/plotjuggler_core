@@ -3,6 +3,9 @@
  * @brief Image built-in object: raw or compressed, identified by an
  *        encoding string.
  */
+// Copyright 2026 Davide Faconti
+// SPDX-License-Identifier: MIT
+
 #pragma once
 
 #include <cstdint>

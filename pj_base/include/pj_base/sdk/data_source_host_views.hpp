@@ -12,6 +12,9 @@
  * `DataSourcePluginBase::runtimeHost()`; it is not constructed directly
  * in plugin code.
  */
+// Copyright 2026 Davide Faconti
+// SPDX-License-Identifier: MIT
+
 #pragma once
 
 #include <cstddef>

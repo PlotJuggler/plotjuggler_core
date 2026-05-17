@@ -1,4 +1,6 @@
 #pragma once
+// Copyright 2026 Davide Faconti
+// SPDX-License-Identifier: MIT
 
 #include <pj_base/plugin_abi_export.h>
 #include <pj_plugins/dialog_protocol.h>

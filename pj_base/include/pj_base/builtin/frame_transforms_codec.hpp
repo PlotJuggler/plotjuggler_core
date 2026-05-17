@@ -1,11 +1,13 @@
 #pragma once
+// Copyright 2026 Davide Faconti
+// SPDX-License-Identifier: MIT
 
 #include <cstddef>
 #include <cstdint>
 #include <string_view>
 #include <vector>
 
-#include "pj_base/builtin/FrameTransforms.h"
+#include "pj_base/builtin/FrameTransforms.hpp"
 #include "pj_base/expected.hpp"
 
 namespace PJ {

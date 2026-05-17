@@ -12,6 +12,9 @@
  *   auto handle = lib->createHandle();
  * @endcode
  */
+// Copyright 2026 Davide Faconti
+// SPDX-License-Identifier: MIT
+
 #pragma once
 
 #include <pj_base/message_parser_protocol.h>

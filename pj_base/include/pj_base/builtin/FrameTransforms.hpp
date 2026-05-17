@@ -5,6 +5,9 @@
  * FrameTransforms is a small owned builtin for TF-style frame relationships.
  * It stores strings and scalar geometry directly; no BufferAnchor is needed.
  */
+// Copyright 2026 Davide Faconti
+// SPDX-License-Identifier: MIT
+
 #pragma once
 
 #include <string>

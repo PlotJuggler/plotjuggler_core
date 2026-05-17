@@ -23,6 +23,9 @@
  *
  * See `pj_plugins/examples/mock_data_source.cpp` for a complete example.
  */
+// Copyright 2026 Davide Faconti
+// SPDX-License-Identifier: MIT
+
 #pragma once
 
 #include <cstring>
@@ -33,7 +36,7 @@
 
 #include "pj_base/data_source_protocol.h"
 #include "pj_base/expected.hpp"
-#include "pj_base/plugin_abi_export.h"
+#include "pj_base/plugin_abi_export.hpp"
 #include "pj_base/sdk/data_source_host_views.hpp"
 #include "pj_base/sdk/plugin_data_api.hpp"
 #include "pj_base/sdk/service_registry.hpp"

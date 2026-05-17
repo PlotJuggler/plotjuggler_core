@@ -1,4 +1,7 @@
-#include "pj_base/builtin/image_annotations_codec.h"
+// Copyright 2026 Davide Faconti
+// SPDX-License-Identifier: MIT
+
+#include "pj_base/builtin/image_annotations_codec.hpp"
 
 #include <algorithm>
 #include <cstdint>
@@ -6,7 +9,7 @@
 #include <utility>
 #include <vector>
 
-#include "protobuf_wire.h"
+#include "protobuf_wire.hpp"
 
 namespace PJ {
 namespace {

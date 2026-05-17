@@ -16,6 +16,9 @@
  * directly on the C++ pointer. Pure-C plugins emit scalars via the
  * parse() slot (writing to writeHost).
  */
+// Copyright 2026 Davide Faconti
+// SPDX-License-Identifier: MIT
+
 #ifndef PJ_BUILTIN_OBJECT_ABI_H
 #define PJ_BUILTIN_OBJECT_ABI_H
 

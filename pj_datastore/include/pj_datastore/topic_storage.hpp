@@ -1,4 +1,7 @@
 #pragma once
+// Copyright 2026 Davide Faconti
+// SPDX-License-Identifier: MIT
+
 #include <cstdint>
 #include <deque>
 #include <string>

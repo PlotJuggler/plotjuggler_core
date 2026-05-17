@@ -1,5 +1,8 @@
-#ifndef PJ_PLUGIN_ABI_EXPORT_H
-#define PJ_PLUGIN_ABI_EXPORT_H
+#ifndef PJ_PLUGIN_ABI_EXPORT_HPP
+#define PJ_PLUGIN_ABI_EXPORT_HPP
+
+// Copyright 2026 Davide Faconti
+// SPDX-License-Identifier: MIT
 
 #include "pj_base/plugin_data_api.h"
 
@@ -44,4 +47,4 @@ PJ_PLUGIN_ABI_LINK uint32_t pj_plugin_abi_version = PJ_ABI_VERSION;
 // part of the contract. The `EXPORT_TAG` argument is intentionally ignored.
 #define PJ_EXPORT_PLUGIN_ABI_VERSION(EXPORT_TAG) /* emitted at file scope */
 
-#endif  // PJ_PLUGIN_ABI_EXPORT_H
+#endif  // PJ_PLUGIN_ABI_EXPORT_HPP

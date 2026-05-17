@@ -1,3 +1,6 @@
+// Copyright 2026 Davide Faconti
+// SPDX-License-Identifier: MIT
+
 // Regression tests for bugs found during code review.
 //
 // Each test FAILS against the current (buggy) code and PASSES once the

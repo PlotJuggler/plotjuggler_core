@@ -16,6 +16,9 @@
  * `typeOf` and reject the message. No protocol bump required when a new
  * builtin type is appended to BuiltinObjectType.
  */
+// Copyright 2026 Davide Faconti
+// SPDX-License-Identifier: MIT
+
 #pragma once
 
 #include <any>
@@ -24,11 +27,11 @@
 #include <optional>
 #include <string_view>
 
-#include "pj_base/builtin/DepthImage.h"
-#include "pj_base/builtin/FrameTransforms.h"
-#include "pj_base/builtin/Image.h"
-#include "pj_base/builtin/ImageAnnotations.h"
-#include "pj_base/builtin/PointCloud.h"
+#include "pj_base/builtin/DepthImage.hpp"
+#include "pj_base/builtin/FrameTransforms.hpp"
+#include "pj_base/builtin/Image.hpp"
+#include "pj_base/builtin/ImageAnnotations.hpp"
+#include "pj_base/builtin/PointCloud.hpp"
 
 namespace PJ {
 namespace sdk {

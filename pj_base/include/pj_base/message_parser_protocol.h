@@ -19,6 +19,9 @@
  * and drives the plugin through: create -> bind(registry) ->
  * (bind_schema) -> (classify_schema) -> parse -> destroy.
  */
+// Copyright 2026 Davide Faconti
+// SPDX-License-Identifier: MIT
+
 #ifndef PJ_MESSAGE_PARSER_PROTOCOL_H
 #define PJ_MESSAGE_PARSER_PROTOCOL_H
 

@@ -1,6 +1,9 @@
+// Copyright 2026 Davide Faconti
+// SPDX-License-Identifier: MIT
+
 #include <gtest/gtest.h>
 
-#include "pj_base/builtin/BuiltinObject.h"
+#include "pj_base/builtin/BuiltinObject.hpp"
 
 using PJ::sdk::BuiltinObject;
 using PJ::sdk::BuiltinObjectType;

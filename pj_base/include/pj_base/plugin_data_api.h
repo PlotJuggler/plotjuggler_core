@@ -1,5 +1,7 @@
 #ifndef PJ_PLUGIN_DATA_API_H
 #define PJ_PLUGIN_DATA_API_H
+// Copyright 2026 Davide Faconti
+// SPDX-License-Identifier: MIT
 
 #include <stdbool.h>
 #include <stddef.h>

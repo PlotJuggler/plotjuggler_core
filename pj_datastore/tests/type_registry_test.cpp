@@ -1,3 +1,6 @@
+// Copyright 2026 Davide Faconti
+// SPDX-License-Identifier: MIT
+
 #include "pj_datastore/type_registry.hpp"
 
 #include <gtest/gtest.h>

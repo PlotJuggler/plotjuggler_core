@@ -1,3 +1,6 @@
+// Copyright 2026 Davide Faconti
+// SPDX-License-Identifier: MIT
+
 // Phase 3 — verify that a parser can resolve both the scalar and
 // object write hosts from the service registry and write to each from
 // a single parse() call. Exercises the service-registry composition

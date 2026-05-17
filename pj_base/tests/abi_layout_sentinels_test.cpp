@@ -22,6 +22,9 @@
  * ABIs (ARM64, MSVC), either confirm identical layout during initial
  * port or add target-specific guards here.
  */
+// Copyright 2026 Davide Faconti
+// SPDX-License-Identifier: MIT
+
 #include <cstddef>
 #include <cstdint>
 

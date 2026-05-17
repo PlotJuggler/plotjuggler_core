@@ -1,4 +1,6 @@
 #pragma once
+// Copyright 2026 Davide Faconti
+// SPDX-License-Identifier: MIT
 
 #include <pj_plugins/sdk/dialog_plugin_base.hpp>
 #include <pj_plugins/sdk/widget_event.hpp>

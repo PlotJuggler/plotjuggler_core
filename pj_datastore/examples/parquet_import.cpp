@@ -1,3 +1,6 @@
+// Copyright 2026 Davide Faconti
+// SPDX-License-Identifier: MIT
+
 // parquet_import — load a Parquet file into DataEngine, report memory stats.
 //
 // Usage: ./parquet_import <file.parquet> [chunk_rows]

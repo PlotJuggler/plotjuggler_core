@@ -5,6 +5,9 @@
  * Included automatically by message_parser_plugin_base.hpp.
  * Every trampoline is `noexcept` — the v4 vtable requires it.
  */
+// Copyright 2026 Davide Faconti
+// SPDX-License-Identifier: MIT
+
 #pragma once
 
 namespace PJ {

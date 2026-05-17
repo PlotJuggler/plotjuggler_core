@@ -1,3 +1,6 @@
+// Copyright 2026 Davide Faconti
+// SPDX-License-Identifier: MIT
+
 #include <pj_base/sdk/data_source_plugin_base.hpp>
 #include <string>
 

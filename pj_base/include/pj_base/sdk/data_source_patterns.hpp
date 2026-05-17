@@ -33,6 +33,9 @@
  * @see pj_plugins/examples/mock_file_source.cpp for a FileSourceBase with progress.
  * @see pj_plugins/examples/mock_source_with_dialog.cpp for StreamSourceBase + Dialog.
  */
+// Copyright 2026 Davide Faconti
+// SPDX-License-Identifier: MIT
+
 #pragma once
 
 #include "pj_base/sdk/data_source_plugin_base.hpp"

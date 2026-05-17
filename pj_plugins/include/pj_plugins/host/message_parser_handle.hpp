@@ -2,6 +2,9 @@
  * @file message_parser_handle.hpp
  * @brief RAII wrapper around a single MessageParser plugin instance (v4).
  */
+// Copyright 2026 Davide Faconti
+// SPDX-License-Identifier: MIT
+
 #pragma once
 
 #include <pj_base/builtin/BuiltinObject.h>

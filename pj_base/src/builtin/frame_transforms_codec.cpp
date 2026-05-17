@@ -1,4 +1,7 @@
-#include "pj_base/builtin/frame_transforms_codec.h"
+// Copyright 2026 Davide Faconti
+// SPDX-License-Identifier: MIT
+
+#include "pj_base/builtin/frame_transforms_codec.hpp"
 
 #include <cstdint>
 #include <limits>
@@ -6,7 +9,7 @@
 #include <utility>
 #include <vector>
 
-#include "protobuf_wire.h"
+#include "protobuf_wire.hpp"
 
 namespace PJ {
 namespace {

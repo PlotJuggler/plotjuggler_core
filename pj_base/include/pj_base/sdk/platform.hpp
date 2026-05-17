@@ -11,6 +11,9 @@
  * Header-only so plugins linked against pj_base pick it up via CPM without
  * pulling additional translation units or Qt dependencies.
  */
+// Copyright 2026 Davide Faconti
+// SPDX-License-Identifier: MIT
+
 #pragma once
 
 #include <cstdlib>

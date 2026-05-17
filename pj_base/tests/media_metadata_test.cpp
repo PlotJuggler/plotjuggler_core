@@ -1,3 +1,6 @@
+// Copyright 2026 Davide Faconti
+// SPDX-License-Identifier: MIT
+
 #include "pj_base/sdk/media_metadata.hpp"
 
 #include <gtest/gtest.h>

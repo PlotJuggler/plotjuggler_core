@@ -9,11 +9,14 @@
  * R/P pre-built call these helpers; consumers that go directly to K
  * ignore this header.
  */
+// Copyright 2026 Davide Faconti
+// SPDX-License-Identifier: MIT
+
 #pragma once
 
 #include <array>
 
-#include "pj_base/builtin/DepthImage.h"
+#include "pj_base/builtin/DepthImage.hpp"
 
 namespace PJ {
 namespace sdk {

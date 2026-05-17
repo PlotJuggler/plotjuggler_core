@@ -18,6 +18,9 @@
  * `PJ_string_view_t` pointers remain valid until the next call to the
  * same function on the same context. Hosts copy if they need to retain.
  */
+// Copyright 2026 Davide Faconti
+// SPDX-License-Identifier: MIT
+
 #ifndef PJ_DATA_SOURCE_PROTOCOL_H
 #define PJ_DATA_SOURCE_PROTOCOL_H
 

@@ -25,6 +25,9 @@
  * SDK surface stays tiny. Plugins that want richer builders link
  * nanoarrow themselves and use nanoarrow::UniqueSchema etc.
  */
+// Copyright 2026 Davide Faconti
+// SPDX-License-Identifier: MIT
+
 #pragma once
 
 #include <cstring>

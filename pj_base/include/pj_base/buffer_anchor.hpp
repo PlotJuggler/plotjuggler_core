@@ -8,6 +8,9 @@
  * shared_ptr<vector<uint8_t>>); the BufferAnchor erases the concrete type
  * and keeps the allocation alive while at least one anchor copy survives.
  */
+// Copyright 2026 Davide Faconti
+// SPDX-License-Identifier: MIT
+
 #pragma once
 
 #include <cstdint>

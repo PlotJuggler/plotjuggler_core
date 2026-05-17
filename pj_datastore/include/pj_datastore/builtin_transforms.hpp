@@ -1,4 +1,7 @@
 #pragma once
+// Copyright 2026 Davide Faconti
+// SPDX-License-Identifier: MIT
+
 #include "pj_base/types.hpp"
 #include "pj_datastore/derived_engine.hpp"
 

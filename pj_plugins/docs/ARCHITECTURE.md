@@ -10,7 +10,7 @@ these is an ABI break and requires a v5 bump.
    any vtable. The host `dlsym`s it BEFORE fetching the family vtable;
    missing or mismatched symbol is a fail-fast rejection with a specific
    error. The symbol is emitted at file scope by
-   `pj_base/include/pj_base/plugin_abi_export.h`, which is transitively
+   `pj_base/include/pj_base/plugin_abi_export.hpp`, which is transitively
    included by every family SDK base header
    (`data_source_plugin_base.hpp`, `dialog_plugin_base.hpp`,
    `message_parser_plugin_base.hpp`, `toolbox_plugin_base.hpp`). Weak

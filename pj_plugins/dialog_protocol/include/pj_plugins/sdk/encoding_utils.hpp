@@ -5,6 +5,9 @@
  * This header provides helpers to convert the JSON string returned by
  * runtimeHost().listAvailableEncodings() into a std::vector<std::string>.
  */
+// Copyright 2026 Davide Faconti
+// SPDX-License-Identifier: MIT
+
 #pragma once
 
 #include <nlohmann/json.hpp>

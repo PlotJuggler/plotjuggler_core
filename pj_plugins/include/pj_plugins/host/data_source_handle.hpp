@@ -17,6 +17,9 @@
  *   handle.stop();
  * @endcode
  */
+// Copyright 2026 Davide Faconti
+// SPDX-License-Identifier: MIT
+
 #pragma once
 
 #include <cassert>

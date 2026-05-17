@@ -2,6 +2,9 @@
  * @file PointCloud.h
  * @brief Packed point cloud with per-channel field layout.
  */
+// Copyright 2026 Davide Faconti
+// SPDX-License-Identifier: MIT
+
 #pragma once
 
 #include <cstdint>

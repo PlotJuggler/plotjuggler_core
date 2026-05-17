@@ -14,14 +14,14 @@ image message schema can both become `PJ::sdk::Image`; a ROS
 The public headers live under:
 
 ```cpp
-#include <pj_base/builtin/BuiltinObject.h>
-#include <pj_base/builtin/Image.h>
-#include <pj_base/builtin/DepthImage.h>
-#include <pj_base/builtin/PointCloud.h>
-#include <pj_base/builtin/ImageAnnotations.h>
-#include <pj_base/builtin/FrameTransforms.h>
-#include <pj_base/builtin/image_annotations_codec.h>
-#include <pj_base/builtin/frame_transforms_codec.h>
+#include <pj_base/builtin/BuiltinObject.hpp>
+#include <pj_base/builtin/Image.hpp>
+#include <pj_base/builtin/DepthImage.hpp>
+#include <pj_base/builtin/PointCloud.hpp>
+#include <pj_base/builtin/ImageAnnotations.hpp>
+#include <pj_base/builtin/FrameTransforms.hpp>
+#include <pj_base/builtin/image_annotations_codec.hpp>
+#include <pj_base/builtin/frame_transforms_codec.hpp>
 ```
 
 ## Design Principles
@@ -160,7 +160,7 @@ for this type.
 [  0   0    1 ]
 ```
 
-Helpers in `pj_base/builtin/depth_image_utils.h` derive common matrices such as
+Helpers in `pj_base/builtin/depth_image_utils.hpp` derive common matrices such as
 rectification rotation and projection matrix when a consumer wants them.
 
 ## PointCloud
@@ -231,7 +231,7 @@ uniform `color` applies to every vertex. If `colors.size() == points.size()`,
 per-vertex colors are used. `fill_color` applies to closed loops and circles
 when its alpha channel is non-zero.
 
-`pj_base/builtin/image_annotations_codec.h` serializes and deserializes this
+`pj_base/builtin/image_annotations_codec.hpp` serializes and deserializes this
 type using the canonical `PJ.ImageAnnotations` protobuf wire format.
 See [image_annotations_format.md](image_annotations_format.md) for the field
 mapping and compatibility rules.
@@ -260,7 +260,7 @@ Each `FrameTransform` contains:
 | `translation` | `Vector3` | Child-frame origin in parent-frame coordinates. |
 | `rotation` | `Quaternion` | Child-frame orientation relative to the parent frame. |
 
-`pj_base/builtin/frame_transforms_codec.h` serializes and deserializes this type
+`pj_base/builtin/frame_transforms_codec.hpp` serializes and deserializes this type
 using the canonical `PJ.FrameTransforms` protobuf wire format.
 
 ## Conversion Examples

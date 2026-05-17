@@ -10,6 +10,9 @@
  * outright. Eager ingestion is the natural default; no anchor lifetime
  * concerns to worry about.
  */
+// Copyright 2026 Davide Faconti
+// SPDX-License-Identifier: MIT
+
 #pragma once
 
 #include <cstdint>

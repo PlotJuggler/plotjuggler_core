@@ -85,8 +85,10 @@ and the requested task did not include updating it, ask the user whether to upda
 Before committing, always run:
 
 ```bash
-./build.sh --debug && ./test.sh && ./run_clang_tidy.sh
+./build.sh --debug && ./test.sh
 ```
+
+Code formatting and linting are enforced via pre-commit hooks (clang-format v17).
 
 ## Instructions Glossary
 

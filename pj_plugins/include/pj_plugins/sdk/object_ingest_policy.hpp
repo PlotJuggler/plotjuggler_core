@@ -11,13 +11,16 @@
  * and again on each pull, or never invoke it during ingest and only on
  * consumer pulls.
  */
+// Copyright 2026 Davide Faconti
+// SPDX-License-Identifier: MIT
+
 #pragma once
 
 #include <string>
 #include <string_view>
 #include <unordered_map>
 
-#include "pj_base/builtin/BuiltinObject.h"
+#include "pj_base/builtin/BuiltinObject.hpp"
 
 namespace PJ {
 namespace sdk {

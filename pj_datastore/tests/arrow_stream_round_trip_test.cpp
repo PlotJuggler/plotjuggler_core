@@ -9,6 +9,9 @@
  * This exercises the Phase 1b host-side implementation without going through
  * a dlopen'd plugin — all ABI calls are made directly on the C vtable.
  */
+// Copyright 2026 Davide Faconti
+// SPDX-License-Identifier: MIT
+
 #include <gtest/gtest.h>
 
 #include <cstdint>

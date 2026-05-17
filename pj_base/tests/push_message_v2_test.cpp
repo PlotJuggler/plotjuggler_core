@@ -1,3 +1,6 @@
+// Copyright 2026 Davide Faconti
+// SPDX-License-Identifier: MIT
+
 // Tests for the SDK template `DataSourceRuntimeHostView::pushMessage` and
 // its delegation to the C ABI slot `push_message_v2`. We exercise:
 //

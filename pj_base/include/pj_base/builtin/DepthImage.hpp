@@ -2,6 +2,9 @@
  * @file DepthImage.h
  * @brief Depth image with camera intrinsics.
  */
+// Copyright 2026 Davide Faconti
+// SPDX-License-Identifier: MIT
+
 #pragma once
 
 #include <array>

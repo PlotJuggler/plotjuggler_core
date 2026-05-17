@@ -4,6 +4,9 @@
  *
  * All trampolines are noexcept at the ABI boundary.
  */
+// Copyright 2026 Davide Faconti
+// SPDX-License-Identifier: MIT
+
 #pragma once
 
 #include <cstring>
@@ -13,7 +16,7 @@
 #include <utility>
 
 #include "pj_base/expected.hpp"
-#include "pj_base/plugin_abi_export.h"
+#include "pj_base/plugin_abi_export.hpp"
 #include "pj_base/sdk/plugin_data_api.hpp"
 #include "pj_base/sdk/service_registry.hpp"
 #include "pj_base/sdk/service_traits.hpp"
