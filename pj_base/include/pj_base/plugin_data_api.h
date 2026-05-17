@@ -38,7 +38,7 @@ extern "C" {
  * token).
  *
  * Contract for plugin authors: the symbol is emitted automatically at file
- * scope by `pj_base/plugin_abi_export.h`, which is transitively included by
+ * scope by `pj_base/plugin_abi_export.hpp`, which is transitively included by
  * every family SDK header (data_source_plugin_base.hpp, dialog_plugin_base.hpp,
  * etc.). Weak linkage lets multiple TUs in the same DSO each emit a definition
  * and have the linker fold them into one COMDAT entry — so co-resident DSOs

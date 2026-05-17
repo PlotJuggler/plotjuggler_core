@@ -7,11 +7,6 @@ if(NOT PlotJugglerSDK_FIND_COMPONENTS)
   set(PlotJugglerSDK_FIND_COMPONENTS DataSource)
 endif()
 
-# pj_base carries the SDK builtin-object vocabulary and publicly depends on
-# magic_enum for enum/string helpers, so the exported targets need it before
-# they are loaded.
-find_dependency(magic_enum)
-
 # Include the exported targets (defines PlotJugglerSDK::DataSource, etc.).
 include("${CMAKE_CURRENT_LIST_DIR}/PlotJugglerSDKTargets.cmake")
 
