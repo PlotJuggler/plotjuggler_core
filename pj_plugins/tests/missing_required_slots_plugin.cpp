@@ -94,6 +94,7 @@ extern "C" PJ_MESSAGE_PARSER_EXPORT const PJ_message_parser_vtable_t* PJ_get_mes
       .load_config = loadConfig,
       .parse = nullptr,
       .get_plugin_extension = extension,
+      .classify_schema = nullptr,
   };
   return &vt;
 }
