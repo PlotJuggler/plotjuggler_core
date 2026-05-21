@@ -131,6 +131,16 @@ class PlotjugglerCoreConan(ConanFile):
         # No top-level umbrella target: the four components have
         # mutually-exclusive audiences. Consumers must request a component.
 
+        # Conan 2's CMakeDeps only aggregates cmake_build_modules declared at
+        # the package level (self.cpp_info), not at component level — declaring
+        # it on the `sdk` component below silently produced an empty
+        # plotjuggler_core_BUILD_MODULES_PATHS_RELEASE in the generated data
+        # file. Ship the PjPluginManifest helper from the package root so
+        # CMakeDeps actually include()s it after find_package() returns.
+        self.cpp_info.set_property("cmake_build_modules", [
+            os.path.join("lib", "cmake", "plotjuggler_core", "PjPluginManifest.cmake"),
+        ])
+
         # --- base ---
         base = self.cpp_info.components["base"]
         base.set_property("cmake_target_name", "plotjuggler_core::base")
@@ -156,11 +166,6 @@ class PlotjugglerCoreConan(ConanFile):
         sdk.libs = []  # INTERFACE only
         sdk.includedirs = ["include"]
         sdk.requires = ["base", "nlohmann_json::nlohmann_json"]
-        # Ship the cmake helper alongside the component. cmake_build_modules
-        # makes Conan auto-include() it after find_package() succeeds.
-        sdk.set_property("cmake_build_modules", [
-            os.path.join("lib", "cmake", "plotjuggler_core", "PjPluginManifest.cmake"),
-        ])
 
         # --- plugin_host (umbrella linking every host-side loader) ---
         if self.options.with_host:
