@@ -5,11 +5,15 @@ add_library(pj_plugin_loader_detail STATIC
   src/detail/vtable_validation.cpp
 )
 target_include_directories(pj_plugin_loader_detail PUBLIC
-  ${CMAKE_CURRENT_SOURCE_DIR}/src
-  ${CMAKE_CURRENT_SOURCE_DIR}/dialog_protocol/include
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src>
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/dialog_protocol/include>
 )
 target_compile_features(pj_plugin_loader_detail PUBLIC cxx_std_20)
 target_compile_options(pj_plugin_loader_detail PRIVATE ${PJ_WARNING_FLAGS})
+set_target_properties(pj_plugin_loader_detail PROPERTIES
+  POSITION_INDEPENDENT_CODE ON
+  EXPORT_NAME plugin_loader_detail
+)
 target_link_libraries(pj_plugin_loader_detail PUBLIC pj_base)
 
 add_subdirectory(dialog_protocol)
@@ -398,6 +402,7 @@ endif() # PJ_BUILD_TESTS
 
 if(PJ_INSTALL_SDK)
   install(TARGETS
+      pj_plugin_loader_detail
       pj_plugin_sdk
       pj_plugin_catalog
       pj_data_source_host

@@ -173,6 +173,7 @@ class PlotjugglerCoreConan(ConanFile):
                 "pj_toolbox_host",
                 "pj_dialog_library",
                 "pj_plugin_catalog",
+                "pj_plugin_loader_detail",
             ]
             host.includedirs = ["include"]
             host.requires = ["base", "nlohmann_json::nlohmann_json"]
