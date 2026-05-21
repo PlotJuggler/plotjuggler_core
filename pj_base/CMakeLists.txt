@@ -28,6 +28,11 @@ set_target_properties(pj_base PROPERTIES
   POSITION_INDEPENDENT_CODE ON
   EXPORT_NAME base
 )
+# Build-tree alias so subdirectory-mode consumers can use the same namespaced
+# target name that the install/export tree exposes (and that the Conan package
+# emits). Keeps add_subdirectory() and find_package(plotjuggler_core) consumers
+# writing identical link declarations.
+add_library(plotjuggler_core::base ALIAS pj_base)
 if(PJ_ASSERT_THROWS)
   target_compile_definitions(pj_base PUBLIC PJ_ASSERT_THROWS)
 endif()

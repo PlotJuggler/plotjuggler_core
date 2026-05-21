@@ -33,6 +33,7 @@ set_target_properties(pj_datastore PROPERTIES
   POSITION_INDEPENDENT_CODE ON
   EXPORT_NAME datastore
 )
+add_library(plotjuggler_core::datastore ALIAS pj_datastore)
 if(PJ_ASSERT_THROWS)
   target_compile_definitions(pj_datastore PUBLIC PJ_ASSERT_THROWS)
 endif()
