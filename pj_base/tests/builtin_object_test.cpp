@@ -5,6 +5,7 @@
 
 #include "pj_base/builtin/BuiltinObject.hpp"
 
+using PJ::sdk::AssetVideo;
 using PJ::sdk::BuiltinObject;
 using PJ::sdk::BuiltinObjectType;
 using PJ::sdk::CompressedPointCloud;
@@ -33,6 +34,7 @@ TEST(BuiltinObjectTest, TypeOfRecognizesKnownBuiltinTypes) {
   EXPECT_EQ(typeOf(BuiltinObject{Mesh3D{}}), BuiltinObjectType::kMesh3D);
   EXPECT_EQ(typeOf(BuiltinObject{VideoFrame{}}), BuiltinObjectType::kVideoFrame);
   EXPECT_EQ(typeOf(BuiltinObject{SceneEntities{}}), BuiltinObjectType::kSceneEntities);
+  EXPECT_EQ(typeOf(BuiltinObject{AssetVideo{}}), BuiltinObjectType::kAssetVideo);
 }
 
 TEST(BuiltinObjectTest, NameAndParseRoundTripForEveryEnumEntry) {
@@ -48,6 +50,7 @@ TEST(BuiltinObjectTest, NameAndParseRoundTripForEveryEnumEntry) {
            BuiltinObjectType::kMesh3D,
            BuiltinObjectType::kVideoFrame,
            BuiltinObjectType::kSceneEntities,
+           BuiltinObjectType::kAssetVideo,
        }) {
     const auto parsed = parseBuiltinObjectType(name(t));
     ASSERT_TRUE(parsed.has_value()) << "parseBuiltinObjectType failed for " << name(t);

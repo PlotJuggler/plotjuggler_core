@@ -33,6 +33,8 @@ rationale.
   - `OccupancyGrid`
 - **`VideoFrame.proto`** — one frame of an inter-frame-coded video stream (`h264`, `h265`, `vp9`, `av1`) when per-frame `Image` messages would be wasteful.
   - `VideoFrame`
+- **`AssetVideo.proto`** — reference to a file-backed video plus typed playback metadata (path, MIME type, dimensions, frame rate) so consumers can size playback windows without opening the file.
+  - `AssetVideo`
 
 ### Point clouds
 

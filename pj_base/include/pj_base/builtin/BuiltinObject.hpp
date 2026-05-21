@@ -26,6 +26,7 @@
 #include <optional>
 #include <string_view>
 
+#include "pj_base/builtin/AssetVideo.hpp"
 #include "pj_base/builtin/CompressedPointCloud.hpp"
 #include "pj_base/builtin/DepthImage.hpp"
 #include "pj_base/builtin/FrameTransforms.hpp"
@@ -52,6 +53,7 @@ enum class BuiltinObjectType : uint16_t {
   kMesh3D = 9,                ///< sdk::Mesh3D — binary mesh asset (GLTF/STL/PLY/OBJ/USD/DAE).
   kVideoFrame = 10,           ///< sdk::VideoFrame — single frame of h264/h265/vp9/av1 stream.
   kSceneEntities = 11,        ///< sdk::SceneEntities — procedural 3D scene primitives.
+  kAssetVideo = 12,           ///< sdk::AssetVideo — file-backed video reference + playback metadata.
 };
 
 /// A-priori classification of a schema. Currently carries only the type;
@@ -86,6 +88,8 @@ struct SchemaClassification {
       return "kVideoFrame";
     case BuiltinObjectType::kSceneEntities:
       return "kSceneEntities";
+    case BuiltinObjectType::kAssetVideo:
+      return "kAssetVideo";
   }
   return "kNone";
 }
@@ -125,6 +129,9 @@ struct SchemaClassification {
   }
   if (s == "kSceneEntities") {
     return BuiltinObjectType::kSceneEntities;
+  }
+  if (s == "kAssetVideo") {
+    return BuiltinObjectType::kAssetVideo;
   }
   return std::nullopt;
 }
@@ -168,6 +175,9 @@ using BuiltinObject = std::any;
   }
   if (t == typeid(SceneEntities)) {
     return BuiltinObjectType::kSceneEntities;
+  }
+  if (t == typeid(AssetVideo)) {
+    return BuiltinObjectType::kAssetVideo;
   }
   return BuiltinObjectType::kNone;
 }

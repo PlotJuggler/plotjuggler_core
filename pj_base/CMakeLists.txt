@@ -3,6 +3,7 @@
 # ---------------------------------------------------------------------------
 
 add_library(pj_base STATIC
+  src/builtin/asset_video_codec.cpp
   src/builtin/compressed_point_cloud_codec.cpp
   src/builtin/depth_image_codec.cpp
   src/builtin/frame_transforms_codec.cpp
