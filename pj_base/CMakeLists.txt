@@ -3,8 +3,13 @@
 # ---------------------------------------------------------------------------
 
 add_library(pj_base STATIC
+  src/builtin/compressed_point_cloud_codec.cpp
   src/builtin/frame_transforms_codec.cpp
   src/builtin/image_annotations_codec.cpp
+  src/builtin/mesh3d_codec.cpp
+  src/builtin/occupancy_grid_codec.cpp
+  src/builtin/scene_entities_codec.cpp
+  src/builtin/video_frame_codec.cpp
   src/type_tree.cpp
 )
 target_include_directories(pj_base PUBLIC

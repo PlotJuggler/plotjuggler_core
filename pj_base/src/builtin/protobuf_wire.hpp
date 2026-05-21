@@ -37,6 +37,27 @@ class Writer {
     appendFixed64(value);
   }
 
+  void fixed32(uint32_t field, uint32_t value) {
+    tag(field, WireType::kFixed32);
+    appendFixed32(value);
+  }
+
+  /// Writes a packed array of fixed32 values (proto3 default packing for
+  /// `repeated fixed32` scalar fields). Omits the field entirely when
+  /// `values` is empty (matches proto3 default-field semantics).
+  template <typename Range>
+  void packedFixed32(uint32_t field, const Range& values) {
+    const size_t count = static_cast<size_t>(values.size());
+    if (count == 0) {
+      return;
+    }
+    tag(field, WireType::kLengthDelimited);
+    appendVarint(count * 4);
+    for (uint32_t v : values) {
+      appendFixed32(v);
+    }
+  }
+
   void doubleField(uint32_t field, double value) {
     uint64_t bits = 0;
     std::memcpy(&bits, &value, sizeof(value));
@@ -78,6 +99,12 @@ class Writer {
 
   void appendFixed64(uint64_t value) {
     for (int i = 0; i < 8; ++i) {
+      out_.push_back(static_cast<uint8_t>((value >> (8 * i)) & 0xFFu));
+    }
+  }
+
+  void appendFixed32(uint32_t value) {
+    for (int i = 0; i < 4; ++i) {
       out_.push_back(static_cast<uint8_t>((value >> (8 * i)) & 0xFFu));
     }
   }
@@ -144,6 +171,18 @@ class Reader {
     return true;
   }
 
+  bool readFixed32(uint32_t& out) {
+    if (remaining() < 4) {
+      return false;
+    }
+    out = 0;
+    for (int i = 0; i < 4; ++i) {
+      out |= static_cast<uint32_t>(p_[i]) << (8 * i);
+    }
+    p_ += 4;
+    return true;
+  }
+
   bool readDouble(double& out) {
     uint64_t bits = 0;
     if (!readFixed64(bits)) {
@@ -161,6 +200,14 @@ class Reader {
     }
     out.assign(reinterpret_cast<const char*>(data), size);
     return true;
+  }
+
+  /// Reads a length-delimited byte payload, returning a non-owning view into
+  /// the underlying buffer. The view is valid only for the lifetime of the
+  /// bytes the Reader was constructed over — callers that need to retain the
+  /// data must copy it.
+  bool readBytes(const uint8_t*& data, size_t& size) {
+    return readBytesImpl(data, size);
   }
 
   bool readMessage(Reader& out) {
@@ -194,7 +241,7 @@ class Reader {
   }
 
  private:
-  bool readBytes(const uint8_t*& data, size_t& size) {
+  bool readBytesImpl(const uint8_t*& data, size_t& size) {
     uint64_t len = 0;
     if (!readVarint(len) || len > remaining()) {
       return false;
@@ -216,5 +263,48 @@ class Reader {
   const uint8_t* p_ = nullptr;
   const uint8_t* end_ = nullptr;
 };
+
+/// Drives the standard tag-read / field-dispatch / skip-unknown loop used
+/// by every per-message decoder. `handler(tag, reader)` consumes the field
+/// and returns true when handled (including its own wire-type validation),
+/// false to let the loop skip the field via reader.skip(). Returns false on
+/// truncation / malformed input.
+template <typename FieldHandler>
+[[nodiscard]] inline bool parseFields(Reader& reader, FieldHandler&& handler) {
+  while (!reader.eof()) {
+    Tag tag;
+    if (!reader.readTag(tag)) {
+      return false;
+    }
+    if (!handler(tag, reader) && !reader.skip(tag.type)) {
+      return false;
+    }
+  }
+  return true;
+}
+
+/// Reads a proto3-packed `repeated fixed32` payload from a length-delimited
+/// field into `out`. Values are appended; the caller may pre-clear if
+/// needed. Returns false on truncation or non-multiple-of-4 length.
+[[nodiscard]] inline bool readPackedFixed32(Reader& reader, std::vector<uint32_t>& out) {
+  const uint8_t* data = nullptr;
+  size_t size = 0;
+  if (!reader.readBytes(data, size)) {
+    return false;
+  }
+  if ((size % 4) != 0) {
+    return false;
+  }
+  Reader sub(data, size);
+  out.reserve(out.size() + size / 4);
+  while (!sub.eof()) {
+    uint32_t v = 0;
+    if (!sub.readFixed32(v)) {
+      return false;
+    }
+    out.push_back(v);
+  }
+  return true;
+}
 
 }  // namespace PJ::builtin_wire
