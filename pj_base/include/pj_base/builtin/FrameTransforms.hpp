@@ -35,6 +35,15 @@ struct Quaternion {
   bool operator==(const Quaternion&) const = default;
 };
 
+/// Rigid transform in 3D space: position + orientation.
+/// Used by Mesh3D, OccupancyGrid, SceneEntities, and other types that
+/// place data in a frame of reference.
+struct Pose {
+  Vector3 position;
+  Quaternion orientation;
+  bool operator==(const Pose&) const = default;
+};
+
 /// Transform from `parent_frame_id` to `child_frame_id`.
 struct FrameTransform {
   Timestamp timestamp = 0;

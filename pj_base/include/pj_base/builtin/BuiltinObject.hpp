@@ -26,24 +26,32 @@
 #include <optional>
 #include <string_view>
 
+#include "pj_base/builtin/CompressedPointCloud.hpp"
 #include "pj_base/builtin/DepthImage.hpp"
 #include "pj_base/builtin/FrameTransforms.hpp"
 #include "pj_base/builtin/Image.hpp"
 #include "pj_base/builtin/ImageAnnotations.hpp"
+#include "pj_base/builtin/Mesh3D.hpp"
+#include "pj_base/builtin/OccupancyGrid.hpp"
 #include "pj_base/builtin/PointCloud.hpp"
+#include "pj_base/builtin/SceneEntities.hpp"
+#include "pj_base/builtin/VideoFrame.hpp"
 
 namespace PJ {
 namespace sdk {
 
 enum class BuiltinObjectType : uint16_t {
   kNone = 0,
-  kImage = 1,             ///< sdk::Image — raw or compressed, distinguished by encoding string.
-  kPointCloud = 3,        ///< sdk::PointCloud — packed points + per-channel field layout.
-  kDepthImage = 4,        ///< sdk::DepthImage — depth pixels + camera intrinsics.
-  kImageAnnotations = 5,  ///< sdk::ImageAnnotations — 2D overlays (points, lines, text).
-  kFrameTransforms = 6,   ///< sdk::FrameTransforms — named 3D frame relationships.
-  // Reserved for future types; keep numeric values stable across releases.
-  // kOccupancyGrid  = 7,
+  kImage = 1,                 ///< sdk::Image — raw or compressed, distinguished by encoding string.
+  kPointCloud = 3,            ///< sdk::PointCloud — packed points + per-channel field layout.
+  kDepthImage = 4,            ///< sdk::DepthImage — depth pixels + camera intrinsics.
+  kImageAnnotations = 5,      ///< sdk::ImageAnnotations — 2D overlays (points, lines, text).
+  kFrameTransforms = 6,       ///< sdk::FrameTransforms — named 3D frame relationships.
+  kOccupancyGrid = 7,         ///< sdk::OccupancyGrid — 2D metric grid (maps, costmaps).
+  kCompressedPointCloud = 8,  ///< sdk::CompressedPointCloud — opaque compressed cloud (Draco, ...).
+  kMesh3D = 9,                ///< sdk::Mesh3D — binary mesh asset (GLTF/STL/PLY/OBJ/USD/DAE).
+  kVideoFrame = 10,           ///< sdk::VideoFrame — single frame of h264/h265/vp9/av1 stream.
+  kSceneEntities = 11,        ///< sdk::SceneEntities — procedural 3D scene primitives.
 };
 
 /// A-priori classification of a schema. Currently carries only the type;
@@ -68,6 +76,16 @@ struct SchemaClassification {
       return "kImageAnnotations";
     case BuiltinObjectType::kFrameTransforms:
       return "kFrameTransforms";
+    case BuiltinObjectType::kOccupancyGrid:
+      return "kOccupancyGrid";
+    case BuiltinObjectType::kCompressedPointCloud:
+      return "kCompressedPointCloud";
+    case BuiltinObjectType::kMesh3D:
+      return "kMesh3D";
+    case BuiltinObjectType::kVideoFrame:
+      return "kVideoFrame";
+    case BuiltinObjectType::kSceneEntities:
+      return "kSceneEntities";
   }
   return "kNone";
 }
@@ -92,6 +110,21 @@ struct SchemaClassification {
   }
   if (s == "kFrameTransforms") {
     return BuiltinObjectType::kFrameTransforms;
+  }
+  if (s == "kOccupancyGrid") {
+    return BuiltinObjectType::kOccupancyGrid;
+  }
+  if (s == "kCompressedPointCloud") {
+    return BuiltinObjectType::kCompressedPointCloud;
+  }
+  if (s == "kMesh3D") {
+    return BuiltinObjectType::kMesh3D;
+  }
+  if (s == "kVideoFrame") {
+    return BuiltinObjectType::kVideoFrame;
+  }
+  if (s == "kSceneEntities") {
+    return BuiltinObjectType::kSceneEntities;
   }
   return std::nullopt;
 }
@@ -120,6 +153,21 @@ using BuiltinObject = std::any;
   }
   if (t == typeid(FrameTransforms)) {
     return BuiltinObjectType::kFrameTransforms;
+  }
+  if (t == typeid(OccupancyGrid)) {
+    return BuiltinObjectType::kOccupancyGrid;
+  }
+  if (t == typeid(CompressedPointCloud)) {
+    return BuiltinObjectType::kCompressedPointCloud;
+  }
+  if (t == typeid(Mesh3D)) {
+    return BuiltinObjectType::kMesh3D;
+  }
+  if (t == typeid(VideoFrame)) {
+    return BuiltinObjectType::kVideoFrame;
+  }
+  if (t == typeid(SceneEntities)) {
+    return BuiltinObjectType::kSceneEntities;
   }
   return BuiltinObjectType::kNone;
 }
