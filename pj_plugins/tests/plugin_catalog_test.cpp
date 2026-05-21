@@ -90,6 +90,22 @@ TEST_F(PluginCatalogTest, InspectDialogDsoUsesEmbeddedManifest) {
   EXPECT_EQ(descriptor->family, PluginFamily::kDialog);
 }
 
+TEST_F(PluginCatalogTest, InspectDialogDsoUsesStaticManifestWithoutCreate) {
+  auto descriptor = inspectPluginDso(PJ_STATIC_MANIFEST_DIALOG_PLUGIN_PATH);
+  ASSERT_TRUE(descriptor.has_value()) << descriptor.error();
+  EXPECT_EQ(descriptor->id, "static-manifest-dialog");
+  EXPECT_EQ(descriptor->name, "Static Manifest Dialog");
+  EXPECT_EQ(descriptor->family, PluginFamily::kDialog);
+}
+
+TEST_F(PluginCatalogTest, InspectDialogDsoFallsBackWhenStaticManifestSlotIsNull) {
+  auto descriptor = inspectPluginDso(PJ_LEGACY_MACRO_DIALOG_PLUGIN_PATH);
+  ASSERT_TRUE(descriptor.has_value()) << descriptor.error();
+  EXPECT_EQ(descriptor->id, "legacy-macro-dialog");
+  EXPECT_EQ(descriptor->name, "Legacy Macro Dialog");
+  EXPECT_EQ(descriptor->family, PluginFamily::kDialog);
+}
+
 TEST_F(PluginCatalogTest, MissingIdManifestIsRejected) {
   auto descriptor = inspectPluginDso(PJ_MISSING_ID_PLUGIN_PATH);
   ASSERT_FALSE(descriptor.has_value());
@@ -105,6 +121,29 @@ TEST_F(PluginCatalogTest, InvalidOptionalManifestFieldIsReportedAsDiagnostic) {
   ASSERT_EQ(result->diagnostics.size(), 1U);
   EXPECT_NE(result->diagnostics[0].message.find("description"), std::string::npos);
   EXPECT_NE(result->diagnostics[0].message.find("invalid_optional"), std::string::npos);
+}
+
+TEST_F(PluginCatalogTest, MissingRequiredVtableSlotIsReportedAsDiagnostic) {
+  copyPlugin(PJ_MISSING_REQUIRED_SLOTS_PLUGIN_PATH, pluginFileName("missing_required_slots"));
+
+  auto result = scanPluginDsos(dir_);
+  ASSERT_TRUE(result.has_value()) << result.error();
+  EXPECT_TRUE(result->plugins.empty());
+  ASSERT_EQ(result->diagnostics.size(), 1U);
+  EXPECT_NE(result->diagnostics[0].message.find("missing required slot"), std::string::npos);
+  EXPECT_NE(result->diagnostics[0].message.find("missing_required_slots"), std::string::npos);
+}
+
+TEST_F(PluginCatalogTest, MissingRequiredDialogVtableSlotIsReportedAsDiagnostic) {
+  copyPlugin(PJ_MISSING_DIALOG_REQUIRED_SLOTS_PLUGIN_PATH, pluginFileName("missing_dialog_slot"));
+
+  auto result = scanPluginDsos(dir_);
+  ASSERT_TRUE(result.has_value()) << result.error();
+  EXPECT_TRUE(result->plugins.empty());
+  ASSERT_EQ(result->diagnostics.size(), 1U);
+  EXPECT_NE(
+      result->diagnostics[0].message.find("Dialog vtable missing required slot: get_ui_content"), std::string::npos);
+  EXPECT_NE(result->diagnostics[0].message.find("missing_dialog_slot"), std::string::npos);
 }
 
 TEST_F(PluginCatalogTest, ScanContinuesAfterBrokenDso) {

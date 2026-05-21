@@ -7,13 +7,27 @@
 > `PJ::sdk::ArrowSchemaHolder` / `ArrowArrayHolder` for scope-bound
 > release. See `ARCHITECTURE.md` for the full ABI rules.
 
+> **Vocabulary used throughout this guide**:
+> - `PJ::Status` — alias for `PJ::Expected<void>`. Return `PJ::okStatus()` or
+>   `PJ::unexpected("reason")`.
+> - `PJ::sdk::ArrowSchemaHolder` / `ArrowArrayHolder` / `ArrowStreamHolder` —
+>   RAII wrappers from `pj_base/sdk/arrow.hpp` that release Arrow C Data
+>   Interface structs at scope exit.
+> - "Catalog snapshot" — a read-only view of every data source, topic, and
+>   field present in the host at the moment of acquisition.
+
+> **Toolbox is the most powerful family.** It alone can read existing data,
+> create new data sources, and write derived outputs. Treat that power with
+> care — see [Plugin Contract](#plugin-contract) below for the rules and
+> conventions the host expects you to follow.
+
 ## What is a Toolbox?
 
 A Toolbox plugin is a shared library (`.so` / `.dylib` / `.dll`) that provides
 **stateful interactive tools** with full read+write access to host data. Unlike
 DataSource (write-only, streaming lifecycle) and MessageParser (headless,
 request/response), Toolbox plugins are long-lived, UI-driven, and may create
-new data sources, transform existing data, or perform destructive updates.
+new data sources or transform existing data into new outputs.
 Plugins link only against `pj_base` (no Qt, no host internals) and communicate
 through a stable C ABI.
 
@@ -27,11 +41,41 @@ editor, custom data transforms.
    acquiring services), `saveConfig()`, `loadConfig()`, `getDialog()`
 3. Export with `PJ_TOOLBOX_PLUGIN(YourClass, R"({"id":"...","name":"...","version":"..."})")`
 4. If you ship an embedded dialog, also declare it as a
-   `DialogPluginTyped` subclass and add `PJ_DIALOG_PLUGIN(YourDialog)`
+   `DialogPluginTyped` subclass and add `PJ_DIALOG_PLUGIN(YourDialog, kManifestJson)`
 5. Build as a shared library linking `pj_base` (+ `pj_dialog_sdk` if
    you have a dialog)
 
 A complete example lives at `pj_plugins/examples/mock_toolbox.cpp`.
+
+## Plugin Contract
+
+Follow these rules. The toolbox family has read+write+create permissions, so
+the contract is broader than the other families.
+
+**MUST**
+- Return `PJ::okStatus()` / `PJ::unexpected("reason")` from every fallible
+  method.
+- Call `runtimeHost().notifyDataChanged()` after any successful write that the
+  user should see in the UI. Coalesce per logical operation, not per record —
+  one call per "I just produced a new series" is the right granularity.
+- Wrap all `read_series_arrow` returns in `PJ::sdk::ArrowSchemaHolder` /
+  `ArrowArrayHolder` so the release callbacks fire on scope exit.
+- Persist tool state in `saveConfig()` so a layout reload restores the same
+  view. The host has no ambient persistence.
+- Only call host methods from the host's callback thread. Background work
+  must marshal back through the host thread to write data.
+
+**MUST NOT**
+- Throw exceptions across virtual overrides.
+- Hold an `ArrowSchema*` / `ArrowArray*` past the scope of the holders that
+  own them — the host may reuse the underlying buffers.
+- Treat `catalogSnapshot()` as live data. Snapshots are immutable views at
+  acquisition time; reacquire after writes if you need to see your own
+  changes.
+- Create ambiguous output sources whose names collide with existing user data
+  unless the user explicitly chose that name. Duplicate names create distinct
+  datasets, but they are confusing in the UI; check the catalog and pick a
+  unique derived-data name by default.
 
 ## Step by Step
 
@@ -117,16 +161,17 @@ Toolbox plugins have no state machine — they are either alive or destroyed.
 Activation and deactivation are dialog visibility concerns handled by the host.
 
 ```
-create → bind_toolbox_host → bind_runtime_host → load_config
-  → [show dialog] → user interacts → plugin reads/writes via toolbox host
-  → plugin calls notifyDataChanged()
-  → save_config → destroy
+create -> bind(registry) -> load_config
+  -> [show dialog] -> user interacts -> plugin reads/writes via toolbox host
+  -> plugin calls notifyDataChanged()
+  -> save_config -> destroy
 ```
 
 The host guarantees the following call ordering:
 
 1. `create()` — always first.
-2. `bind_toolbox_host()` and `bind_runtime_host()` — before any interaction.
+2. `bind(registry)` — before any interaction. The SDK default bind resolves
+   `"pj.toolbox_write.v1"` and `"pj.toolbox_runtime.v1"`.
 3. `load_config()` — before showing the dialog, may be called multiple times.
 4. User interaction phase — plugin reads/writes data on demand.
 5. `save_config()` — before destroy, when the host persists layout.
@@ -134,7 +179,7 @@ The host guarantees the following call ordering:
 
 ## Host Services Available to Plugins
 
-Two host bindings are provided before the plugin becomes interactive:
+Two host services are provided before the plugin becomes interactive:
 
 ### Toolbox host — data plane
 
@@ -159,8 +204,7 @@ Access via `runtimeHost()`. Use this for diagnostics and UI refresh.
 | Method | Purpose |
 |---|---|
 | `reportMessage(level, text)` | Send info/warning/error to the host UI log. |
-| `notifyDataChanged()` | Tell the host that data was modified; refresh UI. |
-| `lastError()` | Read the last host-side error message. |
+| `notifyDataChanged()` | Tell the host that data was modified; refresh UI. Idempotent and cheap; coalesce per logical operation, not per record. |
 
 ### Reading a series via Arrow
 
@@ -262,12 +306,12 @@ if (!source) {
 ```
 
 **Exception safety** — the SDK base class catches all C++ exceptions in virtual
-method trampolines and converts them to `setLastError()` + false return. No
-exceptions cross the C ABI boundary.
+method trampolines and converts them to `PJ_error_t` out-params plus `false`.
+No exceptions cross the C ABI boundary.
 
 ## Threading Model
 
-All plugin callbacks — `bindToolboxHost()`, `bindRuntimeHost()`,
+All plugin callbacks — `bind()`,
 `loadConfig()`, `saveConfig()`, `getDialog()` — are called **on the host's
 thread**. The host guarantees single-threaded access per plugin instance.
 
@@ -318,3 +362,15 @@ row-of-fields shape. See
 - `pj_plugins/tests/toolbox_plugin_test.cpp` — end-to-end host-side test
   using `PJ::ToolboxTestStore` (in `pj_plugins/include/pj_plugins/testing/`)
   to drive a toolbox plugin through ingest, transform, and config scenarios.
+
+## Common Mistakes
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| New series do not appear in the host UI after a write | `notifyDataChanged()` was never called | Call it once after each logical write batch |
+| `read_series_arrow` succeeds but later code crashes accessing the data | `ArrowSchema` / `ArrowArray` released early, or held by raw pointer past holder scope | Use `PJ::sdk::ArrowSchemaHolder` / `ArrowArrayHolder` and keep them alive while the data is read |
+| Catalog reads stale data immediately after writing | `catalogSnapshot()` was acquired before the write | Reacquire the snapshot after `notifyDataChanged()` |
+| Duplicate source names appear in the UI | `createDataSource(name)` always creates a new dataset, even when the display name already exists | Check the catalog first; pick a unique derived-data name or surface a confirmation in the dialog |
+| Plugin works in tests but crashes in the host | Host method called from a thread the toolbox spawned | Marshal back to the host thread (use the dialog's `onTick` or a host-thread queue) |
+| Bulk transform output is one row at a time | Output written record-by-record instead of via Arrow | Build an `ArrowArrayStream` and use `appendArrowStream()` for the output |
+| Plugin restarts but the tool's view is empty | Config not persisted | Round-trip every UI-relevant field through `saveConfig()` / `loadConfig()` |

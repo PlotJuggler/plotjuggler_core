@@ -4,6 +4,7 @@
 #include <gtest/gtest.h>
 #include <pj_plugins/dialog_protocol.h>
 
+#include <cstddef>
 #include <cstring>
 #include <nlohmann/json.hpp>
 #include <pj_plugins/sdk/widget_data.hpp>
@@ -11,6 +12,24 @@
 
 // Defined in mock_dialog.cpp, linked statically
 extern "C" const PJ_dialog_vtable_t* PJ_get_dialog_vtable() noexcept;
+
+static_assert(offsetof(PJ_dialog_vtable_t, protocol_version) == 0, "dialog v4 prefix pinned");
+static_assert(offsetof(PJ_dialog_vtable_t, struct_size) == 4, "dialog v4 prefix pinned");
+static_assert(offsetof(PJ_dialog_vtable_t, create) == 8, "dialog create slot pinned");
+static_assert(offsetof(PJ_dialog_vtable_t, destroy) == 16, "dialog destroy slot pinned");
+static_assert(offsetof(PJ_dialog_vtable_t, get_manifest) == 24, "dialog manifest slot pinned");
+static_assert(offsetof(PJ_dialog_vtable_t, get_ui_content) == 32, "dialog UI slot pinned");
+static_assert(offsetof(PJ_dialog_vtable_t, get_widget_data) == 40, "dialog widget-data slot pinned");
+static_assert(offsetof(PJ_dialog_vtable_t, on_widget_event) == 48, "dialog event slot pinned");
+static_assert(offsetof(PJ_dialog_vtable_t, on_tick) == 56, "dialog tick slot pinned");
+static_assert(offsetof(PJ_dialog_vtable_t, on_accepted) == 64, "dialog accepted slot pinned");
+static_assert(offsetof(PJ_dialog_vtable_t, on_rejected) == 72, "dialog rejected slot pinned");
+static_assert(offsetof(PJ_dialog_vtable_t, save_config) == 80, "dialog save-config slot pinned");
+static_assert(offsetof(PJ_dialog_vtable_t, load_config) == 88, "v4 dialog baseline slot pinned");
+static_assert(PJ_DIALOG_MIN_VTABLE_SIZE == 96, "Dialog MIN vtable size is pinned at v4.0");
+static_assert(PJ_DIALOG_MIN_VTABLE_SIZE <= sizeof(PJ_dialog_vtable_t), "MIN must never exceed current");
+static_assert(offsetof(PJ_dialog_vtable_t, manifest_json) == 96, "Dialog static manifest tail slot appended");
+static_assert(sizeof(PJ_dialog_vtable_t) == 104, "Dialog vtable size updated deliberately on append");
 
 class PluginLifecycleTest : public ::testing::Test {
  protected:
@@ -40,6 +59,7 @@ TEST_F(PluginLifecycleTest, ProtocolVersion) {
 
 TEST_F(PluginLifecycleTest, StructSize) {
   EXPECT_EQ(vt_->struct_size, sizeof(PJ_dialog_vtable_t));
+  EXPECT_EQ(PJ_DIALOG_MIN_VTABLE_SIZE, offsetof(PJ_dialog_vtable_t, manifest_json));
 }
 
 TEST_F(PluginLifecycleTest, AllFunctionPointersNonNull) {
@@ -54,6 +74,8 @@ TEST_F(PluginLifecycleTest, AllFunctionPointersNonNull) {
   EXPECT_NE(vt_->on_rejected, nullptr);
   EXPECT_NE(vt_->save_config, nullptr);
   EXPECT_NE(vt_->load_config, nullptr);
+  ASSERT_TRUE(PJ_HAS_TAIL_SLOT(PJ_dialog_vtable_t, vt_, manifest_json));
+  EXPECT_NE(vt_->manifest_json, nullptr);
 }
 
 // --- Manifest ---
@@ -65,6 +87,12 @@ TEST_F(PluginLifecycleTest, ManifestIsValidJson) {
   EXPECT_FALSE(j.is_discarded());
   EXPECT_TRUE(j.contains("name"));
   EXPECT_TRUE(j.contains("version"));
+}
+
+TEST_F(PluginLifecycleTest, StaticManifestMatchesRuntimeManifest) {
+  ASSERT_TRUE(PJ_HAS_TAIL_SLOT(PJ_dialog_vtable_t, vt_, manifest_json));
+  ASSERT_NE(vt_->manifest_json, nullptr);
+  EXPECT_EQ(nlohmann::json::parse(vt_->manifest_json), nlohmann::json::parse(vt_->get_manifest(ctx_)));
 }
 
 TEST_F(PluginLifecycleTest, ManifestPointerStable) {

@@ -11,6 +11,7 @@
 #include <pj_base/message_parser_protocol.h>
 
 #include <cassert>
+#include <memory>
 #include <pj_base/builtin/BuiltinObject.hpp>
 #include <pj_base/expected.hpp>
 #include <pj_base/sdk/data_source_host_views.hpp>
@@ -25,7 +26,8 @@ namespace PJ {
 /// RAII handle owning a MessageParser plugin instance.
 class MessageParserHandle {
  public:
-  explicit MessageParserHandle(const PJ_message_parser_vtable_t* vt) : vt_(vt) {
+  explicit MessageParserHandle(const PJ_message_parser_vtable_t* vt, std::shared_ptr<void> library_owner = {})
+      : vt_(vt), library_owner_(std::move(library_owner)) {
     if (vt_ != nullptr) {
       assert(vt_->protocol_version == PJ_MESSAGE_PARSER_PROTOCOL_VERSION);
       ctx_ = vt_->create();
@@ -38,7 +40,8 @@ class MessageParserHandle {
     }
   }
 
-  MessageParserHandle(MessageParserHandle&& other) noexcept : vt_(other.vt_), ctx_(other.ctx_) {
+  MessageParserHandle(MessageParserHandle&& other) noexcept
+      : vt_(other.vt_), ctx_(other.ctx_), library_owner_(std::move(other.library_owner_)) {
     other.vt_ = nullptr;
     other.ctx_ = nullptr;
   }
@@ -47,6 +50,7 @@ class MessageParserHandle {
     if (this != &other) {
       std::swap(vt_, other.vt_);
       std::swap(ctx_, other.ctx_);
+      std::swap(library_owner_, other.library_owner_);
     }
     return *this;
   }
@@ -146,6 +150,7 @@ class MessageParserHandle {
  private:
   const PJ_message_parser_vtable_t* vt_ = nullptr;
   void* ctx_ = nullptr;
+  std::shared_ptr<void> library_owner_;
 };
 
 }  // namespace PJ

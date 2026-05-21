@@ -4,6 +4,7 @@
 #include <gtest/gtest.h>
 
 #include <cstring>
+#include <memory>
 #include <string>
 
 #include "pj_base/plugin_data_api.h"
@@ -14,6 +15,9 @@
 
 #ifndef PJ_MOCK_TOOLBOX_PLUGIN_PATH
 #error "PJ_MOCK_TOOLBOX_PLUGIN_PATH must be defined"
+#endif
+#ifndef PJ_MISSING_REQUIRED_SLOTS_PLUGIN_PATH
+#error "PJ_MISSING_REQUIRED_SLOTS_PLUGIN_PATH must be defined"
 #endif
 
 namespace {
@@ -105,6 +109,12 @@ TEST(ToolboxPluginTest, LoadsSharedLibraryAndValidatesVtable) {
   EXPECT_EQ(library->vtable()->protocol_version, static_cast<uint32_t>(PJ_TOOLBOX_PLUGIN_PROTOCOL_VERSION));
 }
 
+TEST(ToolboxPluginTest, RejectsMissingRequiredVtableSlot) {
+  auto library = PJ::ToolboxLibrary::load(PJ_MISSING_REQUIRED_SLOTS_PLUGIN_PATH);
+  ASSERT_FALSE(library);
+  EXPECT_NE(library.error().find("Toolbox vtable missing required slot: on_data_changed"), std::string::npos);
+}
+
 TEST(ToolboxPluginTest, BindHostsAndConfigRoundTrip) {
   auto library = PJ::ToolboxLibrary::load(PJ_MOCK_TOOLBOX_PLUGIN_PATH);
   ASSERT_TRUE(library) << library.error();
@@ -132,6 +142,20 @@ TEST(ToolboxPluginTest, BindFailsWithoutMandatoryServices) {
   PJ::ServiceRegistryBuilder empty;
   auto status = handle.bind(empty.view());
   EXPECT_FALSE(status);
+}
+
+TEST(ToolboxPluginTest, HandleKeepsSharedLibraryLoadedAfterLibraryObjectDies) {
+  std::unique_ptr<PJ::ToolboxHandle> handle;
+  {
+    auto library = PJ::ToolboxLibrary::load(PJ_MOCK_TOOLBOX_PLUGIN_PATH);
+    ASSERT_TRUE(library) << library.error();
+    handle = std::make_unique<PJ::ToolboxHandle>(library->createHandle());
+    ASSERT_TRUE(handle->valid());
+  }
+
+  EXPECT_NE(handle->manifest().find("Mock Toolbox"), std::string::npos);
+  EXPECT_EQ(handle->capabilities(), 0u);
+  handle.reset();
 }
 
 TEST(ToolboxPluginTest, ReadTransformWriteFlowAndNotifyDataChanged) {

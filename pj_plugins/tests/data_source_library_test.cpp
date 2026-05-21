@@ -7,6 +7,7 @@
 
 #include <cstddef>
 #include <cstring>
+#include <memory>
 #include <string>
 
 #include "pj_base/plugin_data_api.h"
@@ -15,6 +16,9 @@
 
 #ifndef PJ_MOCK_DATA_SOURCE_PLUGIN_PATH
 #error "PJ_MOCK_DATA_SOURCE_PLUGIN_PATH must be defined"
+#endif
+#ifndef PJ_MISSING_REQUIRED_SLOTS_PLUGIN_PATH
+#error "PJ_MISSING_REQUIRED_SLOTS_PLUGIN_PATH must be defined"
 #endif
 
 namespace {
@@ -149,6 +153,12 @@ TEST(DataSourceLibraryTest, LoadsSharedPluginAndDrivesInstance) {
   EXPECT_EQ(handle.currentState(), PJ::DataSourceState::kStopped);
 }
 
+TEST(DataSourceLibraryTest, RejectsMissingRequiredVtableSlot) {
+  auto library = PJ::DataSourceLibrary::load(PJ_MISSING_REQUIRED_SLOTS_PLUGIN_PATH);
+  ASSERT_FALSE(library);
+  EXPECT_NE(library.error().find("DataSource vtable missing required slot: start"), std::string::npos);
+}
+
 TEST(DataSourceLibraryTest, BindFailsWithEmptyRegistry) {
   auto library = PJ::DataSourceLibrary::load(PJ_MOCK_DATA_SOURCE_PLUGIN_PATH);
   ASSERT_TRUE(library);
@@ -158,6 +168,20 @@ TEST(DataSourceLibraryTest, BindFailsWithEmptyRegistry) {
   auto status = handle.bind(empty.view());
   EXPECT_FALSE(status);
   EXPECT_NE(status.error().find("pj.source_write.v1"), std::string::npos);
+}
+
+TEST(DataSourceLibraryTest, HandleKeepsSharedLibraryLoadedAfterLibraryObjectDies) {
+  std::unique_ptr<PJ::DataSourceHandle> handle;
+  {
+    auto library = PJ::DataSourceLibrary::load(PJ_MOCK_DATA_SOURCE_PLUGIN_PATH);
+    ASSERT_TRUE(library) << library.error();
+    handle = std::make_unique<PJ::DataSourceHandle>(library->createHandle());
+    ASSERT_TRUE(handle->valid());
+  }
+
+  EXPECT_NE(handle->manifest().find("Mock DataSource"), std::string::npos);
+  EXPECT_NE(handle->capabilities(), 0u);
+  handle.reset();
 }
 
 TEST(RuntimeHostViewTest, ListAvailableEncodingsReturnsEmptyWhenNullptr) {

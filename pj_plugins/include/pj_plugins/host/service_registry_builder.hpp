@@ -17,7 +17,7 @@ namespace PJ {
 /// Host-side assembler for `PJ_service_registry_t`.
 ///
 /// The host creates a builder, registers named services, and hands the
-/// resulting `PJ_service_registry_t` view to each plugin via the v3
+/// resulting `PJ_service_registry_t` view to each plugin via the v4
 /// `bind()` call. The builder owns an internal lookup table; the emitted
 /// registry is a thin fat pointer whose lifetime is tied to the builder.
 ///
@@ -45,12 +45,13 @@ class ServiceRegistryBuilder {
   ///         null fat-pointer field.
   [[nodiscard]] ::PJ::Expected<void, std::string> tryRegisterService(
       std::string_view name, uint32_t protocol_version, PJ_service_t service) {
+    const std::string service_name(name);
     if (service.ctx == nullptr || service.vtable == nullptr) {
-      return ::PJ::unexpected(std::string("registerService: null ctx or vtable for '") + std::string(name) + "'");
+      return ::PJ::unexpected("registerService: null ctx or vtable for '" + service_name + "'");
     }
-    std::string key(name);
+    std::string key(service_name);
     if (entries_.find(key) != entries_.end()) {
-      return ::PJ::unexpected(std::string("registerService: duplicate name '") + std::string(name) + "'");
+      return ::PJ::unexpected("registerService: duplicate name '" + service_name + "'");
     }
     entries_[std::move(key)] = Entry{protocol_version, service};
     return {};
@@ -78,7 +79,7 @@ class ServiceRegistryBuilder {
     entries_.erase(std::string(name));
   }
 
-  /// Return a fat pointer that plugins can pass through the v3 `bind()`.
+  /// Return a fat pointer that plugins can pass through the v4 `bind()`.
   /// The returned pointer is valid as long as the builder instance lives.
   [[nodiscard]] PJ_service_registry_t view() noexcept {
     return PJ_service_registry_t{this, &kVtable};

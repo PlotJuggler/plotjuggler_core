@@ -1,9 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
 project(pj_dialog_protocol LANGUAGES CXX)
-set(CMAKE_CXX_STANDARD 17)
-set(CMAKE_CXX_STANDARD_REQUIRED ON)
-set(CMAKE_CXX_EXTENSIONS OFF)
-
 
 # --- Header-only interface libraries ---
 
@@ -19,6 +15,11 @@ target_link_libraries(pj_dialog_protocol INTERFACE pj_base)
 find_package(nlohmann_json REQUIRED)
 
 add_library(pj_dialog_sdk INTERFACE)
+target_compile_features(pj_dialog_sdk INTERFACE cxx_std_17)
+# PJ_DIALOG_PLUGIN's variadic overload needs conformant __VA_ARGS__ expansion on MSVC.
+target_compile_options(pj_dialog_sdk INTERFACE
+  $<$<COMPILE_LANG_AND_ID:CXX,MSVC>:/Zc:preprocessor>
+)
 target_link_libraries(pj_dialog_sdk INTERFACE pj_dialog_protocol nlohmann_json::nlohmann_json)
 target_include_directories(pj_dialog_sdk INTERFACE
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
@@ -28,6 +29,7 @@ set_target_properties(pj_dialog_sdk PROPERTIES EXPORT_NAME Dialog)
 
 # Host-side C++ API (depends on protocol header + nlohmann/json)
 add_library(pj_dialog_host INTERFACE)
+target_compile_features(pj_dialog_host INTERFACE cxx_std_17)
 target_link_libraries(pj_dialog_host INTERFACE pj_dialog_protocol nlohmann_json::nlohmann_json)
 target_include_directories(pj_dialog_host INTERFACE include)
 
@@ -46,6 +48,7 @@ target_link_libraries(pj_dialog_library
     pj_dialog_host
     pj_base
   PRIVATE
+    pj_plugin_loader_detail
     ${CMAKE_DL_LIBS}
 )
 
@@ -56,6 +59,14 @@ if(PJ_BUILD_TESTS)
 add_library(mock_dialog_plugin SHARED examples/mock_dialog.cpp)
 target_compile_options(mock_dialog_plugin PRIVATE ${PJ_WARNING_FLAGS})
 target_link_libraries(mock_dialog_plugin PRIVATE pj_dialog_sdk)
+
+add_library(missing_dialog_abi_plugin SHARED tests/missing_dialog_abi_plugin.cpp)
+target_compile_options(missing_dialog_abi_plugin PRIVATE ${PJ_WARNING_FLAGS})
+target_link_libraries(missing_dialog_abi_plugin PRIVATE pj_dialog_protocol)
+
+add_library(missing_dialog_required_slots_plugin SHARED tests/missing_dialog_required_slots_plugin.cpp)
+target_compile_options(missing_dialog_required_slots_plugin PRIVATE ${PJ_WARNING_FLAGS})
+target_link_libraries(missing_dialog_required_slots_plugin PRIVATE pj_dialog_protocol)
 
 # --- Tests ---
 
@@ -109,9 +120,16 @@ add_test(NAME widget_event_builder_test COMMAND widget_event_builder_test)
 add_executable(dialog_library_test tests/dialog_library_test.cpp)
 target_compile_definitions(dialog_library_test PRIVATE
   PJ_MOCK_DIALOG_PLUGIN_PATH="$<TARGET_FILE:mock_dialog_plugin>"
+  PJ_MISSING_DIALOG_ABI_PLUGIN_PATH="$<TARGET_FILE:missing_dialog_abi_plugin>"
+  PJ_MISSING_DIALOG_REQUIRED_SLOTS_PLUGIN_PATH="$<TARGET_FILE:missing_dialog_required_slots_plugin>"
 )
 target_link_libraries(dialog_library_test PRIVATE
   pj_dialog_library pj_dialog_host pj_dialog_sdk GTest::gtest_main
+)
+add_dependencies(dialog_library_test
+  mock_dialog_plugin
+  missing_dialog_abi_plugin
+  missing_dialog_required_slots_plugin
 )
 add_test(NAME dialog_library_test COMMAND dialog_library_test)
 

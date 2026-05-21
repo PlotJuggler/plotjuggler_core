@@ -16,7 +16,7 @@ namespace PJ::sdk {
 
 /// Typed C++ wrapper around `PJ_service_registry_t`.
 ///
-/// Plugins receive a registry via their v3 `bind()` virtual. Two lookup
+/// Plugins receive a registry via their v4 `bind()` virtual. Two lookup
 /// styles:
 ///   - `get<Traits>()` — `std::optional<View>`; miss yields `nullopt`.
 ///   - `require<Traits>()` — `Expected<View>`; miss yields an error string.

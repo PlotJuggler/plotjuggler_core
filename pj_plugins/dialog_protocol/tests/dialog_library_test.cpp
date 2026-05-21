@@ -5,11 +5,20 @@
 
 #include <gtest/gtest.h>
 
+#include <memory>
 #include <nlohmann/json.hpp>
 #include <string>
 
 #ifndef PJ_MOCK_DIALOG_PLUGIN_PATH
 #error "PJ_MOCK_DIALOG_PLUGIN_PATH must be defined"
+#endif
+
+#ifndef PJ_MISSING_DIALOG_ABI_PLUGIN_PATH
+#error "PJ_MISSING_DIALOG_ABI_PLUGIN_PATH must be defined"
+#endif
+
+#ifndef PJ_MISSING_DIALOG_REQUIRED_SLOTS_PLUGIN_PATH
+#error "PJ_MISSING_DIALOG_REQUIRED_SLOTS_PLUGIN_PATH must be defined"
 #endif
 
 namespace {
@@ -53,6 +62,33 @@ TEST(DialogLibraryTest, HandleLifecycle) {
 TEST(DialogLibraryTest, LoadInvalidPath) {
   auto lib = PJ::DialogLibrary::load("/nonexistent/path.so");
   EXPECT_FALSE(lib);
+}
+
+TEST(DialogLibraryTest, RejectsMissingAbiVersionSymbol) {
+  auto lib = PJ::DialogLibrary::load(PJ_MISSING_DIALOG_ABI_PLUGIN_PATH);
+  ASSERT_FALSE(lib);
+  EXPECT_NE(lib.error().find("pj_plugin_abi_version"), std::string::npos);
+}
+
+TEST(DialogLibraryTest, RejectsMissingRequiredSlot) {
+  auto lib = PJ::DialogLibrary::load(PJ_MISSING_DIALOG_REQUIRED_SLOTS_PLUGIN_PATH);
+  ASSERT_FALSE(lib);
+  EXPECT_NE(lib.error().find("Dialog vtable missing required slot: get_ui_content"), std::string::npos);
+}
+
+TEST(DialogLibraryTest, HandleKeepsSharedLibraryLoadedAfterLibraryObjectDies) {
+  std::unique_ptr<PJ::DialogHandle> handle;
+  {
+    auto lib = PJ::DialogLibrary::load(PJ_MOCK_DIALOG_PLUGIN_PATH);
+    ASSERT_TRUE(lib) << lib.error();
+    handle = std::make_unique<PJ::DialogHandle>(lib->createHandle());
+    ASSERT_NE(handle->context(), nullptr);
+  }
+
+  auto j = nlohmann::json::parse(handle->manifest(), nullptr, false);
+  ASSERT_FALSE(j.is_discarded());
+  EXPECT_EQ(j["name"], "Mock Dialog");
+  handle.reset();
 }
 
 TEST(DialogLibraryTest, MoveSemantics) {

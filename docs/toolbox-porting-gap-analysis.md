@@ -1,17 +1,18 @@
 # Toolbox Porting — SDK Gap Analysis
 
-This document provides an exhaustive comparison of PlotJuggler 3.x toolbox plugin
-features against the current PJ 4.x SDK capabilities. It identifies what Dialog SDK
-extensions are required to port the existing toolboxes with full feature parity.
+This historical document compares PlotJuggler 3.x toolbox plugin features
+against the PJ 4.x SDK capabilities available when the porting work began.
+Some gaps listed below have since been closed in the Dialog SDK.
 
 **Scope:** `plotjuggler_core` (Dialog SDK, `ToolboxPluginBase`) + `pj-official-plugins`
 (Quaternion to RPY port as the reference implementation).
 
-**Summary:** The SDK is sufficient for simple, headless processing toolboxes (Quaternion
-reaches ~80% feature parity). FFT drops to ~60%. The Lua Reactive Script Editor cannot
-be ported without major SDK extensions. Six gaps are blocking and require new
-infrastructure: embedded chart widget, zoom event, drag-drop on chart, editable code
-editor, reactive time-tick, and ScatterXY output type.
+**Current status:** Dialog SDK support now exists for chart containers,
+chart zoom/pan events, drop targets, editable `QPlainTextEdit` code editors,
+and periodic ticks. Treat the original gap analysis below as historical
+context for porting priorities, not as a current reference. Remaining
+porting risks should be revalidated against the current SDK and datastore
+surface; ScatterXY-style output remains a separate datastore concern.
 
 ---
 
@@ -51,7 +52,10 @@ In the current port:
 - No preview — the transform runs directly on OK
 - Modal dialog that opens and closes
 
-This is not a failure of the port — it is a limitation of the current SDK: `DialogPluginTyped` does not support preview widgets (charts) or drag-and-drop. Those features require Dialog SDK extensions.
+At the time of the original port, `DialogPluginTyped` did not support preview
+widgets or drag-and-drop. Current Dialog SDKs provide chart containers,
+chart range events, and generic drop targets; any toolbox port should be
+revalidated against those APIs before treating this section as blocking.
 
 The end-to-end wiring is not yet confirmed at 100%. The plugin loads, the dialog opens with combo boxes, but we have not verified that the transform produces data visible in the plots. There may be a mismatch in catalog field names.
 
@@ -74,11 +78,11 @@ Three toolbox plugins exist in `plotjuggler/plotjuggler_plugins/`:
 | Aspect | PJ 3.x | New SDK |
 |--------|--------|---------|
 | Plugin owns its UI | Yes — full `QWidget` with arbitrary children | No — `.ui` file + host-rendered dialog runtime |
-| Data access | Direct reference to `PlotDataMapRef` | Via handles: `catalogSnapshot`, `readSeries`, `appendRecord` |
+| Data access | Direct reference to `PlotDataMapRef` | Via handles: `catalogSnapshot`, `readSeriesArrow`, `appendRecord` |
 | Communication | Qt signals/slots | C ABI vtables + JSON config |
 | Qt dependency | Required | None in core/plugin SDK; GUI hosts supply their toolkit runtime |
-| Embedded chart preview | Integrated (`PlotWidgetBase`) | Not available in the SDK |
-| Drag-and-drop | Via `eventFilter` in the plugin | Not supported by the dialog protocol |
+| Embedded chart preview | Integrated (`PlotWidgetBase`) | Available through chart data on QFrame containers |
+| Drag-and-drop | Via `eventFilter` in the plugin | Available through dialog drop targets and `onItemsDropped` |
 | Output type | `PlotData` (time series) **or** `PlotDataXY` (scatter) | Time-indexed series only |
 | Transform registry | Yes — re-applied on layout reload | No — outputs are static data |
 | Reactive execution | `ReactiveLuaFunction` re-runs on every slider tick | `onTick()` exists but cannot write to datastore or access current timestamp |
@@ -250,7 +254,10 @@ The Lua editor uses `QCodeEditor` (external library) with:
 | Instances | 3: global code, function body, library |
 | Font size | Ctrl+wheel: 8–14 pt range, persisted to `QSettings` |
 
-The current SDK has `setPlainText()` for **read-only** text display only. The dialog docs explicitly state that `QTextEdit` and `QPlainTextEdit` are **not supported** by the widget binding system. Without an editable code widget, the Lua editor cannot exist.
+The current Dialog SDK has `setPlainText()`, editable `setCodeContent()`,
+`setCodeLanguage()`, and `onCodeChanged()` for `QPlainTextEdit`-based code
+editing. The Lua editor port still needs product-level validation, but an
+editable code widget is no longer a missing SDK primitive.
 
 **SDK equivalent needed:**
 ```cpp
@@ -299,7 +306,7 @@ The sol2 Lua API exposed to scripts:
 | `CreatedSeriesTime` | `at(i)`, `clear()`, `push_back(x,y)`, `size()` |
 | `CreatedSeriesXY` | `at(i)`, `clear()`, `push_back(x,y)`, `size()` |
 
-The current SDK `onTick()` in `DialogPluginTyped` fires periodically while the dialog is open, but:
+Dialog-level `onTick()` in `DialogPluginTyped` fires periodically while the dialog is open, but:
 - Has no access to the current time slider value
 - Cannot call `toolboxHost().appendRecord()` — the toolbox host is separate from the dialog plugin
 - Cannot be used to implement time-reactive series generation
@@ -388,13 +395,13 @@ The Lua editor persists several settings directly via `QSettings` outside of `sa
 | 4.2 | Transform registry (re-apply on reload) | MEDIUM | MEDIUM | HIGH | MEDIUM |
 | 4.3 | `QSettings` fine-grained persistence | LOW | LOW | MEDIUM | LOW |
 
-**Feature parity estimate without SDK changes:**
+**Original feature parity estimate from the first gap analysis:**
 
 | Toolbox | Parity | Blocking gaps |
 |---------|--------|---------------|
-| Quaternion | ~80% | No chart preview; no drag-drop auto-fill |
-| FFT | ~60% | No chart preview; no drag-drop; no zoom-aware range; no ScatterXY output |
-| Lua Editor | ~10% | No editable code widget; no reactive execution |
+| Quaternion | ~80% | Originally blocked by chart preview and drag-drop auto-fill; revalidate against current chart/drop APIs |
+| FFT | ~60% | Revalidate chart, drag-drop, and zoom support; ScatterXY output remains a datastore question |
+| Lua Editor | ~10% | Editable code widget now exists; reactive execution still needs product-level validation |
 
 ---
 
@@ -478,4 +485,6 @@ void appendArrowScatterIpc(TopicHandle topic,
 
 ---
 
-*Gaps 1.1, 1.4, 2.1, 3.1, 3.3, and 4.1 are blocking for their respective toolboxes and require new SDK infrastructure. The remaining gaps represent UX degradation that can be partially mitigated with workarounds within the current SDK.*
+*Historical note: several gaps called blocking in this document have since
+received SDK support. Before using this as a porting checklist, re-run the
+gap analysis against the current Dialog SDK and datastore APIs.*

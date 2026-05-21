@@ -7,6 +7,24 @@
 > calls happen on the main (GUI) thread; see `ARCHITECTURE.md` for the
 > full thread-class contract.
 
+> **Vocabulary used throughout this guide**:
+> - `PJ::WidgetData` — JSON builder for outbound widget state (host reads).
+> - `PJ::WidgetDataView` — read-only parsed view the host applies to widgets.
+> - Object name — the `objectName` attribute on a Qt widget. This is the key
+>   that links code to UI and is required on every interactive widget.
+
+## Required UI Conventions
+
+The host renders your `.ui` XML through `QUiLoader`. Three conventions are
+non-negotiable; misnaming will silently break the dialog at runtime with no
+compile-time error.
+
+| Requirement | Why it matters |
+|---|---|
+| The `QDialogButtonBox` MUST be named exactly `buttonBox` (camelCase) | The host calls `findChild<QDialogButtonBox*>("buttonBox")` to wire OK/Cancel. Other names yield a dialog with no buttons. |
+| The `QDialogButtonBox` MUST set the `standardButtons` property in the XML | Without it, the box instantiates with no buttons even when found by name. |
+| Every interactive widget MUST have a unique `objectName` | All `WidgetData` setters and event handlers address widgets by name. |
+
 ## What is a Dialog Plugin?
 
 A dialog plugin is a shared library (`.so` / `.dylib` / `.dll`) that drives a
@@ -23,11 +41,41 @@ renders the widgets, and relays events to the plugin over the C vtable.
 4. Implement `widget_data()` to push state to the UI.
 5. Override the typed event handlers you need (`onTextChanged`,
    `onIndexChanged`, `onToggled`, etc.) — return `true` when state changes.
-6. Export with `PJ_DIALOG_PLUGIN(YourClass)`.
+6. Export with `PJ_DIALOG_PLUGIN(YourClass, kManifestJson)`.
 7. Build as a shared library linking `pj_dialog_sdk`.
 
 A complete example lives at
 `pj_plugins/dialog_protocol/examples/mock_dialog.cpp`.
+
+## Plugin Contract
+
+Follow these rules. Some are enforced by manifest validation or host UI wiring;
+others prevent runtime failures that are silent at compile time.
+
+**MUST**
+- Honour the [Required UI Conventions](#required-ui-conventions) above
+  (`buttonBox` naming, `standardButtons`, every interactive widget has an
+  `objectName`).
+- Return `true` from an event handler iff plugin-internal state changed; the
+  host re-reads `widget_data()` only on `true`. Returning `true` always wastes
+  re-renders; returning `false` after a real change leaves the UI stale.
+- Validate every `manifest()` JSON string at build time — the host rejects
+  manifests missing `id`, `name`, or `version`.
+- When overriding either `onValueChanged` overload (int or double), add
+  `using PJ::DialogPluginTyped::onValueChanged;` in the class body. C++
+  name hiding will otherwise drop the un-overridden overload silently.
+
+**MUST NOT**
+- Throw exceptions across virtual overrides. The SDK trampolines catch them,
+  but the event is reported to the host as a generic failure.
+- Block the GUI thread inside `widget_data()` or event handlers (no I/O,
+  no sleeps). Long work belongs in `onTick()` or a host-thread-friendly
+  background pattern.
+- Use `QTextEdit` or model-based `QTableView` — the widget binding system
+  does not support them. Use `QPlainTextEdit` for plain text/code editing,
+  or `QLabel`, `QListWidget`, and `QTableWidget` for display/table cases.
+- Retain the JSON string returned by `widget_data()` on the host side past
+  the next `widget_data()` call on the same dialog.
 
 ## Step by Step
 
@@ -40,15 +88,17 @@ Subclass `DialogPluginTyped` and override `manifest()`, `ui_content()`,
 #include <pj_plugins/sdk/dialog_plugin_typed.hpp>
 #include <pj_plugins/sdk/widget_data.hpp>
 
+constexpr const char* kManifestJson = R"({
+  "id": "my-dialog",
+  "name": "My Dialog",
+  "version": "1.0.0",
+  "description": "Example dialog plugin"
+})";
+
 class MyDialog : public PJ::DialogPluginTyped {
  public:
   std::string manifest() const override {
-    return R"({
-      "id": "my-dialog",
-      "name": "My Dialog",
-      "version": "1.0.0",
-      "description": "Example dialog plugin"
-    })";
+    return kManifestJson;
   }
 
   std::string ui_content() const override {
@@ -211,11 +261,14 @@ All handlers default to returning `false`. Override only the ones you need.
 At file scope, after the class definition:
 
 ```cpp
-PJ_DIALOG_PLUGIN(MyDialog)
+PJ_DIALOG_PLUGIN(MyDialog, kManifestJson)
 ```
 
 This generates the `extern "C"` entry point (`PJ_get_dialog_vtable`) that the
-host resolves via dlsym/GetProcAddress.
+host resolves via dlsym/GetProcAddress. Passing the manifest literal lets the
+catalog read metadata without instantiating the dialog. The legacy
+`PJ_DIALOG_PLUGIN(MyDialog)` form remains supported for existing source, but
+catalog discovery must instantiate those dialogs to call `manifest()`.
 
 ### 6. Build
 
@@ -228,9 +281,12 @@ No Qt dependency is needed in the plugin — only the host links Qt.
 
 ## Manifest Schema
 
-`manifest()` returns a JSON string. Unlike the other plugin families, the
-dialog manifest is built at runtime (not a string literal in the vtable), but
-the same required keys apply.
+`manifest()` returns the same JSON string supplied to `PJ_DIALOG_PLUGIN`.
+New dialogs should pass a static manifest literal to the macro so catalog
+discovery can inspect metadata without constructing the dialog. Legacy dialogs
+that use `PJ_DIALOG_PLUGIN(MyDialog)` without a manifest still load, but the
+catalog must instantiate them to call `manifest()`. The same required keys
+apply in both forms.
 
 | Key | Type | Required | Description |
 |-----|------|----------|-------------|
@@ -290,18 +346,22 @@ work like polling a server for available topics.
 | QDoubleSpinBox | `setValue(double)` | `onValueChanged(name, double)` |
 | QPushButton | `setButtonText` | `onClicked(name)` |
 | QPushButton (file picker) | `setFilePicker` | `onFileSelected(name, path)` |
+| QPushButton (folder picker) | `setFolderPicker` | `onFolderSelected(name, path)` |
 | QLabel | `setLabel` | (none — display only) |
 | QListWidget | `setListItems`, `setSelectedItems` | `onSelectionChanged(name, items)`, `onItemDoubleClicked(name, index)` |
 | QTableWidget | `setTableHeaders`, `setTableRows`, `setSelectedRows` | `onSelectionChanged(name, items)` |
+| QPlainTextEdit | `setPlainText`, `setCodeContent`, `setCodeLanguage` | `onCodeChanged(name, code)` for code editors |
+| QFrame (chart container) | `setChartSeries`, `clearChart`, `setChartZoomEnabled` | `onChartViewChanged(name, x_min, x_max, y_min, y_max)` |
 | QTabWidget | `setTabIndex` | `onTabChanged(name, index)` |
 | QDialogButtonBox | `setOkEnabled` | (none — host handles OK/Cancel) |
 
-All widgets also support `setEnabled(name, bool)` and `setVisible(name, bool)`.
+All widgets also support `setEnabled(name, bool)`, `setVisible(name, bool)`,
+and `setDropTarget(name, bool)`. Drop targets receive
+`onItemsDropped(name, items)`.
 
-> **Note:** `QTextEdit`, `QPlainTextEdit`, and `QTableView` (model-based) are
-> **not supported** by the widget binding system. Use `QTableWidget` for tabular
-> data (e.g. topic lists, preview tables) and `QLabel` or `QListWidget` for text
-> display.
+> **Note:** `QTextEdit` and `QTableView` (model-based) are not supported by the
+> widget binding system. Use `QPlainTextEdit` for plain text or code editing,
+> and `QTableWidget` for tabular data such as topic lists and preview tables.
 
 ## Optional Features
 
@@ -442,16 +502,10 @@ void onRejected() override {
 
 ### Error reporting
 
-Override `lastError()` to surface error messages to the host. Return an empty
-string when there is no error:
-
-```cpp
-std::string lastError() const override {
-  std::string err = std::move(error_);
-  error_.clear();
-  return err;
-}
-```
+Fallible dialog callbacks return `bool` through the C ABI and receive a
+`PJ_error_t*` out-param. In the C++ SDK, throw only for exceptional failures or
+return `false` from event handlers that do not handle an event. The SDK
+trampolines catch exceptions and populate `PJ_error_t` for the host.
 
 ### Dialog geometry persistence
 
@@ -569,13 +623,29 @@ class MySource : public PJ::StreamSourceBase {
 };
 
 PJ_DATA_SOURCE_PLUGIN(MySource, R"({"id":"my-source","name":"My Source","version":"1.0.0"})")
-PJ_DIALOG_PLUGIN(MyDialog)  // also specialises PJ::dialogVtableFor<MyDialog>()
-                            // so PJ::borrowDialog picks up the right vtable.
+PJ_DIALOG_PLUGIN(MyDialog, kManifestJson)  // also specialises PJ::dialogVtableFor<MyDialog>()
+                                          // so PJ::borrowDialog picks up the right vtable.
 ```
 
 The host resolves both vtables, creates a borrowed `DialogHandle` from the
 source's dialog context, and drives the dialog through its dialog runtime. After
 the dialog completes, the source reads its dialog member's state directly.
+The source handle owns the dialog object storage and keeps the plugin DSO
+loaded, so any borrowed dialog handle must be scoped inside the source handle's
+lifetime.
 
 See `pj_plugins/docs/data-source-guide.md` for the full DataSource-side
 documentation of this pattern.
+
+## Common Mistakes
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| Dialog window has no OK / Cancel buttons | `QDialogButtonBox` not named `buttonBox`, or `standardButtons` property missing in XML | Rename to `buttonBox`, add `<set>QDialogButtonBox::Cancel\|QDialogButtonBox::Ok</set>` |
+| Overriding `onValueChanged(int)` silently disables the `double` version (or vice versa) | C++ name hiding | Add `using PJ::DialogPluginTyped::onValueChanged;` in the class body |
+| UI does not update after an event | Event handler returned `false`, so the host did not re-read `widget_data()` | Return `true` whenever internal state changed |
+| `setText`/`setValue`/etc. has no visible effect | Wrong `objectName`, or widget type not in the [Widget Reference Table](#widget-reference-table) | Match XML `objectName` exactly; replace `QTextEdit`/`QTableView` with supported widgets |
+| File picker button does nothing | `setFilePicker(...)` not called in `widget_data()` for this `objectName` | Call it once per `widget_data()` so the host wires the click |
+| Sub-dialog opens repeatedly on every refresh | `requestSubDialog()` left set in `widget_data()` after the request fires | Set a one-shot flag; clear it before calling `requestSubDialog()` |
+| Dialog state lost on layout reload | `loadConfig()` never restored fields, or `saveConfig()` returned `"{}"` | Round-trip every field through `saveConfig()` / `loadConfig()` |
+| Manifest missing `id`/`name`/`version` causes load failure | Host rejects manifests missing required string keys | Validate the manifest in unit tests; the SDK does not assert this for dialogs at build time |

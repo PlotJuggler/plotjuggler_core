@@ -45,7 +45,7 @@ extern "C" {
  * (e.g. DataSource + Dialog in one .so) work without any extra ceremony.
  * Do not redefine it manually.
  *
- * v4 plugins advertise version 4. Breaking v3→v4 changes:
+ * v4 plugins advertise version 4. Data-plane changes from the pre-v4 design:
  *   - Arrow C Data Interface replaces Arrow IPC bytes at the boundary
  *     (append_arrow_stream + read_series_arrow).
  *   - append_arrow_ipc removed from all write hosts.
@@ -388,9 +388,10 @@ typedef struct {
  * Parser write host: single-topic writes. The bound topic is set at
  * service-creation time; the parser plugin never names it.
  *
- * No append_arrow_stream: parsers are inherently per-message. The host
- * internally coalesces per-record appends into Arrow batches before
- * committing to storage — plugin authors never see the batch grain. */
+ * append_arrow_stream is an optional tail slot for parser-shaped formats
+ * that naturally decode a batch in one parse() call. Ownership matches
+ * PJ_source_write_host_vtable_t::append_arrow_stream. Plugins must gate
+ * this slot with PJ_HAS_TAIL_SLOT when calling through the C ABI directly. */
 typedef struct PJ_parser_write_host_vtable_t {
   uint32_t abi_version;
   uint32_t struct_size;
@@ -409,7 +410,21 @@ typedef struct PJ_parser_write_host_vtable_t {
   bool (*append_bound_record)(
       void* ctx, int64_t timestamp, const PJ_bound_field_value_t* fields, size_t field_count,
       PJ_error_t* out_error) PJ_NOEXCEPT;
+
+  /* [stream-thread] Optional batch path. Plugin hands ownership of an Arrow
+   * C Data Interface stream for the bound topic. The timestamp column rule
+   * and success/failure ownership contract are identical to
+   * PJ_source_write_host_vtable_t::append_arrow_stream. */
+  bool (*append_arrow_stream)(
+      void* ctx, struct ArrowArrayStream* stream, PJ_string_view_t timestamp_column, PJ_error_t* out_error) PJ_NOEXCEPT;
 } PJ_parser_write_host_vtable_t;
+
+/*
+ * Parser write-host v4.0 floor, before append_arrow_stream was added as an
+ * optional tail slot. Hosts/plugins that care about the batch path must use
+ * PJ_HAS_TAIL_SLOT(PJ_parser_write_host_vtable_t, vtable, append_arrow_stream).
+ */
+#define PJ_PARSER_WRITE_HOST_MIN_VTABLE_SIZE (offsetof(PJ_parser_write_host_vtable_t, append_arrow_stream))
 
 typedef struct {
   void* ctx;

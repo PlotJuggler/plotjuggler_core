@@ -6,6 +6,7 @@
 #include <gtest/gtest.h>
 
 #include <cstring>
+#include <memory>
 #include <string>
 
 #include "pj_base/sdk/service_traits.hpp"
@@ -15,6 +16,9 @@
 #ifndef PJ_MOCK_JSON_PARSER_PLUGIN_PATH
 #error "PJ_MOCK_JSON_PARSER_PLUGIN_PATH must be defined"
 #endif
+#ifndef PJ_MISSING_REQUIRED_SLOTS_PLUGIN_PATH
+#error "PJ_MISSING_REQUIRED_SLOTS_PLUGIN_PATH must be defined"
+#endif
 
 namespace {
 
@@ -23,6 +27,12 @@ TEST(MessageParserLibraryTest, LoadMockPlugin) {
   ASSERT_TRUE(library) << library.error();
   EXPECT_TRUE(library->valid());
   EXPECT_EQ(library->vtable()->protocol_version, PJ_MESSAGE_PARSER_PROTOCOL_VERSION);
+}
+
+TEST(MessageParserLibraryTest, RejectsMissingRequiredVtableSlot) {
+  auto library = PJ::MessageParserLibrary::load(PJ_MISSING_REQUIRED_SLOTS_PLUGIN_PATH);
+  ASSERT_FALSE(library);
+  EXPECT_NE(library.error().find("MessageParser vtable missing required slot: parse"), std::string::npos);
 }
 
 TEST(MessageParserLibraryTest, ManifestRoundTrip) {
@@ -66,6 +76,21 @@ TEST(MessageParserLibraryTest, SaveLoadConfig) {
   ASSERT_TRUE(handle.saveConfig(cfg));
   EXPECT_EQ(cfg, "{}");
   ASSERT_TRUE(handle.loadConfig(R"({"format":"compact"})"));
+}
+
+TEST(MessageParserLibraryTest, HandleKeepsSharedLibraryLoadedAfterLibraryObjectDies) {
+  std::unique_ptr<PJ::MessageParserHandle> handle;
+  {
+    auto library = PJ::MessageParserLibrary::load(PJ_MOCK_JSON_PARSER_PLUGIN_PATH);
+    ASSERT_TRUE(library) << library.error();
+    handle = std::make_unique<PJ::MessageParserHandle>(library->createHandle());
+    ASSERT_TRUE(handle->valid());
+  }
+
+  EXPECT_NE(handle->manifest().find("Mock JSON Parser"), std::string::npos);
+  std::string cfg;
+  EXPECT_TRUE(handle->saveConfig(cfg));
+  handle.reset();
 }
 
 TEST(MessageParserLibraryTest, LoadNonexistentFails) {

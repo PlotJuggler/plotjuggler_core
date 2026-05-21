@@ -43,14 +43,30 @@ fields.push_back({"counter", value});  // value is int64_t
 
 ## 2. Writing Data
 
+DataSource and Toolbox write hosts name the target topic on each write. A
+MessageParser write host is already bound to one topic by the host, so parser
+calls omit the topic argument and write into that bound topic.
+
 ### Step 1: Get a topic handle
+
+DataSource and Toolbox plugins create or resolve topics explicitly:
 
 ```cpp
 auto topic = writeHost().ensureTopic("sensor/imu");
 if (!topic) { /* handle error */ }
 ```
 
+MessageParser plugins do not call `ensureTopic()` on the parser write host.
+They only create fields inside the already-bound topic:
+
+```cpp
+auto field = writeHost().ensureField("temperature", PJ::PrimitiveType::kFloat64);
+if (!field) { /* handle error */ }
+```
+
 ### Step 2 (optional): Pre-register fields for the bound-write fast path
+
+For DataSource and Toolbox writers:
 
 ```cpp
 writeHost().ensureField(*topic, "accel.x", PJ::PrimitiveType::kFloat64);
@@ -66,7 +82,8 @@ path and avoids mid-stream chunk sealing.
 
 ### Step 3: Append records
 
-**By name** (flexible, resolves names each call):
+**By name** (flexible, resolves names each call). DataSource and Toolbox
+writers pass the topic:
 
 ```cpp
 std::vector<PJ::sdk::NamedFieldValue> fields = {
@@ -78,7 +95,18 @@ std::vector<PJ::sdk::NamedFieldValue> fields = {
 auto status = writeHost().appendRecord(*topic, timestamp_ns, PJ::Span(fields));
 ```
 
-**By handle** (pre-resolved, faster for high-rate data):
+MessageParser writers omit the topic:
+
+```cpp
+std::vector<PJ::sdk::NamedFieldValue> fields = {
+    {"temperature", 23.5},
+    {"humidity", 61.0},
+};
+auto status = writeHost().appendRecord(timestamp_ns, PJ::Span(fields));
+```
+
+**By handle** (pre-resolved, faster for high-rate data). DataSource and
+Toolbox writers pass the topic:
 
 ```cpp
 auto fx = writeHost().ensureField(*topic, "accel.x", PJ::PrimitiveType::kFloat64);
@@ -90,6 +118,14 @@ std::vector<PJ::sdk::BoundFieldValue> bound = {
     {*fy, 0.0},
 };
 writeHost().appendBoundRecord(*topic, timestamp_ns, PJ::Span(bound));
+```
+
+Parser writers use the field handles from their bound topic:
+
+```cpp
+auto temp = writeHost().ensureField("temperature", PJ::PrimitiveType::kFloat64);
+std::vector<PJ::sdk::BoundFieldValue> bound = {{*temp, 23.5}};
+writeHost().appendBoundRecord(timestamp_ns, PJ::Span(bound));
 ```
 
 ### Sparse Records
@@ -117,13 +153,22 @@ fields.push_back({prefix + "/" + key, value});  // safe — name is owned
 
 ### Bulk Arrow Import
 
-For high-throughput file importers that already have Arrow data, use the
-Arrow C Data Interface (`ArrowArrayStream`). The byte-based `appendArrowIpc`
-slot was removed in ABI v4.
+For high-throughput imports or parser-shaped payloads that already have Arrow
+data, use the Arrow C Data Interface (`ArrowArrayStream`). The byte-based
+`appendArrowIpc` slot was removed in ABI v4.
+
+DataSource and Toolbox writers pass the destination topic:
 
 ```cpp
 PJ::sdk::ArrowStreamHolder stream(buildMyStream());
 auto status = writeHost().appendArrowStream(*topic, std::move(stream), "timestamp");
+```
+
+Parser writers omit the topic because the parser host is bound to one topic:
+
+```cpp
+PJ::sdk::ArrowStreamHolder stream(buildMyPayloadStream());
+auto status = writeHost().appendArrowStream(std::move(stream), "timestamp");
 ```
 
 `ArrowStreamHolder` is an RAII wrapper that auto-releases the stream; the

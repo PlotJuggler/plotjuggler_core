@@ -6,8 +6,8 @@ Seven rules the loader and every plugin author rely on. Breaking any of
 these is an ABI break and requires a v5 bump.
 
 1. **Boot-level ABI symbol.** Every plugin .so exports
-   `pj_plugin_abi_version` as a `const uint32_t` symbol independent of
-   any vtable. The host `dlsym`s it BEFORE fetching the family vtable;
+   `pj_plugin_abi_version` as a `uint32_t` symbol independent of any
+   vtable. The host `dlsym`s it BEFORE fetching the family vtable;
    missing or mismatched symbol is a fail-fast rejection with a specific
    error. The symbol is emitted at file scope by
    `pj_base/include/pj_base/plugin_abi_export.hpp`, which is transitively
@@ -105,8 +105,7 @@ extensions; graduate to stable (`pj.<name>.v1`) once locked in.
 
 All four plugin families (DataSource, MessageParser, Toolbox, Dialog) track
 protocol v4. Key v4 distinguishing features (a superset of everything the
-previously-circulated v3 design included — v3 was never an official
-release, and its changes roll into v4):
+previously-circulated pre-v4 design included):
 
 - **Arrow C Data Interface at the data boundary.** The write-host
   vtables expose `append_arrow_stream(ArrowArrayStream*)` as the
@@ -123,7 +122,8 @@ release, and its changes roll into v4):
   (reserved for a future `"pj.thread_check.v1"` service).
 - **Embedded-manifest plugin discovery.** Each DSO exports a
   family-specific protocol vtable with embedded metadata (`manifest_json`
-  for data sources, parsers, and toolboxes; `get_manifest()` for dialogs).
+  for data sources, parsers, toolboxes, and newly built dialogs; legacy v4.0
+  dialogs fall back to `create()` + `get_manifest()` during inspection).
   Host-side `PJ::scanPluginDsos(dir)` (in
   `pj_plugins/host/plugin_catalog.hpp`) walks platform plugin libraries,
   loads each candidate, validates the ABI and protocol vtable, and parses
@@ -135,8 +135,7 @@ release, and its changes roll into v4):
   Plugin-local symbol isolation is left to `-fvisibility=hidden`.
 
 Structural shape inherited from the pre-v4 design work (carries the
-service registry, error out-params, and typed borrowed-dialog patterns
-that had been developed in the unreleased v3 iteration):
+service registry, error out-params, and typed borrowed-dialog patterns):
 
 - **Service registry as the sole binding mechanism.** Plugin vtables expose
   a single `bind(ctx, registry, err)` slot. The host registers all services
@@ -147,20 +146,24 @@ that had been developed in the unreleased v3 iteration):
 - **Structured errors everywhere.** All fallible ABI calls take a
   `PJ_error_t* out_error` out-parameter. The old per-plugin `get_last_error`
   slot is gone.
-- **Unified write surface.** The three previous write-host vtables
-  (`PJ_source_write_host_vtable_t`, `PJ_parser_write_host_vtable_t`,
-  `PJ_toolbox_host_vtable_t`) collapse into one `PJ_write_surface_vtable_t`.
-  Service name selects semantics; host implementations enforce scope.
-  Three SDK facade views (`SourceWriteHostView`, `ParserWriteHostView`,
-  `ToolboxHostView`) still present family-appropriate APIs at the C++ level.
+- **Shared write contract, typed ABI services.** DataSource, MessageParser,
+  and Toolbox all write through the same datastore backend and follow the same
+  scalar/Arrow ownership rules, but the ABI keeps three distinct service
+  vtables: `PJ_source_write_host_vtable_t`,
+  `PJ_parser_write_host_vtable_t`, and `PJ_toolbox_host_vtable_t`.
+  The service name selects the family-specific type (`"pj.source_write.v1"`,
+  `"pj.parser_write.v1"`, `"pj.toolbox_write.v1"`), so the compiler prevents
+  a parser from calling source/toolbox-only operations.
 - **Typed borrowed dialog.** `get_dialog_context()` returning `void*` is
   replaced by `get_dialog()` returning a `PJ_borrowed_dialog_t` fat pointer
   `{ctx, const PJ_dialog_vtable_t* vtable}`.
-- **Uniform core plugin-vtable prefix.** Data source, message parser, and
-  toolbox vtables start with `protocol_version, struct_size, create,
-  destroy, manifest_json, capabilities, bind, save_config, load_config` in
-  that order. Dialogs expose a GUI-oriented protocol with
-  `get_manifest()`/`get_ui_content()` instead.
+- **Family-specific plugin vtables after the common prefix.** DataSource,
+  MessageParser, and Toolbox vtables share
+  `protocol_version, struct_size, create, destroy, manifest_json`; subsequent
+  slots are family-specific. For example, DataSource and Toolbox have
+  `capabilities`, while MessageParser has `bind_schema`. Dialogs expose a
+  GUI-oriented protocol with `get_manifest()`/`get_ui_content()` and an
+  optional static `manifest_json` tail slot for metadata-only discovery.
 
 Service traits (`pj_base/sdk/service_traits.hpp`,
 `sdk/toolbox_plugin_base.hpp`) map canonical names to their ABI type and
@@ -186,7 +189,9 @@ C ABI protocol  →  C++ SDK base class  →  Host loader + RAII handle
 
 3. **Host loader + RAII handle** — host-side code that dlopen's the `.so`,
    resolves the vtable symbol, validates version/size, and wraps instances
-   in move-only RAII handles.
+   in move-only RAII handles. Handles retain shared ownership of the loaded
+   DSO, so plugin code remains mapped until every instance created from that
+   DSO has been destroyed.
 
 ## 2. Module Structure
 
@@ -276,13 +281,13 @@ at load time. Mismatches produce a clear error.
 | DataSource (stream) | `StreamSourceBase` | `onStart()`, `onPoll()`, `onStop()`, `extraCapabilities()` | same macro |
 | MessageParser | `MessageParserPluginBase` | `parse()` | `PJ_MESSAGE_PARSER_PLUGIN(Class, manifest)` |
 | Toolbox | `ToolboxPluginBase` | `capabilities()` | `PJ_TOOLBOX_PLUGIN(Class, manifest)` |
-| Dialog | `DialogPluginTyped` | `manifest()`, `ui_content()`, `widget_data()`, event handlers | `PJ_DIALOG_PLUGIN(Class)` (works standalone or co-resident with another family) |
+| Dialog | `DialogPluginTyped` | `manifest()`, `ui_content()`, `widget_data()`, event handlers | `PJ_DIALOG_PLUGIN(Class, manifest)` (or legacy `PJ_DIALOG_PLUGIN(Class)`; works standalone or co-resident with another family) |
 
 All SDK base classes:
 - Generate the C vtable via `vtableWithCreate()` at static init.
-- Validate compile-time manifest JSON string literals (required keys) via `PJ_ASSERT`; dialog manifests are runtime strings and are validated by the host catalog when inspected.
-- Catch all C++ exceptions in trampolines, store via `setLastError()`, and
-  return `false`/`null` across the ABI boundary.
+- Validate compile-time manifest JSON string literals (required keys) via `PJ_ASSERT`; dialog manifests supplied through the static macro path are parsed by the host catalog without instantiation, while legacy dialog manifests are validated through the fallback runtime path.
+- Catch all C++ exceptions in trampolines, populate `PJ_error_t` out-params
+  when available, and return `false`/`null` across the ABI boundary.
 
 **Trampoline pattern:** Each base class has a private set of `static`
 trampoline functions (e.g. `trampoline_start`) that cast the `void* ctx` to
@@ -333,6 +338,9 @@ Each family has a move-only RAII handle:
 
 - Constructor calls `vt->create()` to allocate the plugin instance.
 - Destructor calls `vt->destroy(ctx)`.
+- Handles created by a loader retain a shared DSO owner; destroying or
+  hot-reloading the loader/catalog entry cannot `dlclose` the plugin while
+  live handles still call its vtable.
 - No copy, move-only semantics.
 - Methods delegate to vtable functions with the stored context pointer.
 
@@ -341,6 +349,8 @@ dialogs that are members of another plugin (e.g. a DataSource's dialog).
 A borrowed handle does NOT call `create()` or `destroy()` — it wraps a
 pre-existing context pointer obtained via `getDialog()` (which plugin
 authors implement with the SDK helper `PJ::borrowDialog(dialog_member_)`).
+The owning plugin handle must outlive the borrowed dialog because it owns both
+the dialog object storage and the shared DSO lifetime token.
 
 ## 7. Dialog Host Runtime
 
@@ -418,7 +428,9 @@ All three share a common internal `WriteCore` that handles:
 ### Arrow C Data Interface ownership rules
 
 The v4 write path, `append_arrow_stream(ctx, topic, stream,
-timestamp_column, err)`:
+timestamp_column, err)` for source/toolbox hosts and
+`append_arrow_stream(ctx, stream, timestamp_column, err)` for the
+parser host:
 
 - The plugin constructs the `ArrowArrayStream` (typically via
   nanoarrow's `ArrowIpcArrayStreamReaderInit`, Parquet's
@@ -430,14 +442,17 @@ timestamp_column, err)`:
   `.release()` on the holder after a successful append so its
   destructor becomes a no-op.
 - On **failure** (returns `false`): ownership is NOT transferred. The
-  host guarantees it has already called `stream->release` on any
-  partially-consumed stream before surfacing the error via
-  `PJ_error_t` — but the stream struct itself stays on the plugin
-  side. `ArrowStreamHolder`'s destructor handles this automatically.
+  plugin remains responsible for releasing the stream. This includes cases
+  where the host inspected or partially consumed the stream before returning
+  an error. `ArrowStreamHolder`'s destructor handles this automatically when
+  the plugin uses the recommended rvalue-ref SDK overload.
 - `timestamp_column` names the int64 column whose values are
   nanoseconds since Unix epoch. Passing an empty view means "synthesise
   a monotonic timestamp per row"; useful for streams with no natural
   time axis.
+- Parser writes are already bound to one topic by the host service, so
+  the parser variant does not take a topic handle. Ownership rules are
+  otherwise identical.
 
 The v4 read path, `read_series_arrow(ctx, field, out_schema,
 out_array, err)`:

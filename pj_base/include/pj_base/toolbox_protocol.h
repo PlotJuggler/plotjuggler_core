@@ -2,7 +2,7 @@
  * @file toolbox_protocol.h
  * @brief C ABI protocol for Toolbox plugins (version 4).
  *
- * v4 summary of changes vs v3:
+ * v4 summary:
  *   - Toolbox host (pj.toolbox_write.v1) now uses Arrow C Data Interface
  *     for bulk write (append_arrow_stream) and read (read_series_arrow).
  *     The materialised-vector read_series and byte-based append_arrow_ipc
@@ -35,7 +35,7 @@ extern "C" {
  * MUST NOT GROW when new tail slots are appended. See PJ_ABI_VERSION comment
  * in plugin_data_api.h for the rationale.
  *
- * Last v4.0 slot is `get_plugin_extension` (promoted from v3 tail).
+ * Last v4.0 slot is `get_plugin_extension`.
  */
 #define PJ_TOOLBOX_MIN_VTABLE_SIZE \
   (offsetof(PJ_toolbox_vtable_t, get_plugin_extension) + sizeof(const void* (*)(void*, PJ_string_view_t)))

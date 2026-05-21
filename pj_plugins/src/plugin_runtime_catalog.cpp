@@ -4,7 +4,7 @@
 #include "pj_plugins/host/plugin_runtime_catalog.hpp"
 
 #include <algorithm>
-#include <sstream>
+#include <nlohmann/json.hpp>
 #include <system_error>
 #include <utility>
 
@@ -403,16 +403,7 @@ std::string PluginRuntimeCatalog::listAvailableEncodings() const {
     }
   }
 
-  std::ostringstream out;
-  out << '[';
-  for (size_t i = 0; i < unique_encodings.size(); ++i) {
-    if (i > 0) {
-      out << ',';
-    }
-    out << '"' << unique_encodings[i] << '"';
-  }
-  out << ']';
-  return out.str();
+  return nlohmann::json(unique_encodings).dump();
 }
 
 void PluginRuntimeCatalog::report(DiagnosticLevel level, const std::string& id, std::string message) const {

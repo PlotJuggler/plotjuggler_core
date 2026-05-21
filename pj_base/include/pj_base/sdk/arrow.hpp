@@ -133,12 +133,15 @@ using ArrowArrayHolder = detail::ArrowHolder<::ArrowArray>;
 ///
 /// Recommended usage: hand the holder by rvalue reference to the
 /// `appendArrowStream(ArrowStreamHolder&&, ...)` overload on
-/// `SourceWriteHostView` / `ToolboxHostView`, which disarms the holder on
-/// success:
+/// `SourceWriteHostView`, `ParserWriteHostView`, or `ToolboxHostView`,
+/// which disarms the holder on success:
 ///
 ///   ArrowStreamHolder stream(buildMyStream());
 ///   auto status = writeHost.appendArrowStream(topic, std::move(stream), "timestamp");
 ///   // on success, holder is inert; on failure, destructor releases the stream.
+///
+/// Parser write hosts omit the `topic` argument because the host binds the
+/// parser to one topic before parsing begins.
 ///
 /// The raw-pointer overload of `appendArrowStream` remains as an ABI escape
 /// hatch for callers that own the stream through some other mechanism.

@@ -2,7 +2,7 @@
  * @file data_source_protocol.h
  * @brief C ABI protocol for DataSource plugins (version 4).
  *
- * v4 summary of changes vs v3:
+ * v4 summary:
  *   - Arrow C Data Interface at the write boundary: bulk loaders use
  *     SourceWriteHost::append_arrow_stream instead of per-row appends.
  *     See pj_base/plugin_data_api.h. append_arrow_ipc is removed.
@@ -49,7 +49,7 @@ extern "C" {
  * Reads of any slot added after v4.0 must be gated with PJ_HAS_TAIL_SLOT.
  *
  * Computed as `offsetof(last v4.0 slot) + sizeof(its function pointer)`.
- * Last v4.0 slot is `get_plugin_extension` (promoted from v3.1 tail).
+ * Last v4.0 slot is `get_plugin_extension`.
  */
 #define PJ_DATA_SOURCE_MIN_VTABLE_SIZE \
   (offsetof(PJ_data_source_vtable_t, get_plugin_extension) + sizeof(const void* (*)(void*, PJ_string_view_t)))

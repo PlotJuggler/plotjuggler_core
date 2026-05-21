@@ -2,11 +2,12 @@
  * @file message_parser_protocol.h
  * @brief C ABI protocol for MessageParser plugins (version 4).
  *
- * v4 summary of changes vs v3:
+ * v4 summary:
  *   - Every vtable slot is PJ_NOEXCEPT and carries a thread-class tag.
  *   - Parser write host (pj.parser_write.v1) no longer has
- *     append_arrow_ipc — see plugin_data_api.h. Parsers stay per-record;
- *     the host coalesces into Arrow batches internally.
+ *     append_arrow_ipc — see plugin_data_api.h. Parsers normally write
+ *     per-record, with an optional append_arrow_stream tail slot for
+ *     parser-shaped formats that naturally decode batches.
  *
  * Pure-functional production (scalars by value, canonical objects by
  * value with BufferAnchor) is a C++ SDK contract: parsers inheriting from
@@ -46,7 +47,7 @@ extern "C" {
  * MUST NOT GROW when new tail slots are appended. See PJ_ABI_VERSION comment
  * in plugin_data_api.h for the rationale.
  *
- * Last v4.0 slot is `get_plugin_extension` (promoted from v3 tail).
+ * Last v4.0 slot is `get_plugin_extension`.
  */
 #define PJ_MESSAGE_PARSER_MIN_VTABLE_SIZE \
   (offsetof(PJ_message_parser_vtable_t, get_plugin_extension) + sizeof(const void* (*)(void*, PJ_string_view_t)))
@@ -82,8 +83,8 @@ typedef struct PJ_message_parser_vtable_t {
    *                and the marketplace; must be unique per plugin.
    *   "name"     — human-readable plugin name (string).
    *   "version"  — semver version string (string).
-   *   "encoding" — encoding this parser handles (string). The host uses
-   *                this to match binding requests to parsers.
+   *   "encoding" — encodings this parser handles (array of strings). The host
+   *                uses this to match binding requests to parsers.
    */
   const char* manifest_json;
 

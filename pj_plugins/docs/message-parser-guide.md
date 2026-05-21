@@ -1,10 +1,36 @@
 # Writing a MessageParser Plugin
 
 > **Tracks the v4 plugin ABI** (`PJ_ABI_VERSION == 4`). The parser
-> write-host stays per-record in v4 (parsers decode one message at a
-> time; the host coalesces into Arrow batches internally before
-> committing to storage). For ABI evolution rules, error semantics, and
-> noexcept discipline see `ARCHITECTURE.md`.
+> write-host supports per-record writes and an optional Arrow stream
+> batch path for parser-shaped formats that naturally decode batches.
+> For ABI evolution rules, error semantics, and noexcept discipline see
+> `ARCHITECTURE.md`.
+
+> **Vocabulary used throughout this guide**:
+> - `PJ::Status` — alias for `PJ::Expected<void>`. Return `PJ::okStatus()` /
+>   `PJ::unexpected("reason")`.
+> - `PJ::Span<const uint8_t>` — non-owning view over the payload bytes.
+> - `PJ::Timestamp` — `int64_t` nanoseconds since the Unix epoch. The host
+>   provides one; the parser may override it from the payload (see
+>   "Embedded timestamp extraction").
+
+## When MessageParser is the Wrong Choice
+
+If your input is a complete file/container or source-owned stream
+(Parquet file, MCAP bag, database export), prefer a **DataSource** that calls
+`writeHost().appendArrowStream(...)`. Use a MessageParser when the host has
+already selected a topic/encoding and is handing you payloads to decode. If
+one `parse()` call naturally yields a batch, the parser write host can accept
+that batch via `writeHost().appendArrowStream(...)`.
+
+A MessageParser is the right choice when:
+- Each message is independently decodable (JSON line, single Protobuf message,
+  ROS message, Influx line).
+- You produce up to a few dozen named numeric fields per call.
+- Or, one payload for a selected encoding naturally expands to a batch for the
+  parser's bound topic.
+- The encoding may be paired with multiple transports (a Protobuf parser used
+  by both an MQTT and a ZMQ source).
 
 ## What is a MessageParser?
 
@@ -28,6 +54,33 @@ the host, which routes them to the appropriate parser based on encoding name.
 
 A complete example lives at `pj_plugins/examples/mock_json_parser.cpp`.
 
+## Plugin Contract
+
+Follow these rules. Some are enforced by manifest validation or SDK
+trampolines; others prevent runtime parse failures.
+
+**MUST**
+- Return `PJ::okStatus()` / `PJ::unexpected("reason")` from `parse()` and other
+  fallible methods.
+- Honour the encoding(s) declared in the manifest's `"encoding"` array — the
+  host routes binding requests by encoding name.
+- Leave the parser in a consistent state after a failed `parse()` so the next
+  `parse()` call still works (do not corrupt cached field handles or schemas).
+- Keep `parse()` topic-agnostic — the write host is already topic-scoped at
+  bind time. `writeHost().ensureField("x")` becomes `<topic>/x` in the
+  datastore automatically.
+
+**MUST NOT**
+- Throw exceptions across `parse()`/`bindSchema()`/`bind(registry)`/
+  `loadConfig()`/`saveConfig()`. The SDK trampolines catch as a fallback,
+  but the host loses the chance to report a useful reason.
+- Call any host method outside the host's callback thread.
+- Cache the write host view across instances or threads — it is bound to one
+  parser instance for one topic.
+- Assume `bindSchema()` is called for every encoding. JSON / text parsers may
+  never receive it. Only require schema for encodings that need it
+  (Protobuf, ROS, IDL).
+
 ## Step by Step
 
 ### 1. Declare your class
@@ -44,15 +97,16 @@ class MyJsonParser : public PJ::MessageParserPluginBase {
 
 ### 2. Implement parse()
 
-When `parse()` is called, the write host is already bound via
-`bindWriteHost()`. Use `writeHost()` (protected) to write decoded fields.
+When `parse()` is called, the SDK default `bind()` has already resolved the
+parser write service from the host's service registry. Use `writeHost()`
+(protected) to write decoded fields.
 Return `okStatus()` on success, or `unexpected("reason")` on failure.
 
 ```cpp
 PJ::Status MyJsonParser::parse(PJ::Timestamp timestamp_ns,
                                 PJ::Span<const uint8_t> payload) {
   if (!writeHostBound()) {
-    return PJ::unexpected(std::string("write host not bound"));
+    return PJ::unexpected("write host not bound");
   }
 
   // Decode payload bytes into field values.
@@ -105,12 +159,12 @@ target_link_libraries(my_parser_plugin PRIVATE pj_base pj_dialog_sdk)
 The host drives the parser through these phases:
 
 ```
-create() → bind_write_host() → [bind_schema()] → parse()* → destroy()
+create() -> bind(registry) -> [bind_schema()] -> parse()* -> destroy()
 ```
 
 1. **create** — the host calls `create()` to allocate a new parser instance.
-2. **bind_write_host** — the host provides the data-plane write host. Must be
-   called before `parse()`.
+2. **bind** — the host provides a service registry. The SDK default bind
+   resolves `"pj.parser_write.v1"`. Must complete before `parse()`.
 3. **bind_schema** (optional) — for parsers that need schema (Protobuf, ROS,
    IDL), the host provides the schema bytes and type name. Parsers that don't
    need schema (JSON, Influx) can ignore this call.
@@ -129,16 +183,13 @@ topic.
 | `ensureField(name, type)` | Optional: pre-register a field. Enables `appendBoundRecord`. Returns a `FieldHandle`. |
 | `appendRecord(timestamp, fields)` | Write a row of named field values. Auto-creates new fields. |
 | `appendBoundRecord(timestamp, fields)` | Write using pre-resolved field handles (faster). |
+| `appendArrowStream(stream, ts_col)` | Optional batch path. Hand an `ArrowArrayStream*` to the host for the parser's bound topic. Success transfers ownership to the host; failure leaves ownership with the plugin. |
 
-The parser write surface is **per-record only** in v4. There is no
-`appendArrowStream` / `appendArrowIpc` slot on the parser write host:
-one `parse()` call decodes one message, so batch boundaries are the
-host's concern, not the parser's. The host coalesces per-record
-writes into Arrow batches internally before committing them to
-storage. If you are porting a plugin that used to emit whole IPC
-streams directly (a Parquet-to-Arrow bulk loader, for example), it
-belongs as a **DataSource** plugin instead — see
-`data-source-guide.md` for the `appendArrowStream` contract.
+Most parsers should use `appendRecord()` or `appendBoundRecord()` because one
+`parse()` call normally decodes one logical message. Use `appendArrowStream()`
+when a single payload naturally contains many rows for the parser's already
+bound topic. This keeps parser-shaped batch encodings in the parser family
+without forcing per-row loops.
 
 ### Named vs bound writes
 
@@ -167,6 +218,17 @@ const PJ::sdk::BoundFieldValue fields[] = {
     {.field = *temp_field, .value = 23.5},
     {.field = *hum_field, .value = 61.0}};
 writeHost().appendBoundRecord(timestamp_ns, PJ::Span(fields));
+```
+
+For payloads that decode directly into an Arrow stream, prefer the RAII
+overload so ownership is handled correctly:
+
+```cpp
+PJ::sdk::ArrowStreamHolder stream(build_payload_stream(payload));
+auto status = writeHost().appendArrowStream(std::move(stream), "timestamp");
+if (!status) {
+  return status;
+}
 ```
 
 ## Optional Features
@@ -271,7 +333,8 @@ and none is needed.
 │    loadConfig(json) applies it   │
 │                                  │
 │  PJ_MESSAGE_PARSER_PLUGIN(...)   │  → exports parser vtable
-│  PJ_DIALOG_PLUGIN(ProtoDialog)   │  → exports dialog vtable
+│  PJ_DIALOG_PLUGIN(ProtoDialog,   │  → exports dialog vtable
+│                   kManifestJson) │
 └──────────────────────────────────┘
 ```
 
@@ -340,7 +403,7 @@ Example:
 
 ## Threading Model
 
-All parser callbacks — `parse()`, `bindSchema()`, `bindWriteHost()`,
+All parser callbacks — `bind()`, `bindSchema()`, `parse()`,
 `loadConfig()`, `saveConfig()` — are called **on the host's thread**. The host
 guarantees single-threaded access per parser instance: no two callbacks will
 overlap for the same instance.
@@ -354,13 +417,13 @@ and call it from a background thread.
 The host guarantees the following call ordering:
 
 1. `create()` — always first.
-2. `bind_write_host()` — before `parse()`.
+2. `bind(registry)` — before `parse()`.
 3. `bind_schema()` (optional) — before `parse()`, called at most once.
 4. `load_config()` — before `parse()`, may be called multiple times.
 5. `parse()` — called once per message, may be called many times.
 6. `destroy()` — always last.
 
-The host will never call `parse()` before `bind_write_host()`, and `destroy()`
+The host will never call `parse()` before `bind(registry)`, and `destroy()`
 is always the last call.
 
 ## Error Handling
@@ -386,12 +449,9 @@ if (!field) {
 - Do **not** leave the parser in an inconsistent state — ensure field handles
   and internal buffers remain valid for the next `parse()` call.
 
-**setLastError()** — available for fine-grained error reporting. For most
-cases, returning `unexpected()` from `parse()` is sufficient.
-
 **Exception safety** — the SDK base class catches all C++ exceptions in
-virtual method trampolines and converts them to `setLastError()` + false
-return. You never need to worry about exceptions crossing the C ABI boundary.
+virtual method trampolines and converts them to `PJ_error_t` out-params plus
+`false`. You never need to worry about exceptions crossing the C ABI boundary.
 
 ## How Parsers Are Used (Host Perspective)
 
@@ -406,7 +466,7 @@ DataSource                        Host                         MessageParser
     │    topic="sensor/imu",        │                               │
     │    encoding="protobuf",       │──→ load parser .so            │
     │    type_name="ImuSample",     │──→ create()                   │
-    │    schema=descriptor_bytes)   │──→ bind_write_host()          │
+    │    schema=descriptor_bytes)   │──→ bind(registry)             │
     │                               │──→ bind_schema("ImuSample",   │
     │                               │       descriptor_bytes)       │
     │  ←── binding handle           │                               │
@@ -514,3 +574,15 @@ nature is forward-compatible by construction).
 Reference implementation: `pj_ported_plugins/parser_ros` —
 `SchemaHandler` table driven by a static `catalog()`. See
 `PLUGIN_DEVELOPMENT.md` in that repo for a top-down walkthrough.
+
+## Common Mistakes
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| Plugin loads but `parse()` is never called | `encoding` array in the manifest does not match the encoding name the source requests | Match the binding request's encoding string exactly (case-sensitive) |
+| Host cannot bind the parser at runtime | Manifest missing the `encoding` array entirely | Add `"encoding": ["…"]` (required for parsers) |
+| First `parse()` after restart fails silently | Schema-derived state lost; `bindSchema()` was not called for this encoding because none is needed | Initialize lazily in `parse()` for schema-less encodings |
+| `appendBoundRecord()` returns failure | Field handles obtained before `bind(registry)` completed (or reused after `destroy`) | Acquire field handles inside `parse()` or after `bind(registry)`; never cache them across instances |
+| Throughput is one quarter of the source's input rate | Parser decodes a naturally batched payload one row at a time | If the payload is parser-shaped, use parser `appendArrowStream()`; if it is a whole source/container, move bulk decoding to a DataSource |
+| Embedded timestamp ignored even when configured | Parser uses the host-supplied `timestamp_ns` and never extracts from payload | Read the config flag in `loadConfig`; choose between extracted and host timestamps inside `parse()` |
+| Memory grows unboundedly across `parse()` calls | Per-message state leaked (e.g. descriptor pools rebuilt per call) | Build schema-derived caches in `bindSchema()` or `loadConfig()`, not in `parse()` |

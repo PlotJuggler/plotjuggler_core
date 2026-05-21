@@ -11,6 +11,7 @@
 
 #include <cassert>
 #include <cstddef>
+#include <memory>
 #include <pj_base/expected.hpp>
 #include <pj_base/sdk/data_source_host_views.hpp>
 #include <string>
@@ -22,7 +23,8 @@ namespace PJ {
 /// RAII handle owning a Toolbox plugin instance.
 class ToolboxHandle {
  public:
-  explicit ToolboxHandle(const PJ_toolbox_vtable_t* vt) : vt_(vt) {
+  explicit ToolboxHandle(const PJ_toolbox_vtable_t* vt, std::shared_ptr<void> library_owner = {})
+      : vt_(vt), library_owner_(std::move(library_owner)) {
     if (vt_ != nullptr) {
       assert(vt_->protocol_version == PJ_TOOLBOX_PLUGIN_PROTOCOL_VERSION);
       ctx_ = vt_->create();
@@ -35,7 +37,8 @@ class ToolboxHandle {
     }
   }
 
-  ToolboxHandle(ToolboxHandle&& other) noexcept : vt_(other.vt_), ctx_(other.ctx_) {
+  ToolboxHandle(ToolboxHandle&& other) noexcept
+      : vt_(other.vt_), ctx_(other.ctx_), library_owner_(std::move(other.library_owner_)) {
     other.vt_ = nullptr;
     other.ctx_ = nullptr;
   }
@@ -44,6 +47,7 @@ class ToolboxHandle {
     if (this != &other) {
       std::swap(vt_, other.vt_);
       std::swap(ctx_, other.ctx_);
+      std::swap(library_owner_, other.library_owner_);
     }
     return *this;
   }
@@ -121,6 +125,7 @@ class ToolboxHandle {
  private:
   const PJ_toolbox_vtable_t* vt_ = nullptr;
   void* ctx_ = nullptr;
+  std::shared_ptr<void> library_owner_;
 };
 
 }  // namespace PJ

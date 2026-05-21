@@ -4,6 +4,7 @@
 
 #include <pj_plugins/dialog_protocol.h>
 
+#include <memory>
 #include <pj_plugins/host/dialog_handle.hpp>
 #include <string>
 #include <string_view>
@@ -14,9 +15,9 @@ namespace PJ {
 
 /// Loads a standalone dialog plugin shared library and provides factory access.
 ///
-/// The library is dlopen'd with RTLD_LOCAL on load() and dlclose'd on
-/// destruction. The vtable pointer remains valid for the library's lifetime.
-/// Move-only; not copyable.
+/// The library is dlopen'd with RTLD_LOCAL on load(). Dialog handles created
+/// from this loader keep the DSO loaded even if the DialogLibrary object is
+/// destroyed. Move-only; not copyable.
 class DialogLibrary {
  public:
   DialogLibrary() = default;
@@ -36,14 +37,14 @@ class DialogLibrary {
     return handle_ != nullptr && vtable_ != nullptr;
   }
 
-  /// Raw vtable pointer. Valid for the lifetime of this DialogLibrary.
+  /// Raw vtable pointer. Valid while this library or any handle created from it is alive.
   [[nodiscard]] const PJ_dialog_vtable_t* vtable() const {
     return vtable_;
   }
 
   /// Create a new owning plugin instance.
   [[nodiscard]] DialogHandle createHandle() const {
-    return DialogHandle(vtable_);
+    return DialogHandle(vtable_, handle_);
   }
 
   /// Filesystem path the library was loaded from.
@@ -52,11 +53,11 @@ class DialogLibrary {
   }
 
  private:
-  DialogLibrary(void* handle, const PJ_dialog_vtable_t* vtable, std::string path);
+  DialogLibrary(std::shared_ptr<void> handle, const PJ_dialog_vtable_t* vtable, std::string path);
 
   void reset();
 
-  void* handle_ = nullptr;
+  std::shared_ptr<void> handle_;
   const PJ_dialog_vtable_t* vtable_ = nullptr;
   std::string path_;
 };
