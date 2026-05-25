@@ -252,9 +252,17 @@ bool onTextChanged(std::string_view name, std::string_view text) override {
 | `onFileSelected(name, path)` | QPushButton (file picker) | selected file path |
 | `onSelectionChanged(name, items)` | QListWidget | vector of selected item texts |
 | `onItemDoubleClicked(name, index)` | QListWidget | row index of double-clicked item |
+| `onHeaderClicked(name, section)` | QTableWidget | clicked column index (for plugin-owned sorting) |
 | `onTabChanged(name, index)` | QTabWidget | new tab index |
 
 All handlers default to returning `false`. Override only the ones you need.
+
+> **Column sorting.** The host does not enable `QTableWidget`'s built-in sort
+> (it would reorder items and desync the index-based `setVisibleRows` /
+> `setSelectedRows` model). Instead, header clicks arrive as
+> `onHeaderClicked(name, section)`; a plugin that wants sortable columns
+> re-orders its own row model (numeric for numeric columns) and re-emits the
+> rows. The host shows a sort indicator on the clicked column.
 
 ### 5. Export the plugin
 
@@ -349,9 +357,13 @@ work like polling a server for available topics.
 | QPushButton (folder picker) | `setFolderPicker` | `onFolderSelected(name, path)` |
 | QLabel | `setLabel` | (none — display only) |
 | QListWidget | `setListItems`, `setSelectedItems` | `onSelectionChanged(name, items)`, `onItemDoubleClicked(name, index)` |
-| QTableWidget | `setTableHeaders`, `setTableRows`, `setSelectedRows` | `onSelectionChanged(name, items)` |
+| QTableWidget | `setTableHeaders`, `setTableRows`, `setSelectedRows`, `setVisibleRows`, `setRowColor`, `setCellTooltip` | `onSelectionChanged(name, items)`, `onHeaderClicked(name, section)` |
 | QPlainTextEdit | `setPlainText`, `setCodeContent`, `setCodeLanguage` | `onCodeChanged(name, code)` for code editors |
 | QFrame (chart container) | `setChartSeries`, `clearChart`, `setChartZoomEnabled` | `onChartViewChanged(name, x_min, x_max, y_min, y_max)` |
+| QDateTimeEdit | `setDateTime`, `setDateTimeRange` | (none — input only) |
+| RangeSlider (two-handle) | `setRangeSliderBounds`, `setRangeSliderValues`, `setRangeSliderTimeSpan` | `onRangeChanged(name, lower, upper)` |
+| SequencePicker (date range) | `setDatePickerEarliest` | `onDateRangeChanged(name, from_iso, to_iso, every_day)` |
+| MetadataQueryBar | `setQueryKeys`, `setQueryOperators`, `setQueryValues`, `setQueryCompletions`, `setQuerySchema`, `setQueryFeedback` | `onQuerySelector(name, role, value)` |
 | QTabWidget | `setTabIndex` | `onTabChanged(name, index)` |
 | QDialogButtonBox | `setOkEnabled` | (none — host handles OK/Cancel) |
 
@@ -359,9 +371,25 @@ All widgets also support `setEnabled(name, bool)`, `setVisible(name, bool)`,
 and `setDropTarget(name, bool)`. Drop targets receive
 `onItemsDropped(name, items)`.
 
+`onHeaderClicked(name, section)` reports the clicked column index for plugins
+that drive their own sorting. The `QTableWidget` styling setters layer over the
+row data: `setVisibleRows` live-filters by index (an empty set hides every row;
+to re-show all rows pass the full index list — clearing the field makes *no*
+change), `setRowColor` tints a row (`"#rrggbb"`, or `""` to clear), and
+`setCellTooltip` annotates a single cell.
+
+For `onQuerySelector`, `role` is one of `"key"`, `"op"`, or `"value"`. For
+`SequencePicker`, the `from_iso` / `to_iso` strings are ISO-8601 datetimes and
+are empty when that side of the range is unbounded.
+
 > **Note:** `QTextEdit` and `QTableView` (model-based) are not supported by the
 > widget binding system. Use `QPlainTextEdit` for plain text or code editing,
 > and `QTableWidget` for tabular data such as topic lists and preview tables.
+>
+> **Custom widgets:** `RangeSlider`, `SequencePicker`, and `MetadataQueryBar`
+> are PlotJuggler-provided widget classes, not stock Qt. Use them as *promoted*
+> widgets in your `.ui` (promote a placeholder `QWidget` to the class name); the
+> host binds them by object name exactly like the stock widgets above.
 
 ## Optional Features
 
@@ -497,6 +525,29 @@ void onAccepted(std::string_view final_state_json) override {
 void onRejected() override {
   // User clicked Cancel — clean up connections
   connected_ = false;
+}
+```
+
+### Panel close — `requestClose`
+
+`requestClose(reason)` asks the host to tear down the panel that hosts the
+plugin. It is a **panel-only** command: the `PanelEngine` observes the
+`__request_close` flag on every tick and closes the panel after invoking its
+`onCloseRequested` callback with the reason string. The modal `DialogEngine`
+**ignores** it — classic dialogs close through `requestAccept()` and the
+buttonBox instead, so the same plugin code is safe under either host.
+
+`reason` is a free-form, plugin-defined string (for example `"import_complete"`,
+`"user_back"`, or `"error"`) forwarded verbatim to the host.
+
+```cpp
+std::string widget_data() override {
+  PJ::WidgetData wd;
+  // ... set widget states ...
+  if (import_finished_) {
+    wd.requestClose("import_complete");
+  }
+  return wd.toJson();
 }
 ```
 
