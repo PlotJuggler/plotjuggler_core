@@ -45,17 +45,21 @@ namespace sdk {
 struct SchemaHandler {
   BuiltinObjectType object_type = BuiltinObjectType::kNone;
 
-  /// Scalar route: returns owned column data — no anchor needed because the
-  /// returned vector and any string_views inside it are materialized by the
-  /// parser, independent of the caller's payload buffer.
-  std::function<Expected<std::vector<NamedFieldValue>>(Timestamp, Span<const uint8_t>)> parse_scalars;
+  /// Scalar route: returns one or more rows, each with an optional
+  /// parser-controlled timestamp. When ScalarRecord::ts is nullopt the
+  /// host uses the message's own timestamp. Set it to extract a timestamp
+  /// embedded inside the payload (e.g. a ROS Header stamp or a JSON
+  /// "timestamp" field). Returning multiple records from a single payload
+  /// is also supported — useful for batch messages such as JSON arrays.
+  std::function<Expected<std::vector<ScalarRecord>>(Timestamp, Span<const uint8_t>)> parse_scalars;
 
-  /// Canonical-object route: takes a PayloadView so the parser can return a
-  /// BuiltinObject whose internal Span(s) reference the same underlying
-  /// buffer (zero-copy). The parser propagates `payload.anchor` into the
-  /// returned object so its bytes outlive this call. When the caller passes
-  /// an empty anchor, the parser must materialize whatever it wants to retain.
-  std::function<Expected<BuiltinObject>(Timestamp, PayloadView)> parse_object;
+  /// Canonical-object route: returns an ObjectRecord with an optional
+  /// parser-controlled timestamp. When ObjectRecord::ts is nullopt the host
+  /// uses the message's own timestamp. Set it to use the sensor time embedded
+  /// in the payload (e.g. ROS Header.stamp) so objects align with scalars on
+  /// the time axis. The parser propagates `payload.anchor` into the returned
+  /// object so its bytes outlive this call.
+  std::function<Expected<ObjectRecord>(Timestamp, PayloadView)> parse_object;
 };
 
 }  // namespace sdk
@@ -151,14 +155,22 @@ class MessageParserPluginBase {
     if (!writeHostBound()) {
       return unexpected(std::string("write host not bound"));
     }
-    auto fields = parseScalars(timestamp_ns, payload);
-    if (!fields) {
-      return unexpected(std::move(fields).error());
+    auto records = parseScalars(timestamp_ns, payload);
+    if (!records) {
+      return unexpected(std::move(records).error());
     }
-    if (fields->empty()) {
-      return okStatus();
+    for (const auto& rec : *records) {
+      // Use the parser-provided timestamp if set, otherwise fall back to
+      // the host-provided one (the message receive time).
+      const Timestamp ts = rec.ts.value_or(timestamp_ns);
+      if (!rec.fields.empty()) {
+        auto status = writeHost().appendRecord(ts, Span<const sdk::NamedFieldValue>(rec.fields.data(), rec.fields.size()));
+        if (!status) {
+          return status;
+        }
+      }
     }
-    return writeHost().appendRecord(timestamp_ns, Span<const sdk::NamedFieldValue>(fields->data(), fields->size()));
+    return okStatus();
   }
 
   // ---------------------------------------------------------------------------
@@ -230,7 +242,7 @@ class MessageParserPluginBase {
   /// Returns unexpected if no handler is registered, or if the registered
   /// handler did not provide a parse_scalars callable. Marked `final` — see
   /// classifySchema above for the rationale.
-  virtual Expected<std::vector<sdk::NamedFieldValue>> parseScalars(
+  virtual Expected<std::vector<sdk::ScalarRecord>> parseScalars(
       Timestamp timestamp_ns, Span<const uint8_t> payload) final {
     const auto* h = findSchemaHandler(bound_type_name_);
     if (h == nullptr) {
@@ -251,7 +263,7 @@ class MessageParserPluginBase {
   /// materialize anything it wants to outlive this call. In-process callers
   /// that already own the payload buffer should pass a non-empty anchor so
   /// the parser can return a zero-copy BuiltinObject.
-  virtual Expected<sdk::BuiltinObject> parseObject(Timestamp timestamp_ns, sdk::PayloadView payload) final {
+  virtual Expected<sdk::ObjectRecord> parseObject(Timestamp timestamp_ns, sdk::PayloadView payload) final {
     const auto* h = findSchemaHandler(bound_type_name_);
     if (h == nullptr) {
       return unexpected(std::string("parser does not register schema: ") + bound_type_name_);

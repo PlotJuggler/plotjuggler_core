@@ -14,6 +14,8 @@
 #include <variant>
 #include <vector>
 
+#include "pj_base/builtin/builtin_object.hpp"
+
 #include "pj_base/expected.hpp"
 #include "pj_base/plugin_data_api.h"
 #include "pj_base/sdk/arrow.hpp"
@@ -94,6 +96,25 @@ struct NamedFieldValue {
 struct BoundFieldValue {
   FieldHandle field;
   ValueRef value;
+};
+
+/// One row of scalar data with an optional parser-controlled timestamp.
+/// When `ts` is nullopt the host uses the message's own timestamp
+/// (the value passed to parse_scalars). Set `ts` to override — e.g. to
+/// use a timestamp field embedded inside the payload rather than the
+/// transport-level receive time.
+struct ScalarRecord {
+  std::optional<Timestamp> ts;
+  std::vector<NamedFieldValue> fields;
+};
+
+/// A builtin object (image, point cloud, …) with an optional parser-controlled
+/// timestamp. Mirrors ScalarRecord for the object route: when `ts` is nullopt
+/// the host uses the message's own timestamp; set it to use the sensor time
+/// embedded in the payload (e.g. ROS Header.stamp).
+struct ObjectRecord {
+  std::optional<Timestamp> ts;
+  BuiltinObject object;
 };
 
 class CatalogSnapshot {
