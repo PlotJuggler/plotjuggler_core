@@ -27,6 +27,7 @@
 #include <string_view>
 
 #include "pj_base/builtin/asset_video.hpp"
+#include "pj_base/builtin/camera_info.hpp"
 #include "pj_base/builtin/compressed_point_cloud.hpp"
 #include "pj_base/builtin/depth_image.hpp"
 #include "pj_base/builtin/frame_transforms.hpp"
@@ -34,6 +35,7 @@
 #include "pj_base/builtin/image_annotations.hpp"
 #include "pj_base/builtin/mesh3d.hpp"
 #include "pj_base/builtin/occupancy_grid.hpp"
+#include "pj_base/builtin/occupancy_grid_update.hpp"
 #include "pj_base/builtin/point_cloud.hpp"
 #include "pj_base/builtin/robot_description.hpp"
 #include "pj_base/builtin/scene_entities.hpp"
@@ -56,6 +58,8 @@ enum class BuiltinObjectType : uint16_t {
   kSceneEntities = 11,        ///< sdk::SceneEntities — procedural 3D scene primitives.
   kAssetVideo = 12,           ///< sdk::AssetVideo — file-backed video reference + playback metadata.
   kRobotDescription = 13,     ///< sdk::RobotDescription — raw URDF/SDF/MJCF text + format hint.
+  kCameraInfo = 14,           ///< sdk::CameraInfo — pinhole camera calibration (K/D/R/P).
+  kOccupancyGridUpdate = 15,  ///< sdk::OccupancyGridUpdate — incremental sub-rectangle patch for an OccupancyGrid.
 };
 
 /// A-priori classification of a schema. Currently carries only the type;
@@ -94,6 +98,10 @@ struct SchemaClassification {
       return "kAssetVideo";
     case BuiltinObjectType::kRobotDescription:
       return "kRobotDescription";
+    case BuiltinObjectType::kCameraInfo:
+      return "kCameraInfo";
+    case BuiltinObjectType::kOccupancyGridUpdate:
+      return "kOccupancyGridUpdate";
   }
   return "kNone";
 }
@@ -139,6 +147,12 @@ struct SchemaClassification {
   }
   if (s == "kRobotDescription") {
     return BuiltinObjectType::kRobotDescription;
+  }
+  if (s == "kCameraInfo") {
+    return BuiltinObjectType::kCameraInfo;
+  }
+  if (s == "kOccupancyGridUpdate") {
+    return BuiltinObjectType::kOccupancyGridUpdate;
   }
   return std::nullopt;
 }
@@ -188,6 +202,12 @@ using BuiltinObject = std::any;
   }
   if (t == typeid(RobotDescription)) {
     return BuiltinObjectType::kRobotDescription;
+  }
+  if (t == typeid(CameraInfo)) {
+    return BuiltinObjectType::kCameraInfo;
+  }
+  if (t == typeid(OccupancyGridUpdate)) {
+    return BuiltinObjectType::kOccupancyGridUpdate;
   }
   return BuiltinObjectType::kNone;
 }
