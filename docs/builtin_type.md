@@ -122,6 +122,7 @@ annotations, frame transforms, or no builtin object.
 | `kRobotDescription` | `PJ::sdk::RobotDescription` | Raw URDF/SDF/MJCF text + format hint. |
 | `kCameraInfo` | `PJ::sdk::CameraInfo` | Pinhole camera calibration (intrinsics K, distortion D, rectification R, projection P). |
 | `kOccupancyGridUpdate` | `PJ::sdk::OccupancyGridUpdate` | Incremental sub-rectangle patch for a previously-published `OccupancyGrid`. |
+| `kLog` | `PJ::sdk::Log` | Textual log message (severity level + text + originating name). |
 
 `BuiltinObject` is `std::any`. Producers store a concrete builtin value in it;
 consumers recover the concrete type with `std::any_cast<T>(&object)` or ask
@@ -550,6 +551,22 @@ Sub-window fields (binning, ROI) from `sensor_msgs/CameraInfo` are intentionally
 omitted; they are additive later if a consumer needs them.
 `pj_base/builtin/camera_info_codec.hpp` serializes and deserializes this type
 using the canonical `PJ.CameraInfo` protobuf wire format.
+
+## Log
+
+`Log` is a single textual log message, for a log/console panel. It mirrors the
+core of Foxglove's `Log` schema (and `rcl_interfaces/Log` / `rosgraph_msgs/Log`).
+
+| Field on `Log` | Type | Notes |
+|----------------|------|-------|
+| `timestamp_ns` | `Timestamp` | Time of the log message. |
+| `level` | `Log::Level` | `kUnknown`/`kDebug`/`kInfo`/`kWarning`/`kError`/`kFatal` (values match Foxglove). |
+| `message` | `std::string` | Log text. |
+| `name` | `std::string` | Originating process / node / logger name. |
+
+Foxglove's source-location fields (`file`, `line`) are intentionally omitted.
+`pj_base/builtin/log_codec.hpp` serializes and deserializes this type using the
+canonical `PJ.Log` protobuf wire format.
 
 ## Conversion Examples
 
