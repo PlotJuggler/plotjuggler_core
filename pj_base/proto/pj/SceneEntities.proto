@@ -8,6 +8,7 @@ syntax = "proto3";
 
 import "pj/Color.proto";
 import "pj/Geometry.proto";
+import "pj/KeyValuePair.proto";
 import "google/protobuf/duration.proto";
 import "google/protobuf/timestamp.proto";
 
@@ -269,15 +270,6 @@ message SceneEntity {
   // Axes-glyph primitives composing this entity. PlotJuggler extension with no Foxglove counterpart; placed after the
   // Foxglove field range (1..14).
   repeated PJ.AxesPrimitive axes = 15;
-}
-
-// Arbitrary key/value metadata attached to a SceneEntity (mirrors Foxglove's KeyValuePair).
-message KeyValuePair {
-  // Key. Should be unique within a SceneEntity.
-  string key = 1;
-
-  // Value.
-  string value = 2;
 }
 
 // A command to remove previously-published entities on a topic. `MATCHING_ID` removes the entity with the given `id`;
