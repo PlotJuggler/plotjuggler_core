@@ -90,7 +90,9 @@ Expected<sdk::CameraInfo> deserializeCameraInfo(const uint8_t* data, size_t size
         if (tag.type != WireType::kLengthDelimited) {
           return false;
         }
-        info.D.clear();
+        // No clear(): readPackedDouble appends, so a `D` field split across
+        // multiple packed chunks (valid proto, e.g. after message merge) is
+        // preserved — matching the DepthImage decoder.
         return builtin_wire::readPackedDouble(r, info.D);
       case 7:
         if (tag.type != WireType::kLengthDelimited) {
