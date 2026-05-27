@@ -462,8 +462,8 @@ bundles heterogeneous primitives sharing a `frame_id` and timestamp;
 
 Use `SceneEntities` when the value is procedural 3D scene content
 expressible as a small set of primitives: arrows, cubes, spheres,
-cylinders, line strips/loops/lists, triangles, text labels, or coordinate
-axes glyphs.
+cylinders, line strips/loops/lists, triangles, text labels, coordinate
+axes glyphs, or model (mesh asset) references.
 
 | Field on `SceneEntity` | Type | Notes |
 |------------------------|------|-------|
@@ -472,7 +472,12 @@ axes glyphs.
 | `id` | `std::string` | Republishing with the same `(topic, id)` replaces the previous entity. |
 | `lifetime_ns` | `int64_t` | `0` means persist until replaced; otherwise expire `lifetime_ns` after `timestamp`. |
 | `frame_locked` | `bool` | When true, track `frame_id` as it moves; when false, stamp into the fixed frame at publish time. |
-| `arrows` / `cubes` / `spheres` / `cylinders` / `lines` / `triangles` / `texts` / `axes` | `std::vector<…Primitive>` | Heterogeneous primitive lists. |
+| `arrows` / `cubes` / `spheres` / `cylinders` / `lines` / `triangles` / `texts` / `axes` / `models` | `std::vector<…Primitive>` | Heterogeneous primitive lists. `models` references a mesh asset by `url` or inline `data`. |
+
+The `SceneEntities` batch also carries `deletions` (`std::vector<SceneEntityDeletion>`):
+removal commands that let a snapshot-based producer express the removal half of a
+stateful stream (e.g. ROS Marker `DELETE` / `DELETEALL`). A deletion is either
+`kMatchingId` (remove the entity with the given `id`) or `kAll` (clear the topic).
 
 Each primitive carries its own `Pose`, geometry-specific size or shape
 fields, and color (or per-vertex colors, where applicable). See

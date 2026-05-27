@@ -26,8 +26,10 @@ using sdk::CubePrimitive;
 using sdk::CylinderPrimitive;
 using sdk::LinePrimitive;
 using sdk::LineType;
+using sdk::ModelPrimitive;
 using sdk::SceneEntities;
 using sdk::SceneEntity;
+using sdk::SceneEntityDeletion;
 using sdk::SpherePrimitive;
 using sdk::TextPrimitive;
 using sdk::TrianglePrimitive;
@@ -375,6 +377,95 @@ bool decodeAxesPrimitive(Reader& reader, AxesPrimitive& out) {
   });
 }
 
+// ---------- ModelPrimitive ----------
+
+void writeModelPrimitive(Writer& writer, const ModelPrimitive& p) {
+  writer.message(1, [&](Writer& nested) { builtin_wire::writePose(nested, p.pose); });
+  writer.message(2, [&](Writer& nested) { builtin_wire::writeVector3(nested, p.scale); });
+  writer.message(3, [&](Writer& nested) { builtin_wire::writeColor(nested, p.color); });
+  writer.varint(4, p.override_color ? 1u : 0u);
+  writer.string(5, p.url);
+  writer.string(6, p.media_type);
+  if (!p.data.empty()) {
+    writer.bytes(7, p.data.data(), p.data.size());
+  }
+}
+
+bool decodeModelPrimitive(Reader& reader, ModelPrimitive& out) {
+  return parseFields(reader, [&](Tag tag, Reader& r) {
+    switch (tag.field) {
+      case 1:
+        return tag.type == WireType::kLengthDelimited && builtin_wire::readPoseMessage(r, out.pose);
+      case 2:
+        return tag.type == WireType::kLengthDelimited && builtin_wire::readVector3Message(r, out.scale);
+      case 3:
+        return tag.type == WireType::kLengthDelimited && builtin_wire::readColorMessage(r, out.color);
+      case 4: {
+        if (tag.type != WireType::kVarint) {
+          return false;
+        }
+        uint64_t v = 0;
+        if (!r.readVarint(v)) {
+          return false;
+        }
+        out.override_color = (v != 0);
+        return true;
+      }
+      case 5:
+        return tag.type == WireType::kLengthDelimited && r.readString(out.url);
+      case 6:
+        return tag.type == WireType::kLengthDelimited && r.readString(out.media_type);
+      case 7: {
+        if (tag.type != WireType::kLengthDelimited) {
+          return false;
+        }
+        const uint8_t* data = nullptr;
+        size_t size = 0;
+        if (!r.readBytes(data, size)) {
+          return false;
+        }
+        out.data.assign(data, data + size);
+        return true;
+      }
+      default:
+        return false;
+    }
+  });
+}
+
+// ---------- SceneEntityDeletion ----------
+
+void writeSceneEntityDeletion(Writer& writer, const SceneEntityDeletion& d) {
+  // Duration/Timestamp share the seconds+nanos wire shape.
+  writer.message(1, [&](Writer& nested) { builtin_wire::writeTimestamp(nested, d.timestamp); });
+  writer.varint(2, static_cast<uint64_t>(d.type));
+  writer.string(3, d.id);
+}
+
+bool decodeSceneEntityDeletion(Reader& reader, SceneEntityDeletion& out) {
+  return parseFields(reader, [&](Tag tag, Reader& r) {
+    switch (tag.field) {
+      case 1:
+        return tag.type == WireType::kLengthDelimited && builtin_wire::readTimestampMessage(r, out.timestamp);
+      case 2: {
+        if (tag.type != WireType::kVarint) {
+          return false;
+        }
+        uint64_t v = 0;
+        if (!r.readVarint(v)) {
+          return false;
+        }
+        out.type = (v == 1) ? SceneEntityDeletion::Type::kAll : SceneEntityDeletion::Type::kMatchingId;
+        return true;
+      }
+      case 3:
+        return tag.type == WireType::kLengthDelimited && r.readString(out.id);
+      default:
+        return false;
+    }
+  });
+}
+
 // ---------- Nested-primitive read helpers ----------
 
 template <typename Primitive, typename Decoder>
@@ -425,6 +516,9 @@ void writeSceneEntity(Writer& writer, const SceneEntity& e) {
   for (const auto& a : e.axes) {
     writer.message(13, [&](Writer& nested) { writeAxesPrimitive(nested, a); });
   }
+  for (const auto& m : e.models) {
+    writer.message(14, [&](Writer& nested) { writeModelPrimitive(nested, m); });
+  }
 }
 
 bool decodeSceneEntity(Reader& reader, SceneEntity& out) {
@@ -467,6 +561,8 @@ bool decodeSceneEntity(Reader& reader, SceneEntity& out) {
         return tag.type == WireType::kLengthDelimited && readPrimitiveIntoVector(r, out.texts, decodeTextPrimitive);
       case 13:
         return tag.type == WireType::kLengthDelimited && readPrimitiveIntoVector(r, out.axes, decodeAxesPrimitive);
+      case 14:
+        return tag.type == WireType::kLengthDelimited && readPrimitiveIntoVector(r, out.models, decodeModelPrimitive);
       default:
         return false;
     }
@@ -481,6 +577,9 @@ std::vector<uint8_t> serializeSceneEntities(const SceneEntities& entities) {
 
   for (const auto& entity : entities.entities) {
     writer.message(1, [&](Writer& nested) { writeSceneEntity(nested, entity); });
+  }
+  for (const auto& deletion : entities.deletions) {
+    writer.message(2, [&](Writer& nested) { writeSceneEntityDeletion(nested, deletion); });
   }
 
   return out;
@@ -518,6 +617,12 @@ Expected<sdk::SceneEntities> deserializeSceneEntities(const uint8_t* data, size_
         return unexpected(std::string("SceneEntities wire: SceneEntity decode failed"));
       }
       entities.entities.push_back(std::move(entity));
+    } else if (tag.field == 2) {
+      SceneEntityDeletion deletion;
+      if (!decodeSceneEntityDeletion(nested, deletion)) {
+        return unexpected(std::string("SceneEntities wire: SceneEntityDeletion decode failed"));
+      }
+      entities.deletions.push_back(std::move(deletion));
     }
   }
 

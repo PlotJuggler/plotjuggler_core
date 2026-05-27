@@ -184,6 +184,32 @@ message AxesPrimitive {
   bool scale_invariant = 4;
 }
 
+// A 3D model (mesh asset) primitive. The source is either `url` (a resolvable resource) or inline `data` tagged by
+// `media_type`. `color` tints the model only when `override_color` is true; otherwise the model's embedded materials
+// are used.
+message ModelPrimitive {
+  // Origin pose of the model
+  PJ.Pose pose = 1;
+
+  // Per-axis scale factor applied to the model
+  PJ.Vector3 scale = 2;
+
+  // Solid color; applied only when `override_color` is true
+  PJ.Color color = 3;
+
+  // When true, `color` replaces the model's own/embedded materials
+  bool override_color = 4;
+
+  // Resource URI of the model (empty when the model is provided inline via `data`)
+  string url = 5;
+
+  // MIME type of `data` when the model is provided inline (e.g. "model/gltf-binary")
+  string media_type = 6;
+
+  // Inline model bytes (empty when `url` is used)
+  bytes data = 7;
+}
+
 // A visual element in a 3D scene. An entity is composed of one or more primitives, all of which share the same frame
 // of reference and timestamp. The entity itself has no top-level pose; each primitive carries its own pose.
 //
@@ -236,11 +262,40 @@ message SceneEntity {
 
   // Axes-glyph primitives composing this entity
   repeated PJ.AxesPrimitive axes = 13;
+
+  // Model (mesh asset) primitives composing this entity
+  repeated PJ.ModelPrimitive models = 14;
 }
 
-// A batch of scene entities published together. Each payload is a self-contained snapshot; entity-deletion semantics
-// may be introduced later if streaming sources require them.
+// A command to remove previously-published entities on a topic. `MATCHING_ID` removes the entity with the given `id`;
+// `ALL` removes every entity on the topic. `timestamp` bounds the deletion to entities published at or before it.
+message SceneEntityDeletion {
+  // Which entities a deletion matches
+  enum Type {
+    // Delete the entity on this topic whose id matches `id`
+    MATCHING_ID = 0;
+
+    // Delete all entities on this topic
+    ALL = 1;
+  }
+
+  // Timestamp of the deletion; only entities at or before this time are removed
+  google.protobuf.Timestamp timestamp = 1;
+
+  // Type of deletion
+  Type type = 2;
+
+  // Entity id to match when `type` is MATCHING_ID
+  string id = 3;
+}
+
+// A batch of scene entities published together. Each payload is a self-contained snapshot: `entities` are added or
+// replaced (keyed by `(topic, id)`) and `deletions` remove previously-published entities. Entities neither present nor
+// deleted persist until they expire by lifetime.
 message SceneEntities {
-  // Array of scene entities
+  // Scene entities to add or replace
   repeated PJ.SceneEntity entities = 1;
+
+  // Commands removing previously-published entities
+  repeated PJ.SceneEntityDeletion deletions = 2;
 }
