@@ -2,6 +2,7 @@
 // Copyright 2026 Davide Faconti
 // SPDX-License-Identifier: MPL-2.0
 
+#include <any>
 #include <cstddef>
 #include <cstdint>
 #include <deque>
@@ -13,9 +14,9 @@
 #include <string>
 #include <string_view>
 #include <utility>
-#include <variant>
 #include <vector>
 
+#include "pj_base/buffer_anchor.hpp"
 #include "pj_base/expected.hpp"
 #include "pj_base/types.hpp"
 
@@ -40,7 +41,10 @@ struct ObjectTopicDescriptor {
 
 struct ObjectEntry {
   Timestamp timestamp = 0;
-  std::variant<std::shared_ptr<const std::vector<uint8_t>>, std::function<std::vector<uint8_t>()>> payload;
+  // Holds either a shared_ptr<const std::vector<uint8_t>> (eager owned payload)
+  // or a std::function<sdk::PayloadView()> (lazy resolver). resolveEntry
+  // discriminates via std::any_cast.
+  std::any payload;
 };
 
 struct ResolvedObjectEntry {
@@ -108,8 +112,14 @@ class ObjectStore {
 
   Expected<void, std::string> pushOwned(ObjectTopicId id, Timestamp timestamp, std::vector<uint8_t> payload);
 
-  Expected<void, std::string> pushLazy(
-      ObjectTopicId id, Timestamp timestamp, std::function<std::vector<uint8_t>()> fetch);
+  // The fetch callable is invoked on every read. It returns a PayloadView
+  // (Span + anchor). When the producer already holds the bytes in memory
+  // behind a shared_ptr (e.g. a streaming buffer being handed off between
+  // stores), the closure can capture that shared_ptr and return a view
+  // backed by it — no copy. For producers that materialize bytes from disk
+  // or other sources, the closure allocates a fresh buffer and uses it as
+  // the anchor.
+  Expected<void, std::string> pushLazy(ObjectTopicId id, Timestamp timestamp, std::function<sdk::PayloadView()> fetch);
 
   // --- Read ---
 

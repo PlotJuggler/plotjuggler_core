@@ -1392,7 +1392,9 @@ bool sourceObjectPushLazy(
     // the lambda; destructor runs exactly once when ObjectStore drops the
     // entry (retention, evict, removeTopic, clear, or store teardown).
     auto holder = std::make_shared<PluginFetchCtx>(fetch_fn, fetch_ctx, fetch_ctx_destroy);
-    auto closure = [holder]() -> std::vector<uint8_t> { return holder->invoke(); };
+    // Plugins return raw bytes via the C ABI; wrap them as a PayloadView whose
+    // anchor is a shared_ptr<const vector<uint8_t>>, per the pushLazy contract.
+    auto closure = [holder]() -> sdk::PayloadView { return sdk::makePayloadView(holder->invoke()); };
     auto result = impl->store.pushLazy(ObjectTopicId{topic.id}, timestamp_ns, std::move(closure));
     if (!result) {
       impl->setError(result.error());
@@ -1631,7 +1633,7 @@ bool parserObjectPushLazy(
   }
   try {
     auto holder = std::make_shared<PluginFetchCtx>(fetch_fn, fetch_ctx, fetch_ctx_destroy);
-    auto closure = [holder]() -> std::vector<uint8_t> { return holder->invoke(); };
+    auto closure = [holder]() -> sdk::PayloadView { return sdk::makePayloadView(holder->invoke()); };
     auto result = impl->store.pushLazy(impl->bound_topic, timestamp_ns, std::move(closure));
     if (!result) {
       impl->setError(result.error());

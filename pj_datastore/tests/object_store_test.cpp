@@ -281,9 +281,9 @@ TEST(ObjectStoreTest, PushLazyResolves) {
   ObjectStore store;
   auto id = registerTestTopic(store);
   int call_count = 0;
-  store.pushLazy(id, 100, [&call_count]() -> std::vector<uint8_t> {
+  store.pushLazy(id, 100, [&call_count]() -> sdk::PayloadView {
     ++call_count;
-    return {0xDE, 0xAD};
+    return sdk::makePayloadView({0xDE, 0xAD});
   });
 
   EXPECT_EQ(call_count, 0);
@@ -420,7 +420,9 @@ TEST(ObjectStoreTest, LazyEntriesZeroMemory) {
   ObjectStore store;
   auto id = registerTestTopic(store);
   for (int i = 0; i < 10; ++i) {
-    store.pushLazy(id, static_cast<Timestamp>(i) * 100, []() { return makePayload(1000); });
+    store.pushLazy(id, static_cast<Timestamp>(i) * 100, []() -> sdk::PayloadView {
+      return sdk::makePayloadView(makePayload(1000));
+    });
   }
   EXPECT_EQ(store.memoryUsage(id), 0u);
 }
