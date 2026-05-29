@@ -1007,7 +1007,7 @@ bool sourceEnsureField(
 }
 
 bool sourceAppendRecord(
-    void* ctx, TopicHandle topic, int64_t timestamp, const PJ_named_field_value_t* fields, std::size_t field_count,
+    void* ctx, TopicHandle topic, int64_t timestamp, const PJ_named_field_value_t* fields, uint64_t field_count,
     PJ_error_t* out_error) noexcept {
   return guardHostCallback(out_error, [&] {
     auto* impl = static_cast<DatastoreSourceWriteHostState*>(ctx);
@@ -1020,7 +1020,7 @@ bool sourceAppendRecord(
 }
 
 bool sourceAppendBoundRecord(
-    void* ctx, TopicHandle topic, int64_t timestamp, const PJ_bound_field_value_t* fields, std::size_t field_count,
+    void* ctx, TopicHandle topic, int64_t timestamp, const PJ_bound_field_value_t* fields, uint64_t field_count,
     PJ_error_t* out_error) noexcept {
   return guardHostCallback(out_error, [&] {
     auto* impl = static_cast<DatastoreSourceWriteHostState*>(ctx);
@@ -1064,7 +1064,7 @@ bool parserEnsureField(
 }
 
 bool parserAppendRecord(
-    void* ctx, int64_t timestamp, const PJ_named_field_value_t* fields, std::size_t field_count,
+    void* ctx, int64_t timestamp, const PJ_named_field_value_t* fields, uint64_t field_count,
     PJ_error_t* out_error) noexcept {
   return guardHostCallback(out_error, [&] {
     auto* impl = static_cast<DatastoreParserWriteHostState*>(ctx);
@@ -1077,7 +1077,7 @@ bool parserAppendRecord(
 }
 
 bool parserAppendBoundRecord(
-    void* ctx, int64_t timestamp, const PJ_bound_field_value_t* fields, std::size_t field_count,
+    void* ctx, int64_t timestamp, const PJ_bound_field_value_t* fields, uint64_t field_count,
     PJ_error_t* out_error) noexcept {
   return guardHostCallback(out_error, [&] {
     auto* impl = static_cast<DatastoreParserWriteHostState*>(ctx);
@@ -1143,7 +1143,7 @@ bool toolboxEnsureField(
 }
 
 bool toolboxAppendRecord(
-    void* ctx, TopicHandle topic, int64_t timestamp, const PJ_named_field_value_t* fields, std::size_t field_count,
+    void* ctx, TopicHandle topic, int64_t timestamp, const PJ_named_field_value_t* fields, uint64_t field_count,
     PJ_error_t* out_error) noexcept {
   return guardHostCallback(out_error, [&] {
     auto* impl = static_cast<DatastoreToolboxHostState*>(ctx);
@@ -1156,7 +1156,7 @@ bool toolboxAppendRecord(
 }
 
 bool toolboxAppendBoundRecord(
-    void* ctx, TopicHandle topic, int64_t timestamp, const PJ_bound_field_value_t* fields, std::size_t field_count,
+    void* ctx, TopicHandle topic, int64_t timestamp, const PJ_bound_field_value_t* fields, uint64_t field_count,
     PJ_error_t* out_error) noexcept {
   return guardHostCallback(out_error, [&] {
     auto* impl = static_cast<DatastoreToolboxHostState*>(ctx);
@@ -1250,7 +1250,7 @@ bool toolboxRegisterObjectTopic(
 }
 
 bool toolboxPushOwnedObject(
-    void* ctx, PJ_object_topic_handle_t topic, int64_t timestamp_ns, const uint8_t* data, std::size_t size,
+    void* ctx, PJ_object_topic_handle_t topic, int64_t timestamp_ns, const uint8_t* data, uint64_t size,
     PJ_error_t* out_error) noexcept {
   auto* impl = static_cast<DatastoreToolboxHostState*>(ctx);
   try {
@@ -1302,7 +1302,7 @@ class PluginFetchCtx {
       return {};
     }
     const uint8_t* data = nullptr;
-    std::size_t size = 0;
+    uint64_t size = 0;  // matches PJ_lazy_fetch_fn_t out_size (uint64_t*)
     if (!fetch_fn_(ctx_, &data, &size) || data == nullptr) {
       return {};
     }
@@ -1349,7 +1349,7 @@ bool sourceObjectRegisterTopic(
 }
 
 bool sourceObjectPushOwned(
-    void* ctx, PJ_object_topic_handle_t topic, int64_t timestamp_ns, const uint8_t* data, std::size_t size,
+    void* ctx, PJ_object_topic_handle_t topic, int64_t timestamp_ns, const uint8_t* data, uint64_t size,
     PJ_error_t* out_error) noexcept {
   auto* impl = static_cast<DatastoreSourceObjectWriteHostState*>(ctx);
   try {
@@ -1417,7 +1417,7 @@ bool sourceObjectPushLazy(
 }
 
 void sourceObjectSetRetentionBudget(
-    void* ctx, PJ_object_topic_handle_t topic, int64_t time_window_ns, std::size_t max_memory_bytes) noexcept {
+    void* ctx, PJ_object_topic_handle_t topic, int64_t time_window_ns, uint64_t max_memory_bytes) noexcept {
   auto* impl = static_cast<DatastoreSourceObjectWriteHostState*>(ctx);
   try {
     RetentionBudget budget{};
@@ -1455,7 +1455,7 @@ PJ_object_topic_handle_t toolboxObjectLookupTopic(void* ctx, PJ_string_view_t to
 }
 
 bool toolboxObjectListTopics(
-    void* ctx, PJ_object_topic_handle_t* out_buffer, std::size_t buffer_capacity, std::size_t* out_count,
+    void* ctx, PJ_object_topic_handle_t* out_buffer, uint64_t buffer_capacity, uint64_t* out_count,
     PJ_error_t* out_error) noexcept {
   auto* impl = static_cast<DatastoreToolboxObjectReadHostState*>(ctx);
   if (out_count == nullptr) {
@@ -1466,7 +1466,9 @@ bool toolboxObjectListTopics(
     const auto ids = impl->store.listTopics();
     *out_count = ids.size();
     if (out_buffer != nullptr) {
-      const std::size_t n = std::min(buffer_capacity, ids.size());
+      // buffer_capacity is uint64_t (ABI); ids.size() is size_t. Compare in
+      // uint64_t, then index with size_t (n <= ids.size(), so it fits).
+      const std::size_t n = static_cast<std::size_t>(std::min<uint64_t>(buffer_capacity, ids.size()));
       for (std::size_t i = 0; i < n; ++i) {
         out_buffer[i] = PJ_object_topic_handle_t{ids[i].id};
       }
@@ -1529,7 +1531,7 @@ bool toolboxObjectReadLatestAt(
   }
 }
 
-void toolboxObjectGetBytes(PJ_object_bytes_handle_t handle, const uint8_t** out_data, std::size_t* out_size) noexcept {
+void toolboxObjectGetBytes(PJ_object_bytes_handle_t handle, const uint8_t** out_data, uint64_t* out_size) noexcept {
   if (out_data != nullptr) {
     *out_data = nullptr;
   }
@@ -1558,7 +1560,7 @@ void toolboxObjectReleaseBytes(PJ_object_bytes_handle_t handle) noexcept {
   delete reinterpret_cast<ObjectBytesBox*>(handle);
 }
 
-std::size_t toolboxObjectEntryCount(void* ctx, PJ_object_topic_handle_t topic) noexcept {
+uint64_t toolboxObjectEntryCount(void* ctx, PJ_object_topic_handle_t topic) noexcept {
   auto* impl = static_cast<DatastoreToolboxObjectReadHostState*>(ctx);
   try {
     return impl->store.entryCount(ObjectTopicId{topic.id});
@@ -1592,7 +1594,7 @@ bool toolboxObjectTimeRange(
 // ---------------------------------------------------------------------------
 
 bool parserObjectPushOwned(
-    void* ctx, int64_t timestamp_ns, const uint8_t* data, std::size_t size, PJ_error_t* out_error) noexcept {
+    void* ctx, int64_t timestamp_ns, const uint8_t* data, uint64_t size, PJ_error_t* out_error) noexcept {
   auto* impl = static_cast<DatastoreParserObjectWriteHostState*>(ctx);
   try {
     std::vector<uint8_t> bytes;
