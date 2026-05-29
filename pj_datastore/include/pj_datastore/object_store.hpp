@@ -49,11 +49,24 @@ using LazyCallback = std::function<sdk::PayloadView()>;
 
 struct ObjectEntry {
   Timestamp timestamp = 0;
+  // Holds either a SharedBuffer (eager owned payload, counted against the
+  // retention budget) or a LazyCallback (lazy resolver). resolveEntry
+  // discriminates via std::get_if; the variant is exhaustive over the two
+  // (and only two) payload kinds.
   std::variant<SharedBuffer, LazyCallback> payload;
 };
 
 struct ResolvedObjectEntry {
   Timestamp timestamp = 0;
+  // PayloadView lets the entry hold an opaque anchor (any shared_ptr<T>) plus
+  // a non-owning Span over the bytes. Consumers read `payload.bytes` for the
+  // data; they retain `payload.anchor` if they need the bytes to outlive the
+  // resolve call. Both `pushOwned` and `pushLazy` paths land here:
+  //   - owned:  payload.bytes spans the shared_ptr<vector<uint8_t>>; anchor IS that shared_ptr.
+  //   - lazy:   payload is whatever the closure returns; anchor can be any shared_ptr<T>
+  //             (e.g. a C-ABI payload anchor wrapped as shared_ptr<void>).
+  // resolveEntry never casts the anchor to a concrete type; the type erasure
+  // stays opaque all the way to the consumer.
   sdk::PayloadView payload;
 };
 
@@ -119,7 +132,9 @@ class ObjectStore {
 
   // Fetcher runs on every read. Producers anchor on whatever owns the bytes
   // (chunk cache, mmap, fresh allocation); the store never copies — it just
-  // retains the anchor through PayloadView.
+  // retains the anchor through PayloadView. When the producer already holds
+  // the bytes behind a shared_ptr (e.g. a streaming buffer handed off between
+  // stores), the closure captures it and returns a view backed by it.
   Status pushLazy(ObjectTopicId id, Timestamp timestamp, LazyCallback fetch);
 
   // --- Read ---
@@ -146,6 +161,29 @@ class ObjectStore {
 
   void evictBefore(ObjectTopicId id, Timestamp threshold);
   void evictAllBefore(Timestamp threshold);
+
+  // --- Cross-store flush ---
+
+  // Move every entry from this store into `dst`, leaving this store empty
+  // (topic registrations are preserved). Topics are matched by descriptor
+  // (dataset_id + topic_name); both stores must have registered the same
+  // descriptors or the call fails without partial mutation. For each series,
+  // monotonicity is enforced strictly: the earliest timestamp being moved
+  // must be greater than or equal to the destination's current last
+  // timestamp. On any validation failure the call returns an error and
+  // neither store is mutated.
+  //
+  // Zero-copy on the payload bytes. Each ObjectEntry is moved into the
+  // destination's series by value; the std::variant inside holds either a
+  // shared_ptr or a std::function, and moving it is a pointer/buffer move —
+  // bytes captured by the closure or owned by the shared_ptr are never
+  // copied or materialized during the flush. Lazy
+  // entries preserve their semantics in the destination: their closure is
+  // re-invoked only when the destination is read.
+  //
+  // After the move, the destination's retention budget is applied to each
+  // touched series in normal order.
+  Expected<void, std::string> flushTo(ObjectStore& dst);
 
   // --- Lifecycle ---
 
