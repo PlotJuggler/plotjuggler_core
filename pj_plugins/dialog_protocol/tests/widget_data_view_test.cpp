@@ -261,3 +261,13 @@ TEST(WidgetDataViewTest, CodeCursorAbsent) {
   PJ::WidgetDataView v(R"({"editor": {"code_content": "x"}})");
   EXPECT_FALSE(v.codeCursor("editor").has_value());
 }
+
+TEST(WidgetDataViewTest, CodeCaretTracking) {
+  PJ::WidgetDataView v(R"({"editor": {"code_caret_tracking": true}})");
+  EXPECT_EQ(v.codeCaretTracking("editor"), true);
+}
+
+TEST(WidgetDataViewTest, CodeCaretTrackingAbsent) {
+  PJ::WidgetDataView v(R"({"editor": {"code_content": "x"}})");
+  EXPECT_FALSE(v.codeCaretTracking("editor").has_value());
+}

@@ -214,6 +214,11 @@ class WidgetDataView {
   [[nodiscard]] std::optional<int> codeCursor(std::string_view name) const {
     return getInt(name, "code_cursor");
   }
+  /// Whether this code editor opted into caret tracking (setCodeCaretTracking).
+  /// Absent ⇒ not requested; the host wires cursor-move events only when true.
+  [[nodiscard]] std::optional<bool> codeCaretTracking(std::string_view name) const {
+    return getBool(name, "code_caret_tracking");
+  }
 
   // --- QLabel ---
   [[nodiscard]] std::optional<std::string> label(std::string_view name) const {

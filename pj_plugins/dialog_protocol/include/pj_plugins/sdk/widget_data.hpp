@@ -221,6 +221,16 @@ class WidgetData {
     return *this;
   }
 
+  /// Opt this code editor into caret tracking. When enabled, the host reports
+  /// the caret offset on cursor moves as well as text edits (via
+  /// onCodeChangedWithCursor), so the plugin can drive caret-aware completion.
+  /// Editors that don't opt in only fire on text changes — the default — so an
+  /// editor that merely validates code isn't re-run on every cursor move.
+  WidgetData& setCodeCaretTracking(std::string_view name, bool enabled = true) {
+    entry(name)["code_caret_tracking"] = enabled;
+    return *this;
+  }
+
   // --- QLabel ---
   WidgetData& setLabel(std::string_view name, std::string_view text) {
     entry(name)["label"] = text;

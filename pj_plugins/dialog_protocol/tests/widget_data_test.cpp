@@ -257,3 +257,17 @@ TEST(WidgetDataTest, SetCodeCursor) {
   EXPECT_EQ(j["editor"]["code_content"], "robot ==");
   EXPECT_EQ(j["editor"]["code_cursor"], 8);
 }
+
+TEST(WidgetDataTest, SetCodeCaretTracking) {
+  WidgetData wd;
+  wd.setCodeCaretTracking("editor");
+  auto j = parse(wd);
+  EXPECT_EQ(j["editor"]["code_caret_tracking"], true);
+}
+
+TEST(WidgetDataTest, SetCodeCaretTrackingExplicitFalse) {
+  WidgetData wd;
+  wd.setCodeCaretTracking("editor", false);
+  auto j = parse(wd);
+  EXPECT_EQ(j["editor"]["code_caret_tracking"], false);
+}

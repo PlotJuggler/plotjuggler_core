@@ -78,6 +78,11 @@ class DialogPluginTyped : public DialogPluginBase {
   /// working. Override this (instead of onCodeChanged) to drive caret-aware
   /// completion. A distinct name (rather than an overload) avoids the
   /// overloaded-virtual hiding hazard.
+  ///
+  /// The caret is only reported (and cursor-only moves only fire this at all)
+  /// for editors that opted in via WidgetData::setCodeCaretTracking. Without
+  /// opt-in this fires on text changes only, with cursor < 0 — so an editor
+  /// that merely validates code is not re-run on every cursor move.
   virtual bool onCodeChangedWithCursor(std::string_view widget_name, std::string_view code, int /*cursor*/) {
     return onCodeChanged(widget_name, code);
   }
