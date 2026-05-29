@@ -16,7 +16,9 @@
 #include <variant>
 #include <vector>
 
+#include "pj_base/buffer_anchor.hpp"
 #include "pj_base/expected.hpp"
+#include "pj_base/span.hpp"
 #include "pj_base/types.hpp"
 
 namespace PJ {
@@ -38,14 +40,21 @@ struct ObjectTopicDescriptor {
   std::string metadata_json;
 };
 
+/// Eager payload: store-owned bytes, counted against the retention budget.
+using SharedBuffer = std::shared_ptr<const std::vector<uint8_t>>;
+
+/// Lazy payload: idempotent, thread-safe fetcher returning bytes + anchor.
+/// Invoked on every read; bytes are not counted against the retention budget.
+using LazyCallback = std::function<sdk::PayloadView()>;
+
 struct ObjectEntry {
   Timestamp timestamp = 0;
-  std::variant<std::shared_ptr<const std::vector<uint8_t>>, std::function<std::vector<uint8_t>()>> payload;
+  std::variant<SharedBuffer, LazyCallback> payload;
 };
 
 struct ResolvedObjectEntry {
   Timestamp timestamp = 0;
-  std::shared_ptr<const std::vector<uint8_t>> data;
+  sdk::PayloadView payload;
 };
 
 struct RetentionBudget {
@@ -106,10 +115,12 @@ class ObjectStore {
 
   // --- Write ---
 
-  Expected<void, std::string> pushOwned(ObjectTopicId id, Timestamp timestamp, std::vector<uint8_t> payload);
+  Status pushOwned(ObjectTopicId id, Timestamp timestamp, std::vector<uint8_t> payload);
 
-  Expected<void, std::string> pushLazy(
-      ObjectTopicId id, Timestamp timestamp, std::function<std::vector<uint8_t>()> fetch);
+  // Fetcher runs on every read. Producers anchor on whatever owns the bytes
+  // (chunk cache, mmap, fresh allocation); the store never copies — it just
+  // retains the anchor through PayloadView.
+  Status pushLazy(ObjectTopicId id, Timestamp timestamp, LazyCallback fetch);
 
   // --- Read ---
 

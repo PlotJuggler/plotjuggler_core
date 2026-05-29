@@ -67,8 +67,7 @@ std::vector<ObjectTopicId> ObjectStore::listTopics(DatasetId dataset_id) const {
 
 // --- Write ---
 
-Expected<void, std::string> ObjectStore::pushOwned(
-    ObjectTopicId id, Timestamp timestamp, std::vector<uint8_t> payload) {
+Status ObjectStore::pushOwned(ObjectTopicId id, Timestamp timestamp, std::vector<uint8_t> payload) {
   std::shared_lock store_lock(store_mutex_);
   auto* series = findSeries(id);
   if (series == nullptr) {
@@ -94,8 +93,7 @@ Expected<void, std::string> ObjectStore::pushOwned(
   return {};
 }
 
-Expected<void, std::string> ObjectStore::pushLazy(
-    ObjectTopicId id, Timestamp timestamp, std::function<std::vector<uint8_t>()> fetch) {
+Status ObjectStore::pushLazy(ObjectTopicId id, Timestamp timestamp, LazyCallback fetch) {
   std::shared_lock store_lock(store_mutex_);
   auto* series = findSeries(id);
   if (series == nullptr) {
@@ -306,11 +304,15 @@ ResolvedObjectEntry ObjectStore::resolveEntry(const ObjectEntry& entry) {
   ResolvedObjectEntry resolved;
   resolved.timestamp = entry.timestamp;
 
-  if (const auto* owned = std::get_if<std::shared_ptr<const std::vector<uint8_t>>>(&entry.payload)) {
-    resolved.data = *owned;
-  } else if (const auto* lazy = std::get_if<std::function<std::vector<uint8_t>()>>(&entry.payload)) {
-    auto bytes = (*lazy)();
-    resolved.data = std::make_shared<const std::vector<uint8_t>>(std::move(bytes));
+  if (const auto* owned = std::get_if<SharedBuffer>(&entry.payload)) {
+    if (*owned) {
+      resolved.payload = sdk::PayloadView{
+          Span<const uint8_t>{(*owned)->data(), (*owned)->size()},
+          sdk::BufferAnchor{*owned},
+      };
+    }
+  } else if (const auto* lazy = std::get_if<LazyCallback>(&entry.payload)) {
+    resolved.payload = (*lazy)();
   }
 
   return resolved;
@@ -322,7 +324,7 @@ void ObjectStore::evictFront(ObjectSeries& series) {
   }
 
   const auto& front = series.entries.front();
-  if (const auto* owned = std::get_if<std::shared_ptr<const std::vector<uint8_t>>>(&front.payload)) {
+  if (const auto* owned = std::get_if<SharedBuffer>(&front.payload); owned != nullptr && *owned) {
     series.memory_bytes -= (*owned)->size();
   }
 

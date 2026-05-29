@@ -5,8 +5,10 @@
 
 #include <gtest/gtest.h>
 
+#include <array>
 #include <cstdint>
 #include <functional>
+#include <memory>
 #include <string>
 #include <thread>
 #include <vector>
@@ -148,7 +150,7 @@ TEST(ObjectStoreTest, LatestAtExact) {
   auto r = store.latestAt(id, 200);
   ASSERT_TRUE(r.has_value());
   EXPECT_EQ(r->timestamp, 200);
-  EXPECT_EQ((*r->data)[0], 0x02);
+  EXPECT_EQ(r->payload.bytes[0], 0x02);
 }
 
 TEST(ObjectStoreTest, LatestAtBetween) {
@@ -281,17 +283,71 @@ TEST(ObjectStoreTest, PushLazyResolves) {
   ObjectStore store;
   auto id = registerTestTopic(store);
   int call_count = 0;
-  store.pushLazy(id, 100, [&call_count]() -> std::vector<uint8_t> {
+  store.pushLazy(id, 100, [&call_count]() -> sdk::PayloadView {
     ++call_count;
-    return {0xDE, 0xAD};
+    return sdk::makePayloadView({0xDE, 0xAD});
   });
 
   EXPECT_EQ(call_count, 0);
   auto r = store.latestAt(id, 100);
   ASSERT_TRUE(r.has_value());
   EXPECT_EQ(call_count, 1);
-  EXPECT_EQ(r->data->size(), 2u);
-  EXPECT_EQ((*r->data)[0], 0xDE);
+  EXPECT_EQ(r->payload.bytes.size(), 2u);
+  EXPECT_EQ(r->payload.bytes[0], 0xDE);
+}
+
+// Regression: anchor type-erasure must survive resolveEntry. The anchor here
+// is a shared_ptr<TestBuffer> (not vector); a prior static_pointer_cast to
+// vector would UB.
+TEST(ObjectStoreTest, PushLazyPreservesAnchorType) {
+  struct TestBuffer {
+    std::array<uint8_t, 4> bytes{0x11, 0x22, 0x33, 0x44};
+  };
+  ObjectStore store;
+  auto id = registerTestTopic(store);
+
+  auto buffer = std::make_shared<TestBuffer>();
+  std::weak_ptr<TestBuffer> weak_buffer = buffer;
+
+  store.pushLazy(id, 100, [buffer]() -> sdk::PayloadView {
+    return sdk::PayloadView{
+        Span<const uint8_t>{buffer->bytes.data(), buffer->bytes.size()},
+        sdk::BufferAnchor{buffer},
+    };
+  });
+
+  auto r = store.latestAt(id, 100);
+  ASSERT_TRUE(r.has_value());
+  ASSERT_EQ(r->payload.bytes.size(), 4u);
+  EXPECT_EQ(r->payload.bytes[0], 0x11);
+  EXPECT_EQ(r->payload.bytes[3], 0x44);
+  EXPECT_FALSE(weak_buffer.expired());  // anchor still holds the buffer alive
+}
+
+// Regression: the producer's Span is a sub-range of the anchor's storage.
+// resolveEntry must propagate it verbatim — not the anchor's full extent.
+TEST(ObjectStoreTest, PushLazyHonorsSpanSubview) {
+  ObjectStore store;
+  auto id = registerTestTopic(store);
+
+  auto chunk = std::make_shared<std::vector<uint8_t>>(100);
+  for (size_t i = 0; i < chunk->size(); ++i) {
+    (*chunk)[i] = static_cast<uint8_t>(i);
+  }
+
+  store.pushLazy(id, 100, [chunk]() -> sdk::PayloadView {
+    return sdk::PayloadView{
+        Span<const uint8_t>{chunk->data() + 20, 10},  // bytes [20, 30)
+        sdk::BufferAnchor{chunk},
+    };
+  });
+
+  auto r = store.latestAt(id, 100);
+  ASSERT_TRUE(r.has_value());
+  EXPECT_EQ(r->payload.bytes.size(), 10u);
+  EXPECT_EQ(r->payload.bytes.data(), chunk->data() + 20);
+  EXPECT_EQ(r->payload.bytes[0], 20);
+  EXPECT_EQ(r->payload.bytes[9], 29);
 }
 
 // =========================================================================
@@ -328,13 +384,13 @@ TEST(ObjectStoreTest, HandleSurvivesEviction) {
 
   auto handle = store.latestAt(id, 100);
   ASSERT_TRUE(handle.has_value());
-  EXPECT_EQ((*handle->data)[0], 0xAA);
+  EXPECT_EQ(handle->payload.bytes[0], 0xAA);
 
   store.evictBefore(id, 150);
   EXPECT_EQ(store.entryCount(id), 1u);
 
-  EXPECT_EQ(handle->data->size(), 4u);
-  EXPECT_EQ((*handle->data)[0], 0xAA);
+  EXPECT_EQ(handle->payload.bytes.size(), 4u);
+  EXPECT_EQ(handle->payload.bytes[0], 0xAA);
 }
 
 // =========================================================================
@@ -420,7 +476,9 @@ TEST(ObjectStoreTest, LazyEntriesZeroMemory) {
   ObjectStore store;
   auto id = registerTestTopic(store);
   for (int i = 0; i < 10; ++i) {
-    store.pushLazy(id, static_cast<Timestamp>(i) * 100, []() { return makePayload(1000); });
+    store.pushLazy(id, static_cast<Timestamp>(i) * 100, []() -> sdk::PayloadView {
+      return sdk::makePayloadView(makePayload(1000));
+    });
   }
   EXPECT_EQ(store.memoryUsage(id), 0u);
 }

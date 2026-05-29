@@ -1392,7 +1392,9 @@ bool sourceObjectPushLazy(
     // the lambda; destructor runs exactly once when ObjectStore drops the
     // entry (retention, evict, removeTopic, clear, or store teardown).
     auto holder = std::make_shared<PluginFetchCtx>(fetch_fn, fetch_ctx, fetch_ctx_destroy);
-    auto closure = [holder]() -> std::vector<uint8_t> { return holder->invoke(); };
+    // Plugins return raw bytes via the C ABI; wrap them as a PayloadView whose
+    // anchor is a shared_ptr<const vector<uint8_t>>, per the pushLazy contract.
+    auto closure = [holder]() -> sdk::PayloadView { return sdk::makePayloadView(holder->invoke()); };
     auto result = impl->store.pushLazy(ObjectTopicId{topic.id}, timestamp_ns, std::move(closure));
     if (!result) {
       impl->setError(result.error());
@@ -1433,10 +1435,10 @@ void sourceObjectSetRetentionBudget(
 // Toolbox object read host trampolines
 // ---------------------------------------------------------------------------
 
-/// Box holding the shared_ptr that keeps ObjectStore bytes alive. One
-/// allocated per successful read_latest_at; freed by release_bytes.
+/// Heap holder for the PayloadView backing PJ_object_bytes_handle_t.
+/// Allocated by read_latest_at; freed by release_bytes.
 struct ObjectBytesBox {
-  std::shared_ptr<const std::vector<uint8_t>> bytes;
+  sdk::PayloadView payload;
 };
 
 PJ_object_topic_handle_t toolboxObjectLookupTopic(void* ctx, PJ_string_view_t topic_name) noexcept {
@@ -1506,12 +1508,12 @@ bool toolboxObjectReadLatestAt(
   *out_handle = nullptr;
   try {
     auto entry = impl->store.latestAt(ObjectTopicId{topic.id}, timestamp_ns);
-    if (!entry.has_value() || entry->data == nullptr) {
+    if (!entry.has_value() || entry->payload.anchor == nullptr) {
       impl->setError("no entry at-or-before timestamp");
       propagateError(out_error, impl->last_error.c_str());
       return false;
     }
-    auto* box = new ObjectBytesBox{std::move(entry->data)};
+    auto* box = new ObjectBytesBox{std::move(entry->payload)};
     *out_handle = reinterpret_cast<PJ_object_bytes_handle_t>(box);
     if (out_timestamp != nullptr) {
       *out_timestamp = entry->timestamp;
@@ -1540,14 +1542,14 @@ void toolboxObjectGetBytes(PJ_object_bytes_handle_t handle, const uint8_t** out_
     return;
   }
   auto* box = reinterpret_cast<ObjectBytesBox*>(handle);
-  if (!box->bytes) {
+  if (box->payload.bytes.empty()) {
     return;
   }
   if (out_data != nullptr) {
-    *out_data = box->bytes->data();
+    *out_data = box->payload.bytes.data();
   }
   if (out_size != nullptr) {
-    *out_size = box->bytes->size();
+    *out_size = box->payload.bytes.size();
   }
 }
 
@@ -1631,7 +1633,7 @@ bool parserObjectPushLazy(
   }
   try {
     auto holder = std::make_shared<PluginFetchCtx>(fetch_fn, fetch_ctx, fetch_ctx_destroy);
-    auto closure = [holder]() -> std::vector<uint8_t> { return holder->invoke(); };
+    auto closure = [holder]() -> sdk::PayloadView { return sdk::makePayloadView(holder->invoke()); };
     auto result = impl->store.pushLazy(impl->bound_topic, timestamp_ns, std::move(closure));
     if (!result) {
       impl->setError(result.error());

@@ -15,6 +15,8 @@
 
 #include <cstdint>
 #include <memory>
+#include <utility>
+#include <vector>
 
 #include "pj_base/span.hpp"
 
@@ -44,10 +46,22 @@ struct PayloadView {
 
   PayloadView(Span<const uint8_t> bytes_, BufferAnchor anchor_) : bytes(bytes_), anchor(std::move(anchor_)) {}
 
-  PayloadView(std::shared_ptr<std::vector<uint8_t>> buffer)
+  PayloadView(std::shared_ptr<const std::vector<uint8_t>> buffer)
       : bytes(buffer ? Span<const uint8_t>(buffer->data(), buffer->size()) : Span<const uint8_t>()),
         anchor(std::move(buffer)) {}
 };
+
+/// Wrap a fresh vector as both anchor and Span. Use when the producer has
+/// no natural anchor (e.g. raw bytes from a C-ABI fetch); when an upstream
+/// allocation already exists, construct PayloadView directly to avoid this
+/// helper's copy.
+inline PayloadView makePayloadView(std::vector<uint8_t> bytes) {
+  auto shared = std::make_shared<const std::vector<uint8_t>>(std::move(bytes));
+  return PayloadView{
+      Span<const uint8_t>{shared->data(), shared->size()},
+      BufferAnchor{shared},
+  };
+}
 
 }  // namespace sdk
 }  // namespace PJ
